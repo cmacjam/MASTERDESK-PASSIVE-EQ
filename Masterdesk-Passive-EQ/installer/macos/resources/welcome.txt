@@ -1,0 +1,12 @@
+Masterdesk Passive EQ by Basemental
+
+A stereo, four-band parallel passive mastering equaliser with tube make-up gain,
+stepped recallable controls, VU and harmonics metering.
+
+Choose what to install on the next screens:
+  - VST3 plug-in   -> /Library/Audio/Plug-Ins/VST3
+  - Audio Unit     -> /Library/Audio/Plug-Ins/Components   (Logic Pro, GarageBand)
+  - Standalone app -> /Applications
+
+After installing, rescan plug-ins in your DAW (Logic does this automatically on launch).
+Inside the plug-in, press HELP ? for a guide to every control.
