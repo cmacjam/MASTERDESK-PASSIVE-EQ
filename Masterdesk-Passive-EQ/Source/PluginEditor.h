@@ -81,11 +81,15 @@ private:
 class ModeSwitch : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    ModeSwitch (juce::AudioProcessorValueTreeState&, const juce::String& paramId);
+    ModeSwitch (juce::AudioProcessorValueTreeState&, const juce::String& paramId,
+                juce::StringArray names = { "BOOST", "OUT", "CUT" },
+                juce::Array<juce::Colour> lamps = { col::amber, col::engraveDim, col::blue });
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
 private:
     int value = 0;
+    juce::StringArray names;
+    juce::Array<juce::Colour> lamps;
     juce::ParameterAttachment attachment;
 };
 
@@ -117,7 +121,7 @@ private:
 class AnalogMeter : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    enum class Kind { VU, Harmonics };
+    enum class Kind { VU, Harmonics, GainReduction };
     AnalogMeter (Kind, const juce::String& leftLegend, const juce::String& rightLegend);
     void setTarget (float valueDbOrPercent, float lampBrightness);   // VU: dB re 0 VU, Harmonics: % THD
     void tick (float dtSeconds);
@@ -139,20 +143,81 @@ private:
     float glow = 0.0f;
 };
 
-// Frequency-response display ----------------------------------------------------
-class ResponseCurve : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
+// Rolling copy of the plugin's output, filled from the processor's FIFO each frame
+struct AudioHistory
+{
+    static constexpr int kSize = 16384;            // > 80 ms even at 192 kHz
+    std::vector<float> l = std::vector<float> (kSize, 0.0f), r = std::vector<float> (kSize, 0.0f);
+    int write = 0;
+    int newSamples = 0;                            // arrived since the last pull
+    double sampleRate = 48000.0;
+
+    void pull (PassiveMasterEQProcessor::ScopeFifo&);
+    float atL (int ago) const { return l[(size_t) ((write - 1 - ago + 4 * kSize) % kSize)]; }   // 0 = newest
+    float atR (int ago) const { return r[(size_t) ((write - 1 - ago + 4 * kSize) % kSize)]; }
+};
+
+// Live spectrum analyzer: 31 one-third-octave bars that move with the music --------
+class SpectrumAnalyzer : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    explicit ResponseCurve (PassiveMasterEQProcessor&);
+    explicit SpectrumAnalyzer (const AudioHistory&);
+    void update (float dtSeconds);                 // call once per frame after AudioHistory::pull
     void paint (juce::Graphics&) override;
+
+    static constexpr int kBands = 31;              // 20 Hz .. 20 kHz, ISO 1/3-octave centres
+    static constexpr float kFloorDb = -66.0f, kTopDb = 0.0f;
+    float bandLevelDb (int b) const { return level[(size_t) b]; }
+    static float bandCentreHz (int b) { return 1000.0f * std::pow (2.0f, (float) (b - 17) / 3.0f); }
+
 private:
-    void timerCallback() override;
-    juce::Path buildPath (const ppm::ChannelSettings&, juce::Rectangle<float>) const;
-    float freqToX (double f, juce::Rectangle<float> r) const;
-    float dbToY (double db, juce::Rectangle<float> r) const;
+    const AudioHistory& hist;
+    static constexpr int kOrder = 12, kN = 1 << kOrder;
+    juce::dsp::FFT fft { kOrder };
+    std::vector<float> window, work;
+    std::array<float, kBands> level {}, peak {}, peakHold {};
+};
+
+// Vectorscope (goniometer): stereo dot cloud with balance and correlation meters --
+class Vectorscope : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit Vectorscope (const AudioHistory&);
+    void update (float dtSeconds);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    float getCorrelation() const { return corr; }
+    float getBalance() const     { return balance; }
+private:
+    const AudioHistory& hist;
+    juce::Rectangle<int> plot;                 // square plotting area
+    juce::Rectangle<float> screen, balRow, corrRow;
+    std::vector<float> glow;                   // phosphor persistence buffer (plot-sized)
+    juce::Image img;
+    float corr = 0.0f, corrHold = 1.0f, corrHoldTimer = 0.0f;
+    float balance = 0.0f, gain = 1.0f;
+    bool  hasSignal = false;
+};
+
+// LUFS loudness panel (EBU R128) --------------------------------------------------
+class LoudnessPanel : public juce::Component, public juce::TooltipClient
+{
+public:
+    explicit LoudnessPanel (PassiveMasterEQProcessor&);
+    void update();                              // read the processor's loudness values
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    juce::String getTooltip() override;
+    float getTargetLufs() const;
+
+private:
+    struct Tile { juce::Rectangle<float> r; const char* label; const char* unit; const char* tip; };
     PassiveMasterEQProcessor& proc;
-    juce::String lastKey;
-    static constexpr double kMinF = 10.0, kMaxF = 40000.0, kRangeDb = 15.0;
+    juce::ComboBox targetBox;
+    juce::TextButton resetButton { "RESET" };
+    juce::Rectangle<float> screen, header, bar;
+    Tile integ, shortT, mom, tpMax, lra, plr, psr, stMax, mMax;
+    float vM = -200, vS = -200, vI = -200, vLra = 0, vMMax = -200, vSMax = -200, vTpMax = -200, vTp3 = -200;
 };
 
 // One EQ band of one channel -------------------------------------------------------
@@ -184,6 +249,24 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> eqInAtt;
 };
 
+// One channel of the variable-mu compressor --------------------------------------
+class CompStrip : public juce::Component
+{
+public:
+    CompStrip (juce::AudioProcessorValueTreeState&, int ch);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void setMeter (float grDb, bool active) { meter.setTarget (grDb, active ? 1.0f : 0.0f); }
+    void tickMeter (float dt) { meter.tick (dt); }
+private:
+    int ch;
+    AnalogMeter meter;
+    SteppedKnob thresh, attack, recovery, output, mix;
+    ModeSwitch mode;
+    JewelButton scHp { "SC HP", "SC FULL", col::blue }, compIn { "COMP IN", "COMP OUT", col::green };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> scHpAtt, compInAtt;
+};
+
 // HELP overlay: a printed "manual card" explaining the panel --------------------
 class HelpOverlay : public juce::Component
 {
@@ -196,13 +279,16 @@ public:
 class Faceplate : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int kW = 1280, kH = 990;
+    static constexpr int kW = 1280, kH = 1330;
 
     explicit Faceplate (PassiveMasterEQProcessor&);
     void paint (juce::Graphics&) override;
     void resized() override;
 
     void simulateMeters (float vuL, float vuR, float thdPercent);   // screenshot test
+    void animate (int frames) { for (int i = 0; i < frames; ++i) timerCallback(); }   // tests: advance the displays
+    const SpectrumAnalyzer& getAnalyzer() const { return analyzer; }
+    const Vectorscope& getVectorscope() const { return vectorscope; }
     void showHelp() { help.setVisible (true); help.toFront (false); }
     void setScaleChoice (float scale);
     std::function<void (float)> onScaleRequested;                  // set by the editor
@@ -220,9 +306,14 @@ private:
     JewelLamp lampSignal { "SIGNAL", col::green },  lampLink { "LINK", col::yellow },
               lampClip   { "CLIP",   col::red },    lampTube { "TUBE", col::amber };
 
-    ResponseCurve curve;
+    AudioHistory history;
+    SpectrumAnalyzer analyzer { history };
+    Vectorscope vectorscope { history };
+    LoudnessPanel loudnessPanel { proc };
     std::unique_ptr<BandStrip>   bands[2][ppm::kNumBands];
     std::unique_ptr<CenterStrip> centers[2];
+    std::unique_ptr<CompStrip>   comps[2];
+    ModeSwitch orderSwitch;
 
     JewelButton linkButton { "LINK", "UNLINKED", col::yellow };
     JewelButton tubeButton { "TUBE ON", "TUBE OFF", col::amber };
@@ -232,7 +323,7 @@ private:
     HelpOverlay help;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linkAtt, tubeAtt;
 
-    juce::Rectangle<float> topPlate, curvePlate, rowPlates[2], footerPlate, nameplate, presetLabel;
+    juce::Rectangle<float> topPlate, curvePlate, analyzerScreen, scopeScreen, rowPlates[2], compPlate, footerPlate, nameplate, presetLabel;
     bool lastLinked = true;
     int clipHold = 0;
     int lastProgram = -1;
@@ -251,6 +342,12 @@ public:
 
     void simulateMeters (float vuL, float vuR, float thd) { face.simulateMeters (vuL, vuR, thd); }
     void showHelp() { face.showHelp(); }
+    void animate (int frames) { face.animate (frames); }
+    float analyzerBandDb (int band) const { return face.getAnalyzer().bandLevelDb (band); }
+    float vectorscopeCorrelation() const  { return face.getVectorscope().getCorrelation(); }
+    float vectorscopeBalance() const      { return face.getVectorscope().getBalance(); }
+    static int designWidth()  { return ui::Faceplate::kW; }
+    static int designHeight() { return ui::Faceplate::kH; }
 
 private:
     PassiveMasterEQProcessor& proc;

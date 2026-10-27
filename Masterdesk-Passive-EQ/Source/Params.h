@@ -6,6 +6,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "dsp/Model.h"
+#include "dsp/VariMu.h"
 
 namespace ppm::params
 {
@@ -20,6 +21,7 @@ inline juce::String chanId (int ch, const char* what) { return juce::String (cha
 inline const juce::String link      { "link" };
 inline const juce::String tubeOn    { "tube_on" };
 inline const juce::String tubeDrive { "tube_drive" };
+inline const juce::String compOrder { "comp_order" };   // 0 = EQ > COMP, 1 = COMP > EQ
 
 inline juce::String formatHz (double hz)
 {
@@ -41,6 +43,7 @@ inline juce::StringArray channelParamSuffixes()
         for (auto* w : { "freq", "gain", "bw", "mode", "shelf" })
             s.add ("b" + juce::String (b + 1) + "_" + w);
     s.addArray ({ "hp", "lp", "trim", "eq_in" });
+    s.addArray ({ "c_in", "c_thresh", "c_attack", "c_recovery", "c_output", "c_mix", "c_mode", "c_schp" });
     return s;
 }
 
@@ -82,6 +85,24 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         group->addChild (std::make_unique<AudioParameterChoice> (ParameterID { chanId (ch, "trim"), version }, chName + "Gain Trim", trim, 5));
         group->addChild (std::make_unique<AudioParameterBool>   (ParameterID { chanId (ch, "eq_in"), version }, chName + "EQ In", true));
 
+        // ---- variable-mu compressor ----
+        StringArray thr, att, rec, out, mix;
+        for (int i = 0; i < kNumThreshSteps; ++i)   thr.add (String (compThresholdDb (i), 1) + " dB");
+        for (double a : kAttackMs)                  att.add (String ((int) a) + " ms");
+        for (double r : kRecoverySec)               rec.add (String (r, 1) + " s");
+        for (int i = 0; i < kNumOutputSteps; ++i)   out.add ("+" + String (compOutputDb (i), 1) + " dB");
+        for (int i = 0; i < kNumMixSteps; ++i)      mix.add (String (i * 10) + " %");
+        const CompSettings d;
+        group->addChild (std::make_unique<AudioParameterBool>   (ParameterID { chanId (ch, "c_in"), version },       chName + "Comp In", d.compIn));
+        group->addChild (std::make_unique<AudioParameterChoice> (ParameterID { chanId (ch, "c_thresh"), version },   chName + "Comp Threshold", thr, d.threshold));
+        group->addChild (std::make_unique<AudioParameterChoice> (ParameterID { chanId (ch, "c_attack"), version },   chName + "Comp Attack", att, d.attack));
+        group->addChild (std::make_unique<AudioParameterChoice> (ParameterID { chanId (ch, "c_recovery"), version }, chName + "Comp Recovery", rec, d.recovery));
+        group->addChild (std::make_unique<AudioParameterChoice> (ParameterID { chanId (ch, "c_output"), version },   chName + "Comp Output", out, d.output));
+        group->addChild (std::make_unique<AudioParameterChoice> (ParameterID { chanId (ch, "c_mix"), version },      chName + "Comp Mix", mix, d.mix));
+        group->addChild (std::make_unique<AudioParameterChoice> (ParameterID { chanId (ch, "c_mode"), version },     chName + "Comp Mode",
+                                                                 StringArray { "Compress", "Limit" }, d.mode));
+        group->addChild (std::make_unique<AudioParameterBool>   (ParameterID { chanId (ch, "c_schp"), version },     chName + "Comp SC HP", d.scHp));
+
         layout.add (std::move (group));
     }
 
@@ -90,6 +111,8 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { tubeDrive, version }, "Tube Drive",
                                                        NormalisableRange<float> (-6.0f, 18.0f, 0.5f), 0.0f,
                                                        AudioParameterFloatAttributes().withLabel ("dB")));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { compOrder, version }, "Comp Order",
+                                                        StringArray { "EQ > COMP", "COMP > EQ" }, 0));
     return layout;
 }
 
@@ -119,6 +142,28 @@ struct ChannelParamPtrs
         for (int b = 0; b < kNumBands; ++b)
             c.band[b] = { i (band[b].freq), i (band[b].gain), i (band[b].bw), i (band[b].mode), band[b].shelf->load() > 0.5f };
         c.hp = i (hp); c.lp = i (lp); c.trim = i (trim); c.eqIn = eqIn->load() > 0.5f;
+        return c;
+    }
+};
+struct CompParamPtrs
+{
+    std::atomic<float>* in; std::atomic<float>* thr; std::atomic<float>* att; std::atomic<float>* rec;
+    std::atomic<float>* out; std::atomic<float>* mix; std::atomic<float>* mode; std::atomic<float>* schp;
+
+    void init (juce::AudioProcessorValueTreeState& s, int ch)
+    {
+        in  = s.getRawParameterValue (chanId (ch, "c_in"));     thr  = s.getRawParameterValue (chanId (ch, "c_thresh"));
+        att = s.getRawParameterValue (chanId (ch, "c_attack")); rec  = s.getRawParameterValue (chanId (ch, "c_recovery"));
+        out = s.getRawParameterValue (chanId (ch, "c_output")); mix  = s.getRawParameterValue (chanId (ch, "c_mix"));
+        mode = s.getRawParameterValue (chanId (ch, "c_mode"));  schp = s.getRawParameterValue (chanId (ch, "c_schp"));
+    }
+
+    CompSettings read() const
+    {
+        auto i = [] (std::atomic<float>* p) { return (int) std::lround (p->load()); };
+        CompSettings c;
+        c.compIn = in->load() > 0.5f; c.threshold = i (thr); c.attack = i (att); c.recovery = i (rec);
+        c.output = i (out); c.mix = i (mix); c.mode = i (mode); c.scHp = schp->load() > 0.5f;
         return c;
     }
 };

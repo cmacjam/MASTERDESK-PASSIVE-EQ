@@ -12,6 +12,7 @@
 // =============================================================================
 #pragma once
 #include "dsp/Model.h"
+#include "dsp/VariMu.h"
 #include <vector>
 
 namespace ppm::presets
@@ -22,7 +23,17 @@ struct Preset
     ChannelSettings ch;
     bool  tubeOn  = true;
     float driveDb = 0.0f;
+    CompSettings comp {};      // default: compressor in, threshold 0 dB (transparent)
+    int   order   = 0;         // 0 = EQ > COMP, 1 = COMP > EQ
 };
+
+//            in    thr  att  rec  out  mix  mode      scHp
+inline CompSettings comp (int thr, int att, int rec, int out, int mix = 10, int mode = Compress, bool scHp = true)
+{
+    CompSettings c; c.compIn = true; c.threshold = thr; c.attack = att; c.recovery = rec;
+    c.output = out; c.mix = mix; c.mode = mode; c.scHp = scHp;
+    return c;
+}
 
 inline BandSettings band (int freq, int gain, int bw, int mode = Boost, bool shelf = false)
 {
@@ -71,6 +82,23 @@ inline const std::vector<Preset>& all()
 
         { "Subsonic Clean-up Only",
           channel (flat(), flat(), flat(), flat(), 4, 1) },
+
+        // ---- EQ + variable-mu compressor -------------------------------------
+        { "Mastering Glue (EQ + Vari-Mu)",       // 1-2 dB of slow, smooth leveling
+          channel (band (3, 5, 4), flat(), flat(), band (9, 5, 0, Boost, true), 2),
+          true, 0.0f, comp (8, 6, 3, 3) },
+
+        { "Loud & Warm Master",                  // more squeeze, limit mode, tubes pushed
+          channel (band (3, 6, 6), band (4, 3, 9, Cut), band (6, 3, 3), band (9, 6, 0, Boost, true), 3),
+          true, 6.0f, comp (12, 4, 2, 10, 10, Limit) },
+
+        { "Parallel Punch",                      // heavy compression blended in at 40 %
+          channel (band (4, 4, 6), flat(), band (7, 3, 4), band (9, 4, 0, Boost, true), 2),
+          true, 3.0f, comp (16, 3, 1, 14, 4) },
+
+        { "Gentle Leveler (Comp > EQ)",          // compress first, then shape tone
+          channel (band (2, 4, 0, Boost, true), flat(), flat(), band (10, 5, 0, Boost, true), 2),
+          true, 0.0f, comp (10, 7, 5, 4), 1 },
     };
     return list;
 }

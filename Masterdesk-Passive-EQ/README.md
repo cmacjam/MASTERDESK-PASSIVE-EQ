@@ -1,8 +1,14 @@
 # Masterdesk Passive EQ — by Basemental
 
-A stereo, four-band, all-passive *parallel* mastering equaliser with tube
-make-up gain, stepped recallable controls, VU and harmonics metering.
-Modelled on the behaviour of the Manley Massive Passive **Mastering Version**.
+A two-in-one mastering channel:
+
+- **Top: Passive EQ.** A stereo, four-band, all-passive *parallel* equaliser with
+  tube make-up gain, modelled on the behaviour of the Manley Massive Passive **Mastering Version**.
+- **Bottom: Vari-Mu tube compressor.** A variable-mu (remote-cutoff tube)
+  compressor in the spirit of the Manley Variable Mu: soft knee, rising ratio,
+  stepped attack/recovery, compress/limit, sidechain HP, parallel mix.
+
+Every control is stepped and recallable, with VU, harmonics and gain-reduction metering.
 
 | Format | macOS | Windows | Linux |
 |---|---|---|---|
@@ -11,7 +17,7 @@ Modelled on the behaviour of the Manley Massive Passive **Mastering Version**.
 | Standalone app | ✅ | ✅ | ✅ |
 | AAX (Pro Tools) | needs Avid SDK + agreement (see below) | | |
 
-> "Manley" and "Massive Passive" are Manley Laboratories' trademarks. This plugin
+> "Manley", "Massive Passive" and "Variable Mu" are Manley Laboratories' trademarks. This plugin
 > uses its own name and panel design; describe it as "inspired by" when releasing.
 
 ---
@@ -85,7 +91,10 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 cmake -B build -DPPM_BUILD_TESTS=ON && cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
-`model_test` checks the control law, parallel band interaction, digital-vs-analog
+`loudness_test` runs the EBU Tech 3341 and 3342 conformance cases (loudness within
+±0.1 LU and LRA within ±1 LU at 44.1/48/96 kHz, all pass) and true-peak checks.
+`comp_test` checks the compressor's curve, timing, link, sidechain, mix/bypass and
+stability. `model_test` checks the control law, parallel band interaction, digital-vs-analog
 curve match, stability at every extreme setting and tube harmonics. `host_test`
 runs the real processor (oversampling, smoothing, stress test), every factory
 preset, state save/restore, and renders UI screenshots.
@@ -113,6 +122,12 @@ preset, state save/restore, and renders UI screenshots.
 | Smooth Top / De-Harsh | Cuts 4.7 kHz harshness, keeps the air, LP 27k |
 | Vocal Presence (mix bus) | For mix buses: cut 180 Hz, lift 3.3k and 12k |
 | Subsonic Clean-up Only | Just HP 30 Hz and LP 52 kHz |
+| Mastering Glue (EQ + Vari-Mu) | Weight + air, then 1–2 dB of slow leveling (threshold −12, 0.8 s) |
+| Loud & Warm Master | More EQ, LIMIT mode at −18, +6 dB tube drive, +5 dB make-up |
+| Parallel Punch | Heavy compression (−24) blended in at 40 % for density without losing transients |
+| Gentle Leveler (Comp > EQ) | Compressor first (−15, 2 s recovery), then gentle shelves |
+
+The first ten presets leave the compressor at threshold 0 dB (transparent).
 
 Edit or add presets in `Source/Presets.h`.
 
@@ -131,12 +146,16 @@ anything for a tooltip, or press **HELP ?** for the full guide page.
 | **TUBE STAGE** glass tubes | Visual indicator | Dark when the tube stage is off; glow brighter with level and DRIVE. |
 | **Jewel lamps** | SIGNAL (green), LINK (yellow), CLIP (red), TUBE (amber) | Audio present · right follows left · output went over 0 dBFS (holds ~1 s) · tube stage on. |
 | **DRIVE** knob + **TUBE ON** | Tube make-up stage | DRIVE pushes harder into the tubes for more harmonics; output loudness stays matched. |
-| **FREQUENCY RESPONSE** screen | Live EQ curve | Amber = left (or both when linked), blue = right. |
+| **SPECTRUM** screen | Live 1/3-octave analyzer | 31 segmented bars (25 Hz–16 kHz) that move up and down with the output, with peak-hold caps. Range 0 to −66 dBFS; red segments = within 6 dB of full scale. A full-scale sine reads 0 dB in its band. |
+| **VECTORSCOPE** screen | Stereo image | Dot cloud of the output: vertical = mid (L+R), horizontal = side (L−R); tall/narrow = centred, wide = stereo. Auto-zooms quiet material (shown as "AUTO x…"). Top meter: L/R balance. Bottom meter: phase correlation −1…+1 (above 0 = mono-safe); the cream mark holds the lowest value for 3 s. |
+| **LOUDNESS** panel | EBU R128 / ITU-R BS.1770-4 | INTEGRATED, SHORT-TERM (3 s), MOMENTARY (0.4 s), TRUE PEAK MAX (4× oversampled, dBTP), LRA, PLR, PSR, short-term and momentary maxima. Choose a TARGET (−14 streaming, −16 Apple Music, −23 EBU, −24 ATSC, −9 loud); INTEGRATED turns green within ±1 LU, red above, blue below. TRUE PEAK MAX turns red above −1 dBTP. RESET clears the integrated and maximum readings. Measured on the plugin's output and keeps running with the window closed. |
 | **Channel rows** (LEFT / RIGHT) | Four EQ bands + FILTERS / TRIM | See the table below. When LINK is on, the right row dims because it follows the left. |
 | **Cream windows** under knobs | Value readouts | The GAIN window shows the *actual* dB after the gain/bandwidth interaction. |
 | **LINK · L > R · R > L · HELP** (footer) | Stereo + guide | Link channels, copy settings between them, open the help page. |
+| **VARI-MU TUBE COMPRESSOR** (bottom panel) | Left and right compressor strips | See "Compressor controls" below. Each side has its own GAIN REDUCTION meter; with LINK on, the right side follows the left. |
+| **ORDER** switch (compressor panel) | Signal order | EQ > COMP (default: shape tone, then level it) or COMP > EQ. Switching is click-free. |
 | **PRESET** menu (footer) | Factory presets | Mastering starting points (list below). Your own settings save with your DAW session. |
-| **SIZE** menu (footer) | Window size | 75 / 85 / 100 / 125 %, or drag the bottom-right corner. Remembered per session. |
+| **SIZE** menu (footer) | Window size | 60 / 70 / 85 / 100 %, or drag the bottom-right corner. Opens at the largest size that fits your screen; remembered per session. |
 | **Nameplate** (footer right) | Branding | "BASEMENTAL MASTERDESK" brass plate; edit the text in `PluginEditor.cpp` (`Faceplate::paint`). |
 
 Tips: double-click any knob to reset it; every knob clicks through its detents like the hardware.
@@ -157,6 +176,24 @@ Tips: double-click any knob to reset it; every knob clicks through its detents l
 | Global | LINK | Right follows Left; unlinking copies L → R as a starting point |
 | | L > R / R > L | copy one channel's settings to the other |
 | | TUBE / DRIVE | tube colour on/off; drive −6 … +18 dB, level-compensated |
+
+### Compressor controls (per channel)
+| Control | Positions | What it does |
+|---|---|---|
+| THRESHOLD | 0 … −30 dBFS, 1.5 dB steps | Where compression starts. 0 dB = effectively off. Lower it until the meter shows 1–3 dB on loud parts. |
+| ATTACK | 2, 5, 10, 15, 20, 25, 35, 45, 55, 70 ms | How fast it grabs. Slower lets transients through. |
+| RECOVERY | 0.2, 0.4, 0.6, 0.8, 1.2, 2, 4, 8 s | How fast it lets go (time to recover ~95 %). |
+| OUTPUT | 0 … +12 dB, 0.5 dB steps | Make-up gain on the compressed signal. |
+| MIX | 0 … 100 %, 10 % steps | Parallel compression: blend compressed with dry. |
+| COMPRESS / LIMIT | 2-way | Soft variable-mu curve (≈1.5:1 rising to 4:1) or harder knee/higher ratio (4:1 rising to 20:1). |
+| SC HP | on / off | Detector ignores bass below 100 Hz so lows don't pump the mix. |
+| COMP IN | on / off | Click-free bypass of the compressor. |
+
+**Measured** (offline tests): static curve within 0.05 dB of design; ATTACK and
+RECOVERY land within a few ms / 1 % of their marked values; 40 Hz bass at
+−6 dBFS triggers 9.1 dB of gain reduction with SC HP off but only 0.7 dB with
+it on; the tube 2nd harmonic rises from −71 dBc (no compression) to −52 dBc
+(heavy compression).
 
 Every control is a discrete host parameter, so automation and recall snap to
 detents exactly.
@@ -220,6 +257,15 @@ curve normalised to unity small-signal gain, then a 4 Hz DC blocker. At
 0 dB drive a 0 dBFS sine shows H2 ≈ −54 dBc, H3 ≈ −66 dBc (≈0.2 % THD,
 mostly 2nd harmonic) and it is effectively clean at −18 dBFS; raise DRIVE for
 more colour. Runs oversampled, so harmonics don't alias.
+
+---
+
+### 6. Variable-mu compressor
+Feed-forward detector (3 ms RMS, optional 100 Hz high-pass sidechain) → soft-plus
+knee → ratio that rises with depth of compression (the remote-cutoff tube's
+falling "mu") → attack/recovery smoothing in dB → gain, small GR-dependent
+2nd harmonic, make-up and dry/wet mix. Linked mode drives both channels from
+the louder side. Runs at the same oversampled rate as the EQ.
 
 ---
 
