@@ -1,3 +1,4 @@
+
 # Builds, tests, validates and packages Masterdesk Passive EQ on macOS, Windows and Linux.
 #  - Every push / pull request: installers appear under the run's "Artifacts".
 #  - Pushing a tag like v1.0.0: also publishes a GitHub Release with the installers.
