@@ -168,6 +168,20 @@ int main()
                 e->showHelp();
                 snap (*ed, "editor_help.png");
             }
+            {
+                std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+                auto* e = dynamic_cast<PassiveMasterEQEditor*> (ed.get());
+                setParam (s, ppm::params::inputGain, 4.5f);
+                ed->setSize (1900, 1000);                        // a wide window
+                playMusic (proc, *e, sr, 60);
+                snap (*ed, "editor_wide.png");
+                e->toggleCompact();                             // MINI view
+                playMusic (proc, *e, sr, 30);
+                snap (*ed, "editor_mini.png");
+                e->toggleCompact();
+                setParam (s, ppm::params::inputGain, 0.0f);
+                // (help snapshot taken above)
+            }
         }
     }
     // ---- presets: every factory preset loads, is finite, and stays within sane gain
@@ -268,6 +282,95 @@ int main()
         if (proc.loudness.integrated.load() > -100.0f) ++failures;
     }
 
+    // ---- INPUT gain ------------------------------------------------------------------
+    {
+        PassiveMasterEQProcessor proc;
+        auto& s = proc.apvts;
+        setParam (s, ppm::params::tubeOn, 0.0f);
+        setParam (s, "L_c_in", 0.0f); setParam (s, "R_c_in", 0.0f);
+        proc.setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc.prepareToPlay (48000.0, 512);
+        std::printf ("input gain (EQ flat, tube and comp off):\n");
+        for (float g : { -24.0f, -6.0f, 0.0f, 6.0f, 12.0f })
+        {
+            setParam (s, ppm::params::inputGain, g);
+            const double got = measureStereo (proc, 48000.0, 1000.0, 0.05, 0.05, 0.5).first;
+            std::printf ("  INPUT %+5.1f dB -> output %+6.2f dB\n", g, got);
+            if (std::abs (got - g) > 0.1) ++failures;
+        }
+    }
+
+    // ---- KEY: shifter inside the plugin, latency, detection through the panel ----------
+    {
+        PassiveMasterEQProcessor proc;
+        auto& s = proc.apvts;
+        setParam (s, ppm::params::tubeOn, 0.0f);
+        setParam (s, "L_c_in", 0.0f); setParam (s, "R_c_in", 0.0f);
+        proc.setPlayConfigDetails (2, 2, 48000.0, 1600);
+        proc.prepareToPlay (48000.0, 1600);
+        std::printf ("key shift + detection (48 kHz):\n");
+        const int lat0 = proc.getLatencySamples();
+        setParam (s, ppm::params::keyOn, 1.0f); setParam (s, ppm::params::keySemis, 2.0f);
+        juce::AudioBuffer<float> buf (2, 1600);
+        std::vector<float> out;
+        double ph = 0;
+        for (int b = 0; b < 150; ++b)
+        {
+            for (int i = 0; i < 1600; ++i, ph += 2 * juce::MathConstants<double>::pi * 440.0 / 48000.0)
+                for (int c = 0; c < 2; ++c) buf.setSample (c, i, (float) (0.3 * std::sin (ph)));
+            juce::MidiBuffer m; proc.processBlock (buf, m);
+            for (int i = 0; i < 1600; ++i) out.push_back (buf.getSample (0, i));
+        }
+        const int lat1 = proc.getLatencySamples();
+        // zero-crossing frequency on the last 2 s
+        int zc = 0; for (size_t i = out.size() - 96000; i + 1 < out.size(); ++i) if (out[i] <= 0 && out[i + 1] > 0) ++zc;
+        const double f = zc / 2.0;
+        std::printf ("  latency off %d / on %d samples; 440 Hz +2 st -> %.1f Hz (want 493.9)\n", lat0, lat1, f);
+        if (lat1 - lat0 != 4096 || std::abs (f - 493.9) > 1.5) ++failures;
+        setParam (s, ppm::params::keyOn, 0.0f);
+        for (int b = 0; b < 3; ++b) { juce::MidiBuffer m; proc.processBlock (buf, m); }
+        std::printf ("  switched off: latency %d samples\n", proc.getLatencySamples());
+        if (proc.getLatencySamples() != lat0) ++failures;
+
+        // detection: an A minor progression through the plug-in, watched by the panel
+        std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+        auto* e = dynamic_cast<PassiveMasterEQEditor*> (ed.get());
+        auto playChords = [&] (int seconds)
+        {
+            const double chords[4][4] = { { 45, 64, 69, 72 }, { 38, 62, 65, 69 }, { 40, 64, 68, 71 }, { 45, 64, 69, 72 } };
+            static double t = 0;
+            for (int f = 0; f < seconds * 30; ++f)
+            {
+                for (int i = 0; i < 1600; ++i, t += 1.0 / 48000.0)
+                {
+                    const auto& ch = chords[(int) (t / 1.5) % 4];
+                    const double inChord = std::fmod (t, 1.5);
+                    const double env = std::min (1.0, inChord / 0.01) * std::exp (-inChord / 2.5);
+                    double v = 0;
+                    for (int ni = 0; ni < 4; ++ni)
+                    {
+                        const double f0 = 440.0 * std::pow (2.0, (ch[ni] - 69.0) / 12.0);
+                        for (int h = 1; h <= 6; ++h) v += (ni == 0 ? 0.35 : 0.12) / h * std::sin (2 * juce::MathConstants<double>::pi * f0 * h * t);
+                    }
+                    buf.setSample (0, i, (float) (0.4 * env * v)); buf.setSample (1, i, (float) (0.4 * env * v));
+                }
+                juce::MidiBuffer m; proc.processBlock (buf, m);
+                e->animate (1);
+            }
+        };
+        playChords (24);
+        std::printf ("  A minor progression -> panel shows %d (21 = A minor)\n", e->detectedKey());
+        if (e->detectedKey() != 21) ++failures;
+        setParam (s, ppm::params::keyOn, 1.0f); setParam (s, ppm::params::keySemis, 2.0f);
+        playChords (30);
+        std::printf ("  with KEY SHIFT +2: song key %d (21 = A minor), now playing in %d (23 = B minor)\n", e->detectedKey(), e->shiftedKey());
+        if (e->detectedKey() != 21 || e->shiftedKey() != 23) ++failures;
+        const juce::File dir (juce::SystemStats::getEnvironmentVariable ("PPM_SNAPSHOT_DIR", juce::File::getSpecialLocation (juce::File::tempDirectory).getFullPathName()));
+        auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+        auto file = dir.getChildFile ("editor_key.png"); file.deleteFile();
+        { juce::FileOutputStream fos (file); juce::PNGImageFormat().writeImageToStream (img, fos); }
+    }
+
     // ---- compressor inside the plugin --------------------------------------------
     {
         std::printf ("compressor (48 kHz, threshold -18 dBFS, EQ flat, tube off):\n");
@@ -315,6 +418,95 @@ int main()
         }
         std::printf ("  order switching EQ>COMP / COMP>EQ while playing: %s\n", finite ? "ok" : "PROBLEM");
         if (! finite) ++failures;
+    }
+
+    // ---- MAXIMIZER + AUTO MASTER inside the plugin --------------------------------
+    {
+        std::printf ("auto master (48 kHz):\n");
+        PassiveMasterEQProcessor proc;
+        auto& s = proc.apvts;
+        proc.listenSeconds = 12.0; proc.verifySeconds = 5.0;
+        proc.setPlayConfigDetails (2, 2, 48000.0, 1600);
+        proc.prepareToPlay (48000.0, 1600);
+        std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
+        auto* e = dynamic_cast<PassiveMasterEQEditor*> (ed.get());
+
+        // a quiet, dull mix: kick, bass, chords, soft hats, about -22 LUFS
+        juce::AudioBuffer<float> buf (2, 1600);
+        double t = 0, lp = 0, lp2 = 0; juce::Random rnd (9);
+        double outPeak = 0;
+        auto play = [&] (int frames, bool tick)
+        {
+            for (int f = 0; f < frames; ++f)
+            {
+                for (int i = 0; i < 1600; ++i, t += 1.0 / 48000.0)
+                {
+                    const double tw = 2 * juce::MathConstants<double>::pi;
+                    const double beat = std::fmod (t, 0.5);
+                    const double kick = std::exp (-beat * 14.0) * std::sin (tw * (48.0 + 80.0 * std::exp (-beat * 35.0)) * beat);
+                    const double bass = 0.30 * std::sin (tw * 55.0 * t) * (0.6 + 0.4 * std::sin (tw * 0.5 * t));
+                    double chord = 0;
+                    for (double fr : { 220.0, 261.6, 329.6, 440.0 }) chord += 0.07 * (std::sin (tw * fr * t) + 0.3 * std::sin (tw * 2 * fr * t));
+                    const double n = rnd.nextFloat() * 2.0 - 1.0;
+                    lp += 0.25 * (n - lp); lp2 += 0.25 * (lp - lp2);                  // dark hats
+                    const double hats = 0.25 * std::exp (-std::fmod (t, 0.125) * 50.0) * lp2;
+                    const double v = 0.16 * (0.9 * kick + bass + chord + hats);
+                    buf.setSample (0, i, (float) v); buf.setSample (1, i, (float) (v * 0.97));
+                }
+                juce::MidiBuffer m; proc.processBlock (buf, m);
+                outPeak = std::max (outPeak, (double) std::max (buf.getMagnitude (0, 0, 1600), buf.getMagnitude (1, 0, 1600)));
+                e->animate (1);
+                if (tick && f % 3 == 0) proc.autoMasterTick();
+            }
+        };
+        play (60, false);
+        const float lat = (float) proc.getLatencySamples();
+        setParam (s, ppm::params::amGenre, (float) ppm::automaster::HipHop);
+        proc.autoListen();
+        int guard = 0;
+        while (! proc.autoHasRecording() && ++guard < 2000) play (1, true);
+        proc.autoMasterTick();                                     // starts the analysis
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        while (proc.autoBusy()) juce::Thread::sleep (20);
+        std::printf ("  analysis of %.0f s took %.1f s\n", proc.listenSeconds, (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0);
+        proc.autoMasterTick();                                     // applies the plan
+        const auto plan = proc.getAutoPlan();
+        std::printf ("  HIP HOP plan: %s\n    comp threshold step %d (%.1f dB GR), maximizer %+.1f dB, input %.1f -> predicted %.1f LUFS (target %.1f)\n",
+                     plan.eqText.toRawUTF8(), plan.comp.threshold, plan.compGrDb, plan.maxGain, plan.inputLufs, plan.predictedLufs, plan.targetLufs);
+        if (! plan.ok || std::abs (plan.predictedLufs - plan.targetLufs) > 0.5) ++failures;
+        if (s.getRawParameterValue (ppm::params::maxOn)->load() < 0.5f) ++failures;
+        // the mix is dull: the plan should lift the top
+        ppm::ChannelSettings eqOnly = plan.eq; eqOnly.hp = 0; eqOnly.lp = 0;
+        std::printf ("    EQ at 8 kHz %+.1f dB, 63 Hz %+.1f dB\n", ppm::channelResponseDb (eqOnly, 8000), ppm::channelResponseDb (eqOnly, 63));
+        if (ppm::channelResponseDb (eqOnly, 8000) < 1.0) ++failures;
+
+        outPeak = 0;
+        guard = 0;
+        while (proc.getAutoState() != PassiveMasterEQProcessor::AutoState::Done && ++guard < 2000) play (3, true);
+        std::printf ("  after the loudness check: %s\n    measured %.1f LUFS, output peak %.2f dBFS (ceiling %.1f), latency %.0f samples\n",
+                     proc.getAutoMessage().toRawUTF8(), proc.getVerifyLufs(), 20 * std::log10 (outPeak), plan.ceiling, lat);
+        if (std::abs (proc.getVerifyLufs() - plan.targetLufs) > 1.0) ++failures;
+        if (20 * std::log10 (outPeak) > plan.ceiling + 0.01) ++failures;
+
+        const juce::File dir (juce::SystemStats::getEnvironmentVariable ("PPM_SNAPSHOT_DIR", juce::File::getSpecialLocation (juce::File::tempDirectory).getFullPathName()));
+        auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+        auto file = dir.getChildFile ("editor_auto.png"); file.deleteFile();
+        { juce::FileOutputStream fos (file); juce::PNGImageFormat().writeImageToStream (img, fos); }
+
+        // genre change re-plans from the same recording
+        setParam (s, ppm::params::amGenre, (float) ppm::automaster::Jazz);
+        proc.autoReapply();
+        while (proc.autoBusy()) juce::Thread::sleep (20);
+        proc.autoMasterTick();
+        const auto jp = proc.getAutoPlan();
+        std::printf ("  JAZZ re-plan: maximizer %+.1f dB, predicted %.1f LUFS (target %.1f)\n", jp.maxGain, jp.predictedLufs, jp.targetLufs);
+        if (! jp.ok || std::abs (jp.predictedLufs - jp.targetLufs) > 0.5) ++failures;
+
+        proc.autoUndo();
+        const bool undone = s.getRawParameterValue (ppm::params::maxOn)->load() < 0.5f
+                         && std::lround (s.getRawParameterValue ("L_c_thresh")->load()) == 0;
+        std::printf ("  UNDO restores the original settings: %s\n", undone ? "yes" : "NO");
+        if (! undone) ++failures;
     }
 
     std::printf ("%s\n", failures ? "FAILED" : "PASSED");

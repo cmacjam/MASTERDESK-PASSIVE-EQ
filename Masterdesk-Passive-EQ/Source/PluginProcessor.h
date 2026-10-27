@@ -6,12 +6,15 @@
 #include "dsp/TubeStage.h"
 #include "dsp/VariMu.h"
 #include "dsp/Loudness.h"
+#include "dsp/KeyShift.h"
+#include "dsp/Maximizer.h"
+#include "dsp/AutoMaster.h"
 
-class PassiveMasterEQProcessor : public juce::AudioProcessor
+class PassiveMasterEQProcessor : public juce::AudioProcessor, private juce::Timer
 {
 public:
     PassiveMasterEQProcessor();
-    ~PassiveMasterEQProcessor() override = default;
+    ~PassiveMasterEQProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -42,6 +45,8 @@ public:
     ppm::ChannelSettings getOwnChannelSettings (int ch) const { return chanParams[ch].read(); }
     ppm::CompSettings getCompSettings (int ch) const;          // honours stereo link
     int getCompOrder() const { return (int) std::lround (orderParam->load()); }
+    bool   isKeyShiftOn() const      { return keyOnParam->load() > 0.5f; }
+    double getKeyShiftSemitones() const { return (double) std::lround (keySemisParam->load()) + std::lround (keyCentsParam->load()) / 100.0; }
     bool isLinked() const { return linkParam->load() > 0.5f; }
     void copyChannel (int fromCh, int toCh);
     int  getOversamplingFactor() const { return 1 << osLog2; }
@@ -53,6 +58,7 @@ public:
         std::atomic<float> outPeak[2] { {0.0f}, {0.0f} };   // peak hold, GUI resets
         std::atomic<float> thd[2]     { {0.0f}, {0.0f} };   // tube harmonics ratio
         std::atomic<float> inPeak     { 0.0f };             // input peak hold, GUI resets
+        std::atomic<float> inLevel[2] { {0.0f}, {0.0f} };   // input peak per channel (after INPUT gain), GUI resets
         std::atomic<float> gr[2]      { {0.0f}, {0.0f} };   // compressor gain reduction, dB
         std::atomic<int>   numChannels { 2 };
     } meters;
@@ -96,10 +102,80 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
+    // AUTO MASTER ---------------------------------------------------------
+    enum class AutoState { Idle, Listening, Analysing, Verifying, Done, Failed };
+    struct AutoPlan
+    {
+        bool   ok = false;
+        int    genre = 0;
+        double amount = 0.6;
+        ppm::automaster::Correction corr;
+        double fitted[ppm::automaster::kOct] {};    // EQ response at the octave centres, dB
+        ppm::ChannelSettings eq;
+        ppm::CompSettings comp;
+        bool   tubeOn = true;
+        double drive = 0.0, maxGain = 0.0, ceiling = -1.0;
+        double inputGainDb = 0.0;                     // INPUT knob setting chosen (gain staging)
+        double inputLufs = -70.0, predictedLufs = -70.0, targetLufs = -10.0, compGrDb = 0.0, limiterGrDb = 0.0;
+        juce::String eqText;
+    };
+    void autoListen();                      // start recording the song (message thread)
+    void autoCancel();
+    void autoReapply();                     // plan again from the recording with the current genre / AMOUNT
+    void autoUndo();                        // back to the settings from before AUTO MASTER
+    bool autoCanUndo() const               { return undoValid; }
+    bool autoHasRecording() const          { return capLen > 0 && capPos.load() >= capLen; }
+    AutoState getAutoState() const         { return autoState.load(); }
+    double autoListenProgress() const      { return capLen > 0 ? juce::jlimit (0.0, 1.0, capPos.load() / (double) capLen) : 0.0; }
+    double autoListenSecondsDone() const   { return capRate > 0 ? capPos.load() / capRate : 0.0; }
+    AutoPlan getAutoPlan() const           { const juce::SpinLock::ScopedLockType sl (planLock); return plan; }
+    juce::String getAutoMessage() const    { const juce::SpinLock::ScopedLockType sl (planLock); return autoMessage; }
+    double getVerifyLufs() const           { return verifyLufs.load(); }
+    void autoMasterTick();                  // runs 10x a second on the message thread (public for tests)
+    bool autoBusy() const                  { return solving.load(); }
+    double listenSeconds = 30.0;            // length of the recording (tests shorten it)
+    double verifySeconds = 8.0;             // how long the loudness check listens after applying
+    float takeMaximizerGr()                { return maxGr.exchange (0.0f); }
+
 private:
+    void timerCallback() override { autoMasterTick(); }
+    void applySettings (const ppm::ChannelSettings&, const ppm::CompSettings&, int order, bool tubeOn, float driveDb);
+    void setParamPlain (const juce::String& id, float plain);
+    AutoPlan solvePlan (int genre, double amount) const;
+    std::vector<float> capL, capR;
+    int capLen = 0;
+    double capRate = 0.0, capInputDb = 0.0;      // INPUT knob position while recording
+    std::atomic<int> capPos { 0 };
+    std::atomic<AutoState> autoState { AutoState::Idle };
+    std::atomic<bool> solving { false }, solveDone { false }, cancelSolve { false };
+    std::atomic<bool> verifyReset { false };
+    std::atomic<float> verifyLufs { -200.0f }, maxGr { 0.0f };
+    std::atomic<int> verifyCount { 0 };
+    int verifyRound = 0;
+    AutoPlan plan, pendingPlan;
+    juce::String autoMessage;
+    juce::SpinLock planLock;
+    juce::ValueTree undoState;
+    bool undoValid = false;
+    juce::ThreadPool pool { 1 };
+    ppm::Maximizer maximizer;
+    ppm::LoudnessMeter verifyMeter;
+    std::atomic<float>* maxOnParam = nullptr;
+    std::atomic<float>* maxGainParam = nullptr;
+    std::atomic<float>* maxCeilParam = nullptr;
+
     ppm::params::ChannelParamPtrs chanParams[2];
     ppm::params::CompParamPtrs compParams[2];
     std::atomic<float>* orderParam = nullptr;
+    std::atomic<float>* inputParam = nullptr;
+    std::atomic<float>* keyOnParam = nullptr;
+    std::atomic<float>* keySemisParam = nullptr;
+    std::atomic<float>* keyCentsParam = nullptr;
+    ppm::KeyShifter keyShifter;
+    bool keyActive = false;            // what the audio path is doing right now
+    int  keyFadeIn = 0, keyFadeLen = 480, baseLatency = 0;
+    void updateLatency();
+    float lastInputGain = 1.0f;
     std::atomic<float>* linkParam  = nullptr;
     std::atomic<float>* tubeOnParam = nullptr;
     std::atomic<float>* driveParam  = nullptr;

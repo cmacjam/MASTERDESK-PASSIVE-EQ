@@ -1277,6 +1277,164 @@ void LoudnessPanel::paint (juce::Graphics& g)
     drawGlassSheen (g, scr);
 }
 
+// -----------------------------------------------------------------------------
+//  KeyPanel
+// -----------------------------------------------------------------------------
+static juce::String keyNameShort (int key)
+{
+    if (key < 0) return "--";
+    return juce::String (ppm::pitchName (key % 12)) + (key >= 12 ? " minor" : " major");
+}
+
+static juce::String keyInfo (int key)
+{
+    if (key < 0) return {};
+    const int sig = ppm::keySignature (key);
+    const juce::String sigText = sig == 0 ? juce::String ("no sharps/flats")
+                               : juce::String (std::abs (sig)) + (sig > 0 ? " sharp" : " flat") + (std::abs (sig) > 1 ? "s" : "");
+    return "Camelot " + juce::String (ppm::camelotNumber (key)) + (key >= 12 ? "A" : "B") + "  |  " + sigText;
+}
+
+KeyPanel::KeyPanel (PassiveMasterEQProcessor& p, const AudioHistory& h)
+    : proc (p), hist (h),
+      semis (p.apvts, ppm::params::keySemis, "SEMITONES", "-12", "+12"),
+      cents (p.apvts, ppm::params::keyCents, "FINE", "-50", "+50")
+{
+    semis.slider.textFromValueFunction = [] (double v) { const int i = (int) std::lround (v); return (i > 0 ? "+" : "") + juce::String (i) + " st"; };
+    cents.slider.textFromValueFunction = [] (double v) { const int i = (int) std::lround (v); return (i > 0 ? "+" : "") + juce::String (i) + " ct"; };
+    semis.refresh(); cents.refresh();
+    semis.setTooltip ("SEMITONES - move the whole song up or down, -12 to +12 semitones (12 = one octave). "
+                      "Switch KEY SHIFT on to hear it. +2 turns A minor into B minor.");
+    cents.setTooltip ("FINE - fine tuning in cents (100 cents = 1 semitone), e.g. to match a track that isn't tuned to A = 440 Hz.");
+    onButton.setTooltip ("KEY SHIFT - switches the key shifter on/off. While on, the plug-in adds 85 ms of latency (your DAW "
+                         "compensates automatically). Best switched while playback is stopped.");
+    relearn.setTooltip ("RELEARN - forget the key heard so far and start detecting again (use it when you load a new song).");
+    onAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::keyOn, onButton);
+    relearn.onClick = [this] { detector.reset(); outKey = detected = {}; repaint(); };
+    for (auto* c : std::initializer_list<juce::Component*> { &semis, &cents, &onButton, &relearn }) addAndMakeVisible (c);
+}
+
+int KeyPanel::getShiftedKey() const
+{
+    if (detected.key < 0) return -1;
+    const int st = proc.isKeyShiftOn() ? (int) std::lround (proc.getKeyShiftSemitones()) : 0;
+    const int mode = detected.key >= 12 ? 12 : 0;
+    return mode + (((detected.key % 12) + st) % 12 + 12) % 12;
+}
+
+void KeyPanel::update (float dt)
+{
+    if (std::abs (hist.sampleRate - detectorRate) > 1.0)
+    {
+        detectorRate = hist.sampleRate;
+        detector.prepare (detectorRate);
+        mono.assign ((size_t) detector.frameSize(), 0.0f);
+    }
+    // analyse ~10 times a second, only when new audio has arrived
+    sinceAnalysis += dt;
+    if (sinceAnalysis >= 0.1f && hist.newSamples > 0)
+    {
+        const int n = detector.frameSize();
+        if (n <= AudioHistory::kSize)
+        {
+            for (int i = 0; i < n; ++i) mono[(size_t) i] = 0.5f * (hist.atL (n - 1 - i) + hist.atR (n - 1 - i));
+            detector.addFrame (mono.data(), sinceAnalysis);
+        }
+        sinceAnalysis = 0.0f;
+        outKey = detector.result();
+        // the analysis hears the plug-in's output: remove the shift to get the song's own key
+        detected = outKey;
+        if (detected.key >= 0 && proc.isKeyShiftOn())
+        {
+            const int st = (int) std::lround (proc.getKeyShiftSemitones());
+            detected.key = (detected.key >= 12 ? 12 : 0) + (((detected.key % 12) - st) % 12 + 12) % 12;
+        }
+    }
+    repaint();
+}
+
+void KeyPanel::resized()
+{
+    screen = getLocalBounds().toFloat().reduced (7.0f);
+    auto r = screen.reduced (10.0f, 6.0f);
+    r.removeFromTop (16.0f);                                   // title
+    display = r.removeFromTop (78.0f);
+    r.removeFromTop (4.0f);
+    auto bottom = r.toNearestInt();
+    auto btns = bottom.removeFromRight (96);
+    onButton.setBounds (btns.removeFromTop (btns.getHeight() / 2).withSizeKeepingCentre (96, 30));
+    relearn.setBounds  (btns.withSizeKeepingCentre (86, 26));
+    bottom.removeFromRight (4);
+    semis.setBounds (bottom.removeFromLeft (bottom.getWidth() / 2));
+    cents.setBounds (bottom);
+}
+
+juce::String KeyPanel::getTooltip()
+{
+    const auto m = getMouseXYRelative().toFloat();
+    if (display.contains (m))
+        return "SONG KEY - the musical key detected from the audio (it listens over the last ~20 seconds, so give it a "
+               "moment on a new song). The bar shows how certain it is. Camelot code is for harmonic mixing; key signature "
+               "is the number of sharps or flats. With KEY SHIFT on, the arrow shows the key you'll hear now.";
+    return "KEY - see the song's key and move it up or down.";
+}
+
+void KeyPanel::paint (juce::Graphics& g)
+{
+    auto scr = drawScreen (g, getLocalBounds().toFloat(), false);
+    draw::engraved (g, "SONG KEY", { scr.getX() + 10, scr.getY() + 3, 120, 13 }, 10.0f,
+                    juce::Justification::centredLeft, col::cream.withAlpha (0.65f));
+
+    auto d = display;
+    // cream readout window
+    g.setColour (juce::Colours::black);
+    g.fillRoundedRectangle (d.expanded (2.0f), 4.0f);
+    juce::ColourGradient paper (col::cream, d.getX(), d.getY(), col::creamDark, d.getX(), d.getBottom(), false);
+    g.setGradientFill (paper);
+    g.fillRoundedRectangle (d, 3.0f);
+
+    auto inner = d.reduced (10.0f, 5.0f);
+    const bool shiftOn = proc.isKeyShiftOn();
+    const bool have = detected.key >= 0;
+    const int shifted = getShiftedKey();
+    const double st = proc.getKeyShiftSemitones();
+
+    auto top = inner.removeFromTop (34.0f);
+    g.setColour (col::ink.withAlpha (have ? 1.0f : 0.4f));
+    g.setFont (serif (have ? 26.0f : 18.0f));
+    if (! have)
+        g.drawText ("listening...", top, juce::Justification::centredLeft);
+    else if (shiftOn && shifted != detected.key)
+    {
+        g.drawText (keyNameShort (detected.key), top.removeFromLeft (top.getWidth() * 0.47f), juce::Justification::centredLeft);
+        g.setColour (juce::Colour (0xffb34a00));
+        g.setFont (serif (20.0f));
+        g.drawText ("->", top.removeFromLeft (26.0f), juce::Justification::centred);
+        g.setFont (serif (24.0f));
+        g.drawText (keyNameShort (shifted), top, juce::Justification::centredLeft);
+    }
+    else
+        g.drawText (keyNameShort (detected.key), top, juce::Justification::centredLeft);
+
+    g.setFont (sans (10.5f, false));
+    g.setColour (col::ink.withAlpha (0.75f));
+    auto info = inner.removeFromTop (16.0f);
+    const juce::String shiftText = shiftOn ? ((st >= 0 ? "  |  shift +" : "  |  shift ") + juce::String (st, 2) + " st") : juce::String();
+    g.drawText (have ? keyInfo (shiftOn ? shifted : detected.key) + shiftText : juce::String ("play some music to detect the key"),
+                info, juce::Justification::centredLeft);
+
+    // certainty bar
+    auto bar = inner.removeFromTop (10.0f).withTrimmedTop (2.0f);
+    g.setFont (sans (9.0f, false));
+    g.drawText ("CERTAINTY", bar.removeFromLeft (62.0f).translated (0, -1.0f), juce::Justification::centredLeft);
+    g.setColour (col::ink.withAlpha (0.15f));
+    g.fillRoundedRectangle (bar, 2.0f);
+    g.setColour (detected.confidence > 0.6 ? juce::Colour (0xff3a8a3a) : (detected.confidence > 0.3 ? juce::Colour (0xffb38600) : juce::Colour (0xffa04030)));
+    g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * (float) juce::jlimit (0.0, 1.0, detected.confidence)), 2.0f);
+
+    drawGlassSheen (g, scr);
+}
+
 // =============================================================================
 //  Tooltip text (the "explained" part, per control)
 // =============================================================================
@@ -1410,6 +1568,7 @@ void BandStrip::resized()
     bw.setBounds   (r.removeFromRight (r.getWidth() / 2).withTrimmedTop (30));
     freq.setBounds (r.withTrimmedTop (30));
 
+    bottom = bottom.withSizeKeepingCentre (juce::jmin (bottom.getWidth(), 300), bottom.getHeight());   // don't stretch on wide windows
     shelf.setBounds (bottom.removeFromRight (76));
     bottom.removeFromRight (6);
     mode.setBounds (bottom);
@@ -1504,10 +1663,329 @@ void CompStrip::resized()
     output.setBounds   (r.removeFromLeft (big));
     mix.setBounds      (r.withTrimmedTop (30));
 
+    switches = switches.withSizeKeepingCentre (juce::jmin (switches.getWidth(), 440), switches.getHeight());
     const int sw = switches.getWidth();
     mode.setBounds   (switches.removeFromLeft (sw * 42 / 100)); switches.removeFromLeft (8);
     scHp.setBounds   (switches.removeFromLeft ((switches.getWidth() - 8) / 2)); switches.removeFromLeft (8);
     compIn.setBounds (switches);
+}
+
+// =============================================================================
+//  AutoMasterPanel  (AUTO MASTER + MAXIMIZER)
+// =============================================================================
+namespace am = ppm::automaster;
+
+AutoMasterPanel::AutoMasterPanel (PassiveMasterEQProcessor& p)
+    : proc (p),
+      amount  (p.apvts, ppm::params::amAmount,   "AMOUNT",  "0", "100"),
+      maxGain (p.apvts, ppm::params::maxGain,    "GAIN",    "-12", "+18"),
+      ceiling (p.apvts, ppm::params::maxCeiling, "CEILING", "-3", "0")
+{
+    for (int g = 0; g < am::kNumGenres; ++g)
+    {
+        const juce::String name = am::genre (g).name;
+        genreButtons[g] = std::make_unique<JewelButton> (name, name, col::amber);
+        genreButtons[g]->setClickingTogglesState (false);
+        genreButtons[g]->onClick = [this, g] { selectGenre (g); };
+        genreButtons[g]->setTooltip (juce::String ("GENRE: ") + name + " - " + am::genre (g).character + ". Target "
+                                     + juce::String (am::genre (g).lufs, 0) + " LUFS. Click to choose; if a song has been "
+                                     "heard already, the master is re-planned for this genre straight away.");
+        addAndMakeVisible (*genreButtons[g]);
+    }
+    amount.slider.textFromValueFunction = [] (double v) { return juce::String ((int) std::lround (v)) + " %"; };
+    maxGain.slider.textFromValueFunction = [] (double v) { return (v > 0 ? "+" : "") + juce::String (v, 1) + " dB"; };
+    ceiling.slider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " dB"; };
+    amount.refresh(); maxGain.refresh(); ceiling.refresh();
+
+    amount.setTooltip ("AMOUNT - how far the EQ moves your mix toward the genre's tonal balance. 50-70 % is a natural "
+                       "starting point; 100 % matches the target curve as closely as the EQ allows (max +/-6 dB per band).");
+    maxGain.setTooltip ("MAXIMIZER GAIN - how hard the music is pushed into the final limiter. More gain = louder, but past "
+                        "about 4-6 dB of limiting the punch starts to go. AUTO MASTER sets this to hit the genre's loudness.");
+    ceiling.setTooltip ("CEILING - the highest peak allowed out of the plug-in (-3 to 0 dBFS). -1.0 dB is the safe choice "
+                        "for streaming (Spotify, Apple Music, YouTube) so the files don't distort when converted to MP3/AAC.");
+    maxOn.setTooltip ("MAXIMIZER - final look-ahead brickwall limiter after the EQ, tubes and compressor. Nothing ever gets "
+                      "above CEILING. Off = it passes the sound untouched.");
+    listen.setTooltip ("LISTEN - press, then play your song (ideally the fullest part, such as a chorus). After 30 seconds of "
+                       "music, AUTO MASTER sets the EQ, tubes, compressor and maximizer for the chosen genre. Press again to stop.");
+    undo.setTooltip ("UNDO - go back to your settings from before AUTO MASTER (good for a before/after comparison).");
+
+    maxOnAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::maxOn, maxOn);
+    listen.onClick = [this]
+    {
+        if (proc.getAutoState() == PassiveMasterEQProcessor::AutoState::Listening) proc.autoCancel();
+        else proc.autoListen();
+    };
+    undo.onClick = [this] { proc.autoUndo(); };
+    for (auto* c : std::initializer_list<juce::Component*> { &amount, &maxGain, &ceiling, &listen, &undo, &maxOn })
+        addAndMakeVisible (c);
+    lastAmount = (int) std::lround (proc.apvts.getRawParameterValue (ppm::params::amAmount)->load());
+}
+
+void AutoMasterPanel::selectGenre (int g)
+{
+    if (auto* prm = proc.apvts.getParameter (ppm::params::amGenre))
+    {
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost (prm->convertTo0to1 ((float) g));
+        prm->endChangeGesture();
+    }
+    const auto st = proc.getAutoState();
+    if (proc.autoHasRecording() && st != PassiveMasterEQProcessor::AutoState::Listening)
+        proc.autoReapply();
+    repaint();
+}
+
+void AutoMasterPanel::update (float dt)
+{
+    using S = PassiveMasterEQProcessor::AutoState;
+    const auto st = proc.getAutoState();
+    const int genreNow = (int) std::lround (proc.apvts.getRawParameterValue (ppm::params::amGenre)->load());
+    for (int g = 0; g < am::kNumGenres; ++g) genreButtons[g]->setToggleState (g == genreNow, juce::dontSendNotification);
+
+    listen.setButtonText (st == S::Listening ? "STOP" : (proc.autoHasRecording() ? "LISTEN AGAIN" : "LISTEN"));
+    listen.setEnabled (st != S::Analysing);
+    undo.setEnabled (proc.autoCanUndo());
+
+    // AMOUNT: re-plan shortly after it stops moving
+    const int amt = (int) std::lround (proc.apvts.getRawParameterValue (ppm::params::amAmount)->load());
+    if (amt != lastAmount) { lastAmount = amt; amountTimer = 0.4f; }
+    else if (amountTimer > 0.0f)
+    {
+        amountTimer -= dt;
+        if (amountTimer <= 0.0f && proc.autoHasRecording() && st != S::Listening && st != S::Analysing && ! amount.slider.isMouseButtonDown())
+            proc.autoReapply();
+    }
+
+    // maximizer gain-reduction meter
+    const float g = proc.takeMaximizerGr();
+    gr = g > gr ? g : gr + (g - gr) * juce::jmin (1.0f, dt * 6.0f);
+    if (g >= grHold) { grHold = g; grHoldTimer = 1.5f; }
+    else if ((grHoldTimer -= dt) <= 0.0f) grHold = juce::jmax (0.0f, grHold - dt * 6.0f);
+    pulse += dt;
+
+    lastState = st;
+    lastGenre = genreNow;
+    maxGain.refresh();
+    repaint();
+}
+
+void AutoMasterPanel::resized()
+{
+    auto r = getLocalBounds().reduced (24, 8);
+    r.removeFromTop (24);                                       // titles
+    auto left = r.removeFromLeft (560);
+    r.removeFromLeft (16);
+    auto right = r.removeFromRight (300);
+    r.removeFromRight (16);
+    display = r.toFloat();
+
+    auto genres = left.removeFromTop (32);
+    genreArea = genres.toFloat();
+    const int gw = genres.getWidth() / am::kNumGenres;
+    for (int g = 0; g < am::kNumGenres; ++g)
+        genreButtons[g]->setBounds (genres.removeFromLeft (gw).reduced (2, 0));
+    left.removeFromTop (6);
+    amount.setBounds (left.removeFromLeft (118));
+    left.removeFromLeft (14);
+    auto btns = left.removeFromLeft (170);
+    listen.setBounds (btns.removeFromTop (btns.getHeight() / 2).withSizeKeepingCentre (164, 44).translated (0, 6));
+    undo.setBounds (btns.withSizeKeepingCentre (120, 30));
+
+    maxArea = right.toFloat();
+    auto mr = right;
+    grMeter = mr.removeFromRight (30).reduced (4, 2).toFloat();
+    mr.removeFromRight (8);
+    maxOn.setBounds (mr.removeFromTop (30).withSizeKeepingCentre (150, 30));
+    mr.removeFromTop (4);
+    maxGain.setBounds (mr.removeFromLeft (mr.getWidth() * 55 / 100));
+    ceiling.setBounds (mr.withTrimmedTop (22));
+}
+
+juce::String AutoMasterPanel::getTooltip()
+{
+    const auto m = getMouseXYRelative().toFloat();
+    if (grMeter.expanded (4).contains (m))
+        return "LIMITING - how many dB the maximizer is turning peaks down right now. Up to 2-3 dB is clean; "
+               "constantly above 5-6 dB starts to flatten the punch.";
+    if (display.contains (m))
+        return "AUTO MASTER DISPLAY - grey: the tonal balance of your mix (octave bands, relative to the mids). Red dashes: "
+               "the genre's target. Green: your mix after the EQ AUTO MASTER chose. Underneath: the moves it made, and the "
+               "loudness before -> after (LUFS).";
+    return "AUTO MASTER - choose a genre, press LISTEN and play the song. It measures your mix's tonal balance and loudness, "
+           "then sets the EQ, tubes, compressor and MAXIMIZER for that style. Everything it sets stays adjustable.";
+}
+
+void AutoMasterPanel::paint (juce::Graphics& g)
+{
+    using S = PassiveMasterEQProcessor::AutoState;
+    auto b = getLocalBounds().toFloat().reduced (24.0f, 8.0f);
+    auto titles = b.removeFromTop (22.0f);
+    draw::engraved (g, "AUTO MASTER", titles.withWidth (560.0f), 14.0f, juce::Justification::centredLeft);
+    draw::engraved (g, "GENRE  >  LISTEN  >  DONE", titles.withX (titles.getX() + 150.0f).withWidth (410.0f), 10.0f,
+                    juce::Justification::centredRight, col::engraveDim.brighter (0.4f));
+    draw::engraved (g, "MAXIMIZER", { maxArea.getX(), titles.getY(), maxArea.getWidth(), 22.0f }, 14.0f, juce::Justification::centred);
+
+    // limiter GR meter (falls downward from the top)
+    {
+        auto m = grMeter;
+        g.setColour (juce::Colours::black); g.fillRoundedRectangle (m.expanded (2.0f), 3.0f);
+        auto inner = m.reduced (2.0f);
+        const float maxDb = 12.0f;
+        const int segs = 24;
+        const float sh = inner.getHeight() / (float) segs;
+        for (int i = 0; i < segs; ++i)
+        {
+            const float db = maxDb * (float) (i + 1) / (float) segs;
+            const bool lit = gr >= db - maxDb / segs * 0.5f;
+            const auto c = db > 6.0f ? col::red : (db > 3.0f ? col::amber : col::yellow);
+            g.setColour (lit ? c : c.withAlpha (0.10f));
+            g.fillRect (inner.getX(), inner.getY() + sh * (float) i + 0.5f, inner.getWidth(), sh - 1.0f);
+        }
+        if (grHold > 0.1f)
+        {
+            g.setColour (col::cream);
+            g.fillRect (inner.getX(), inner.getY() + inner.getHeight() * juce::jmin (1.0f, grHold / maxDb) - 1.0f, inner.getWidth(), 2.0f);
+        }
+        draw::engraved (g, "GR", m.withY (m.getBottom() + 1.0f).withHeight (11.0f).expanded (6.0f, 0), 9.0f);
+        draw::engraved (g, juce::String (gr, 1), m.withY (m.getY() - 13.0f).withHeight (11.0f).expanded (8.0f, 0), 9.0f,
+                        juce::Justification::centred, col::yellow.withAlpha (0.9f));
+    }
+
+    // ---- cream display ---------------------------------------------------------
+    auto d = display;
+    g.setColour (juce::Colours::black);
+    g.fillRoundedRectangle (d.expanded (3.0f), 5.0f);
+    juce::ColourGradient paper (col::cream, d.getX(), d.getY(), col::creamDark, d.getX(), d.getBottom(), false);
+    g.setGradientFill (paper);
+    g.fillRoundedRectangle (d, 4.0f);
+    auto inner = d.reduced (10.0f, 6.0f);
+
+    const auto st = proc.getAutoState();
+    const auto plan = proc.getAutoPlan();
+    const int genreNow = (int) std::lround (proc.apvts.getRawParameterValue (ppm::params::amGenre)->load());
+    const auto& tg = am::genre (genreNow);
+    const bool showPlan = plan.ok && plan.genre == genreNow && st != S::Listening;
+
+    // status line
+    auto status = inner.removeFromTop (16.0f);
+    g.setFont (sans (11.5f));
+    juce::String msg = proc.getAutoMessage();
+    juce::Colour msgCol = col::ink;
+    if (st == S::Idle && msg.isEmpty())
+        msg = "Choose a GENRE, press LISTEN, then play your song.";
+    if (st == S::Listening)
+        msg = "LISTENING...  " + juce::String (proc.autoListenSecondsDone(), 1) + " / " + juce::String (proc.listenSeconds, 0)
+            + " s of music  (play the fullest part of the song)";
+    if (st == S::Analysing) { msg = "ANALYSING your mix for " + juce::String (tg.name) + "..."; msgCol = juce::Colour (0xffb34a00); }
+    if (st == S::Verifying)
+    {
+        const float v = (float) proc.getVerifyLufs();
+        msg = "APPLIED for " + juce::String (tg.name) + "  -  checking loudness while it plays"
+            + (v > -70.0f ? ":  " + juce::String (v, 1) + " LUFS" : juce::String ("..."));
+        msgCol = juce::Colour (0xff2f6f2f);
+    }
+    if (st == S::Done) msgCol = juce::Colour (0xff2f6f2f);
+    if (st == S::Failed) msgCol = juce::Colour (0xffa03020);
+    g.setColour (msgCol);
+    g.drawFittedText (msg, status.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+
+    if (st == S::Listening || st == S::Analysing)
+    {
+        auto bar = inner.removeFromTop (8.0f).withTrimmedTop (2.0f);
+        g.setColour (col::ink.withAlpha (0.15f)); g.fillRoundedRectangle (bar, 2.0f);
+        const float frac = st == S::Analysing ? 0.5f + 0.5f * std::sin (pulse * 6.0f) : (float) proc.autoListenProgress();
+        g.setColour (juce::Colour (0xffb34a00));
+        if (st == S::Analysing) g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * 0.25f).withX (bar.getX() + bar.getWidth() * 0.75f * frac), 2.0f);
+        else g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * frac), 2.0f);
+    }
+    else inner.removeFromTop (8.0f);
+
+    // text lines at the bottom
+    auto lines = inner.removeFromBottom (32.0f);
+    g.setFont (sans (10.5f, false));
+    g.setColour (col::ink.withAlpha (0.85f));
+    auto sgn = [] (double v) { return (v >= 0 ? "+" : "") + juce::String (v, 1); };
+    if (showPlan)
+    {
+        g.drawFittedText ("EQ:  " + plan.eqText, lines.removeFromTop (16.0f).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+        g.drawFittedText ("INPUT " + sgn (plan.inputGainDb) + " dB  |  COMP " + juce::String (ppm::compThresholdDb (plan.comp.threshold), 1)
+                          + " dB (" + juce::String (plan.compGrDb, 1) + " GR)  |  MAX " + sgn (plan.maxGain) + " dB  |  "
+                          + juce::String (plan.inputLufs, 1) + " -> " + juce::String (plan.predictedLufs, 1) + " LUFS",
+                          lines.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+    }
+    else
+    {
+        g.drawFittedText (juce::String (tg.name) + ":  " + tg.character, lines.removeFromTop (16.0f).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+        g.drawFittedText ("Target " + juce::String (tg.lufs, 0) + " LUFS  |  ceiling " + juce::String (tg.ceiling, 1)
+                          + " dBFS  |  tube drive " + sgn (tg.drive) + " dB",
+                          lines.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+    }
+
+    // ---- chart: octave bands ---------------------------------------------------
+    chart = inner.reduced (0.0f, 2.0f);
+    auto legendRow = chart.removeFromTop (12.0f);
+    auto c = chart.withTrimmedLeft (26.0f).withTrimmedBottom (12.0f);
+    const float range = 15.0f;
+    auto yOf = [&] (double db) { return c.getCentreY() - (float) juce::jlimit (-1.0, 1.0, db / range) * c.getHeight() * 0.5f; };
+    auto xOf = [&] (int band) { return c.getX() + c.getWidth() * ((float) band + 0.5f) / (float) am::kOct; };
+    g.setColour (col::ink.withAlpha (0.08f));
+    g.fillRect (c);
+    g.setFont (sans (8.5f, false));
+    for (double db : { -10.0, 0.0, 10.0 })
+    {
+        g.setColour (col::ink.withAlpha (std::abs (db) < 0.1 ? 0.35f : 0.15f));
+        g.drawHorizontalLine ((int) yOf (db), c.getX(), c.getRight());
+        g.setColour (col::ink.withAlpha (0.6f));
+        g.drawText ((db > 0 ? "+" : "") + juce::String ((int) db), juce::Rectangle<float> (chart.getX(), yOf (db) - 6.0f, 22.0f, 12.0f),
+                    juce::Justification::centredRight);
+    }
+    static const char* labels[am::kOct] = { "31", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k" };
+    for (int i = 0; i < am::kOct; ++i)
+        g.drawText (labels[i], juce::Rectangle<float> (xOf (i) - 16.0f, c.getBottom() + 1.0f, 32.0f, 11.0f), juce::Justification::centred);
+
+    auto drawCurve = [&] (const double* v, juce::Colour colr, float thick, bool dashed, bool dots)
+    {
+        juce::Path pth;
+        for (int i = 0; i < am::kOct; ++i)
+        {
+            const juce::Point<float> pt (xOf (i), yOf (v[i]));
+            if (i == 0) pth.startNewSubPath (pt); else pth.lineTo (pt);
+        }
+        g.setColour (colr);
+        if (dashed)
+        {
+            juce::Path dash; const float pat[] = { 6.0f, 4.0f };
+            juce::PathStrokeType (thick).createDashedStroke (dash, pth, pat, 2);
+            g.fillPath (dash);
+        }
+        else g.strokePath (pth, juce::PathStrokeType (thick, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        if (dots) for (int i = 0; i < am::kOct; ++i) g.fillEllipse (xOf (i) - 2.5f, yOf (v[i]) - 2.5f, 5.0f, 5.0f);
+    };
+
+    double target[am::kOct];
+    for (int i = 0; i < am::kOct; ++i) target[i] = tg.curve[i] - am::midRef (tg.curve);
+    if (showPlan)
+    {
+        double after[am::kOct];
+        for (int i = 0; i < am::kOct; ++i) after[i] = plan.corr.measuredRel[i] + plan.fitted[i];
+        drawCurve (plan.corr.measuredRel, col::ink.withAlpha (0.45f), 2.0f, false, true);
+        drawCurve (target, juce::Colour (0xffc0392b), 1.8f, true, false);
+        drawCurve (after, juce::Colour (0xff2f8f3a), 2.4f, false, true);
+    }
+    else drawCurve (target, juce::Colour (0xffc0392b), 1.8f, true, false);
+
+    // legend
+    auto lg = legendRow.withTrimmedLeft (26.0f);
+    g.setFont (sans (9.0f));
+    auto key = [&] (juce::Colour colr, const char* text)
+    {
+        g.setColour (colr); g.fillRect (lg.getX(), lg.getCentreY() - 1.0f, 12.0f, 2.5f);
+        g.setColour (col::ink.withAlpha (0.75f)); g.drawText (text, lg.withTrimmedLeft (15.0f), juce::Justification::centredLeft);
+        lg.removeFromLeft (15.0f + (float) juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), text) + 12.0f);
+    };
+    if (showPlan) key (col::ink.withAlpha (0.45f), "YOUR MIX");
+    key (juce::Colour (0xffc0392b), (juce::String (tg.name) + " TARGET").toRawUTF8());
+    if (showPlan) key (juce::Colour (0xff2f8f3a), "AFTER EQ");
 }
 
 // =============================================================================
@@ -1518,7 +1996,7 @@ HelpOverlay::HelpOverlay() { setInterceptsMouseClicks (true, false); }
 void HelpOverlay::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colours::black.withAlpha (0.72f));
-    auto card = getLocalBounds().toFloat().reduced (40.0f, 30.0f).withSizeKeepingCentre ((float) getWidth() - 80.0f, 770.0f);
+    auto card = getLocalBounds().toFloat().reduced (40.0f, 30.0f).withSizeKeepingCentre ((float) getWidth() - 80.0f, 960.0f);
     juce::ColourGradient paper (col::cream, card.getX(), card.getY(), col::creamDark, card.getX(), card.getBottom(), false);
     g.setGradientFill (paper);
     g.fillRoundedRectangle (card, 8.0f);
@@ -1540,17 +2018,18 @@ void HelpOverlay::paint (juce::Graphics& g)
           "VU LEFT / RIGHT show your average output level. Aim around 0 VU (= -18 dBFS RMS); the needle moves like a real VU. "
           "The orange lamp under each meter flashes when peaks go above -1 dBFS.\n"
           "HARMONICS shows how much tube colour is being added, in % THD. Below 0.3 % is a subtle sheen; the red zone (1 %+) is obvious saturation." },
-        { "1b  SPECTRUM, VECTORSCOPE, LOUDNESS (second row)",
-          "SPECTRUM: 31 bars (25 Hz - 16 kHz) moving with your output; cream caps hold recent peaks.  VECTORSCOPE: tall cloud = "
-          "centred, wide = stereo; bottom meter is phase correlation (keep it above 0 for mono safety).  LOUDNESS: pick a TARGET, "
-          "press RESET, play the song; INTEGRATED goes green within 1 LU of target. Keep TRUE PEAK MAX at -1 dBTP or lower." },
+        { "1b  SPECTRUM, KEY, VECTORSCOPE, LOUDNESS (second row)",
+          "SPECTRUM: 31 bars moving with your output.  SONG KEY: the detected key (give it ~20 s); SEMITONES / FINE + KEY SHIFT "
+          "move the song to a new key (adds 85 ms latency while on).  VECTORSCOPE: stereo image; keep correlation above 0.  "
+          "LOUDNESS: pick a TARGET, press RESET, play the song; keep TRUE PEAK MAX at -1 dBTP or lower." },
         { "2  LAMPS & TUBES",
           "SIGNAL (green) = audio is coming in.  LINK (yellow) = right channel follows left.  "
           "CLIP (red) = output went over 0 dBFS - turn down GAIN TRIM or your boosts.  TUBE (amber) = tube stage on.\n"
           "The glass tubes glow when the tube stage is on and get brighter with level and DRIVE." },
-        { "3  TUBE & DRIVE",
-          "TUBE ON/OFF switches the tube make-up stage. DRIVE pushes the signal harder into the tubes for more warmth; "
-          "loudness stays the same, so you hear colour, not just 'louder'." },
+        { "3  INPUT, TUBE & DRIVE",
+          "INPUT (top left) sets how much signal comes in, -24 to +24 dB, before everything else; the meter under it shows the "
+          "level - aim for peaks around -6 dBFS.  TUBE ON/OFF switches the tube stage; DRIVE pushes it harder for more warmth "
+          "(loudness stays the same)." },
         { "4  THE FOUR EQ BANDS (each channel)",
           "LOW 22 Hz-1 kHz, LOW MID 82 Hz-3.9 kHz, HIGH MID 220 Hz-10 kHz, HIGH 560 Hz-27 kHz. The ranges overlap on purpose.\n"
           "FREQUENCY picks the spot.  GAIN sets how much (0 = nothing; the cream window shows the real dB).  "
@@ -1564,9 +2043,10 @@ void HelpOverlay::paint (juce::Graphics& g)
           "HIGH PASS (12-39 Hz) clears rumble.  LOW PASS (15-52 kHz) softens the extreme top.  "
           "GAIN TRIM sets output level in exact 0.5 dB steps - use it to match loudness when comparing.  "
           "EQ IN / OUT bypasses the EQ for a quick before/after." },
-        { "7  STEREO",
-          "LINK keeps both sides identical (the right-hand row dims). Unlink to treat left and right separately - "
-          "the right side starts from the left side's settings. L > R and R > L copy one side to the other." },
+        { "7  STEREO & WINDOW",
+          "LINK keeps both sides identical; unlink to treat left and right separately. L > R / R > L copy one side to the other.  "
+          "WINDOW: drag the bottom-right corner to resize - everything scales together. MINI shows just the meters; "
+          "FULL PANEL brings everything back. FULL SCREEN fills the screen (press EXIT FULL to go back)." },
         { "8  VARI-MU COMPRESSOR (bottom panel)",
           "A tube 'variable-mu' compressor: very soft knee, and the ratio rises the harder you push (about 1.5:1 up to 4:1), "
           "so it levels without sounding squashed.  THRESHOLD: where it starts (turn down until the GAIN REDUCTION needle moves "
@@ -1576,7 +2056,13 @@ void HelpOverlay::paint (juce::Graphics& g)
           "COMPRESS / LIMIT: soft leveling or firmer peak control.  SC HP: the detector ignores bass below 100 Hz so the kick "
           "doesn't pump the mix.  COMP IN: bypass for comparison.  ORDER: EQ > COMP (usual) or COMP > EQ.  "
           "LINK also links the compressor, so both sides always move together and the stereo image stays put." },
-        { "10  QUICK START",
+        { "10  AUTO MASTER & MAXIMIZER (above the footer)",
+          "Pick a GENRE (POP, JAZZ, 70'S, 80'S, 90'S, R&B, HIP HOP), press LISTEN and play the song - its fullest part is best. "
+          "After 30 s of music it measures your mix's tonal balance and loudness and sets the EQ (broad moves toward the genre's "
+          "curve, scaled by AMOUNT), INPUT level, tubes, compressor and MAXIMIZER, then checks the real loudness while the song plays.  "
+          "Click another genre or move AMOUNT to re-plan instantly; UNDO restores your own settings.  "
+          "MAXIMIZER: GAIN pushes into a look-ahead limiter; nothing passes CEILING (use -1 dB for streaming)." },
+        { "11  QUICK START",
           "Pick a preset, or: HIGH PASS 16-23 Hz.  HIGH band 16k SHELF, WIDE, +1 to +2 dB for air.  LOW band 47-68 Hz BELL, small "
           "boost for weight.  Then lower THRESHOLD until you see 1-2 dB of gain reduction, ATTACK 25 ms, RECOVERY 0.8 s, "
           "and set OUTPUT to match.  Toggle EQ IN and COMP IN to compare at equal loudness." },
@@ -1588,7 +2074,7 @@ void HelpOverlay::paint (juce::Graphics& g)
     auto colB = r;
     for (int i = 0; i < (int) std::size (sections); ++i)
     {
-        auto& col = i < 5 ? colA : colB;
+        auto& col = i < 6 ? colA : colB;
         juce::AttributedString s;
         s.append (juce::String (sections[i].title) + "\n", serif (19.0f), col::ink);
         s.append (sections[i].body, sans (15.0f, false), juce::Colour (0xff3a332a));
@@ -1604,12 +2090,72 @@ void HelpOverlay::paint (juce::Graphics& g)
 // =============================================================================
 static constexpr float kScales[] = { 0.6f, 0.7f, 0.85f, 1.0f };
 
+// =============================================================================
+//  InputMeter
+// =============================================================================
+void InputMeter::setLevels (float peakL, float peakR, float dt)
+{
+    const float in[2] = { peakL, peakR };
+    for (int c = 0; c < 2; ++c)
+    {
+        const float db = juce::Decibels::gainToDecibels (in[c], -80.0f);
+        level[c] = db > level[c] ? db : juce::jmax (db, level[c] - 30.0f * dt);   // fast up, 30 dB/s down
+        if (level[c] >= hold[c]) { hold[c] = level[c]; holdTimer[c] = 2.0f; }
+        else if ((holdTimer[c] -= dt) <= 0.0f) hold[c] = juce::jmax (level[c], hold[c] - 20.0f * dt);
+    }
+    repaint();
+}
+
+void InputMeter::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (juce::Colours::black);
+    g.fillRoundedRectangle (r, 4.0f);
+    draw::chromeRing (g, r, 1.4f);
+    auto in = r.reduced (6.0f, 5.0f);
+    auto label = in.removeFromLeft (10.0f);
+    const float lo = -48.0f, hi = 0.0f;
+    const int nSeg = 24;
+    for (int c = 0; c < 2; ++c)
+    {
+        auto row = in.removeFromTop (in.getHeight() / (float) (2 - c));
+        g.setFont (sans (8.5f));
+        g.setColour (col::engraveDim.brighter (0.4f));
+        g.drawText (c == 0 ? "L" : "R", label.withY (row.getY()).withHeight (row.getHeight()), juce::Justification::centredLeft);
+        row = row.reduced (0, 1.5f);
+        const float w = row.getWidth() / (float) nSeg;
+        for (int i = 0; i < nSeg; ++i)
+        {
+            const float segDb = lo + (hi - lo) * (float) (i + 1) / (float) nSeg;
+            const auto base = segDb > -1.0f ? col::red : (segDb > -6.0f ? col::amber : col::green);
+            const bool lit = level[c] >= segDb - (hi - lo) / (float) nSeg * 0.5f;
+            g.setColour (lit ? base : base.withAlpha (0.10f));
+            g.fillRect (row.getX() + w * (float) i + 0.6f, row.getY(), w - 1.2f, row.getHeight());
+        }
+        if (hold[c] > lo)
+        {
+            const float x = row.getX() + row.getWidth() * juce::jlimit (0.0f, 1.0f, (hold[c] - lo) / (hi - lo));
+            g.setColour (juce::Colours::white);
+            g.fillRect (x - 1.0f, row.getY(), 2.0f, row.getHeight());
+        }
+    }
+}
+
+void Faceplate::setCompact (bool c)
+{
+    compact = c;
+    miniButton.setButtonText (c ? "FULL PANEL" : "MINI");
+    resized();
+    repaint();
+}
+
 Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     : proc (p),
       orderSwitch (p.apvts, ppm::params::compOrder, { "EQ > COMP", "COMP > EQ" }, { col::amber, col::amber }),
-      drive (p.apvts, ppm::params::tubeDrive, "DRIVE", "-6", "+18")
+      drive (p.apvts, ppm::params::tubeDrive, "DRIVE", "-6", "+18"),
+      inputKnob (p.apvts, ppm::params::inputGain, "INPUT", "-24", "+24")
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &vuL, &vuR, &harm, &tube1, &tube2, &lampSignal, &lampLink, &lampClip, &lampTube, &analyzer, &vectorscope, &loudnessPanel })
+    for (auto* c : std::initializer_list<juce::Component*> { &vuL, &vuR, &harm, &tube1, &tube2, &lampSignal, &lampLink, &lampClip, &lampTube, &analyzer, &vectorscope, &loudnessPanel, &keyPanel, &autoPanel })
         addAndMakeVisible (c);
 
     for (int ch = 0; ch < 2; ++ch)
@@ -1672,7 +2218,18 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     sizeBox.setTooltip ("WINDOW SIZE - scale the whole panel. You can also drag the window corner.");
 
     orderSwitch.setTooltip (tips::order);
-    for (auto* c : std::initializer_list<juce::Component*> { &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch })
+    inputKnob.slider.textFromValueFunction = [] (double v) { return (v > 0 ? "+" : "") + juce::String (v, 1) + " dB"; };
+    inputKnob.refresh();
+    inputKnob.setTooltip ("INPUT - how much signal comes into the Masterdesk (-24 to +24 dB), before the EQ, tubes and compressor. "
+                          "Use it to hit the tube stage and compressor at the right level: aim for peaks around -6 dBFS on the meter below. "
+                          "Double-click to reset to 0 dB.");
+    inputMeter.setTooltip ("INPUT METER - peak level after the INPUT knob, left (top) and right (bottom). Green = fine, "
+                           "amber = above -6 dBFS, red = above -1 dBFS. The white tick holds the peak for 2 seconds.");
+    fullButton.setTooltip ("FULL SCREEN - fill the screen with the Masterdesk. Press again (EXIT FULL) to go back to the previous size.");
+    miniButton.setTooltip ("MINI - shrink to a compact metering view (VU, harmonics, spectrum, vectorscope, loudness). Press FULL PANEL to bring the EQ and compressor back.");
+    fullButton.onClick = [this] { if (onToggleFullScreen) onToggleFullScreen(); };
+    miniButton.onClick = [this] { if (onToggleCompact) onToggleCompact(); };
+    for (auto* c : std::initializer_list<juce::Component*> { &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
         addAndMakeVisible (c);
     addChildComponent (help);
 
@@ -1712,11 +2269,18 @@ void Faceplate::timerCallback()
     analyzer.update (dt);
     vectorscope.update (dt);
     loudnessPanel.update();
+    keyPanel.update (dt);
+    if (! compact) autoPanel.update (dt);
     auto& m = proc.meters;
     const bool linked = proc.isLinked();
     const bool tubeOn = proc.apvts.getRawParameterValue (ppm::params::tubeOn)->load() > 0.5f;
     const float driveDb = proc.apvts.getRawParameterValue (ppm::params::tubeDrive)->load();
     const int nCh = m.numChannels.load();
+
+    // input meter
+    inputMeter.setLevels (simulated ? m.inLevel[0].load() : m.inLevel[0].exchange (0.0f),
+                          simulated ? m.inLevel[1].load() : (nCh > 1 ? m.inLevel[1].exchange (0.0f) : m.inLevel[0].load()), dt);
+
 
     // --- meters -------------------------------------------------------------
     auto toVu = [] (float rms) { return 20.0f * std::log10 (juce::jmax (rms, 1e-6f)) + 18.0f; };
@@ -1777,10 +2341,13 @@ void Faceplate::paint (juce::Graphics& g)
 
     draw::plate (g, topPlate, metal);
     draw::plate (g, curvePlate, metal, false);
+    draw::plate (g, footerPlate, metal);
+    if (! compact)
+    {
     draw::plate (g, rowPlates[0], metal);
     draw::plate (g, rowPlates[1], metal);
-    draw::plate (g, footerPlate, metal);
     draw::plate (g, compPlate, metal);
+    draw::plate (g, autoPlate, metal);
     {
         auto head = compPlate.reduced (30.0f, 10.0f).withHeight (22.0f);
         draw::engraved (g, "VARI-MU TUBE COMPRESSOR", head, 14.0f, juce::Justification::centred);
@@ -1803,6 +2370,7 @@ void Faceplate::paint (juce::Graphics& g)
         draw::engraved (g, ch == 0 ? "LEFT CHANNEL" : (proc.isLinked() ? "RIGHT  (LINKED)" : "RIGHT CHANNEL"),
                         juce::Rectangle<float> (180, 20).withCentre (r.getCentre()), 12.0f, juce::Justification::centred, c);
     }
+    }   // ! compact
 
     // lamp + tube legends on the top plate
     draw::engraved (g, "TUBE STAGE", tube1.getBounds().getUnion (tube2.getBounds()).toFloat().withHeight (14).translated (0, -16), 10.0f);
@@ -1826,7 +2394,7 @@ void Faceplate::paint (juce::Graphics& g)
         juce::ColourGradient goldText (juce::Colour (0xfff3dca0), p.getX(), top.getY() + 4, juce::Colour (0xffa8833e), p.getX(), top.getBottom(), false);
         g.setGradientFill (goldText);
         g.drawText ("BASEMENTAL MASTERDESK", top, juce::Justification::centred);
-        draw::engraved (g, "PASSIVE EQ  +  VARI-MU COMPRESSOR", p.withTrimmedTop (p.getHeight() * 0.6f).withTrimmedBottom (4.0f), 9.5f,
+        draw::engraved (g, "PASSIVE EQ  +  VARI-MU  +  AUTO MASTER", p.withTrimmedTop (p.getHeight() * 0.6f).withTrimmedBottom (4.0f), 9.5f,
                         juce::Justification::centred, col::brass.withAlpha (0.8f));
     }
 }
@@ -1836,41 +2404,56 @@ void Faceplate::resized()
     metal = draw::makeBrushedMetal (getWidth(), getHeight());
     auto r = getLocalBounds().toFloat().reduced (14.0f);
 
-    // ---------------- top plate: meters, tubes, lamps, drive -----------------
+    // ---------------- top plate: input, meters, tubes, lamps, drive ---------
     topPlate = r.removeFromTop (236.0f);
     {
-        auto t = topPlate.reduced (26.0f, 18.0f).toNearestInt();
-        vuL.setBounds (t.removeFromLeft (310));
-        t.removeFromLeft (16);
-        vuR.setBounds (t.removeFromLeft (310));
-        t.removeFromLeft (16);
-        harm.setBounds (t.removeFromLeft (250).withSizeKeepingCentre (250, 172));
-        t.removeFromLeft (14);
+        auto t = topPlate.reduced (22.0f, 18.0f).toNearestInt();
+        auto inCol = t.removeFromLeft (100);
+        inputKnob.setBounds (inCol.removeFromTop (150));
+        inCol.removeFromTop (6);
+        inputMeter.setBounds (inCol.removeFromTop (40));
+        t.removeFromLeft (12);
 
-        auto driveCol = t.removeFromRight (110);
+        // meters grow a little when the window is made wider
+        const int extra = juce::jmax (0, t.getWidth() - 1080);
+        const int vuW = juce::jmin (330, 286 + extra / 6), harmW = juce::jmin (260, 226 + extra / 8);
+        vuL.setBounds (t.removeFromLeft (vuW));
+        t.removeFromLeft (12);
+        vuR.setBounds (t.removeFromLeft (vuW));
+        t.removeFromLeft (12);
+        harm.setBounds (t.removeFromLeft (harmW).withSizeKeepingCentre (harmW, juce::jmin (172, t.getHeight())));
+        t.removeFromLeft (12);
+
+        auto driveCol = t.removeFromRight (106);
         drive.setBounds (driveCol.removeFromTop (138));
         driveCol.removeFromTop (8);
         tubeButton.setBounds (driveCol.removeFromTop (32));
 
-        auto lampCol = t.removeFromRight (64);
+        auto lampCol = t.removeFromRight (60);
         const int lampH = lampCol.getHeight() / 4;
         for (auto* lamp : { &lampSignal, &lampLink, &lampClip, &lampTube })
             lamp->setBounds (lampCol.removeFromTop (lampH));
 
+        // the two tubes stay together as a pair, centred in whatever space is left
         auto tubes = t.withTrimmedTop (22);
-        const int tw = juce::jmin (62, tubes.getWidth() / 2 - 4);
-        tube1.setBounds (tubes.removeFromLeft (tubes.getWidth() / 2).withSizeKeepingCentre (tw, tubes.getHeight() - 6));
-        tube2.setBounds (tubes.withSizeKeepingCentre (tw, tubes.getHeight() - 6));
+        const int tw = juce::jlimit (30, 62, tubes.getWidth() / 2 - 8);
+        auto pair = tubes.withSizeKeepingCentre (juce::jmin (tubes.getWidth(), 2 * tw + 16), tubes.getHeight());
+        tube1.setBounds (pair.removeFromLeft (tw).withTrimmedBottom (6));
+        tube2.setBounds (pair.removeFromRight (tw).withTrimmedBottom (6));
     }
     r.removeFromTop (10.0f);
 
     // ---------------- response curve ----------------------------------------
-    curvePlate = r.removeFromTop (238.0f);
+    // in the MINI view the displays take whatever height is left above the footer
+    curvePlate = compact ? r.withTrimmedBottom (72.0f) : r.removeFromTop (238.0f);
+    if (compact) r.removeFromTop (curvePlate.getHeight());
     {
         auto d = curvePlate.reduced (8.0f).toNearestInt();
-        analyzer.setBounds (d.removeFromLeft (d.getWidth() * 43 / 100));
+        analyzer.setBounds (d.removeFromLeft (d.getWidth() * 31 / 100));
         d.removeFromLeft (8);
-        vectorscope.setBounds (d.removeFromLeft (238));
+        keyPanel.setBounds (d.removeFromLeft (300));
+        d.removeFromLeft (8);
+        vectorscope.setBounds (d.removeFromLeft (232));
         d.removeFromLeft (8);
         loudnessPanel.setBounds (d);
     }
@@ -1884,18 +2467,36 @@ void Faceplate::resized()
         linkButton.setBounds (bar.removeFromLeft (130)); bar.removeFromLeft (10);
         copyLR.setBounds (bar.removeFromLeft (76));      bar.removeFromLeft (8);
         copyRL.setBounds (bar.removeFromLeft (76));      bar.removeFromLeft (18);
-        helpButton.setBounds (bar.removeFromLeft (92));
+        helpButton.setBounds (bar.removeFromLeft (92));  bar.removeFromLeft (8);
+        miniButton.setBounds (bar.removeFromLeft (84));  bar.removeFromLeft (8);
+        fullButton.setBounds (bar.removeFromLeft (124));
         nameplate  = f.removeFromRight (310.0f).withSizeKeepingCentre (310.0f, 48.0f);
-        auto mid = f.withTrimmedLeft ((float) (helpButton.getRight() - f.getX() + 14)).withTrimmedRight (16.0f).toNearestInt();
+        auto mid = f.withTrimmedLeft ((float) (fullButton.getRight() - f.getX() + 14)).withTrimmedRight (16.0f).toNearestInt();
         sizeBox.setBounds (mid.removeFromRight (84).withSizeKeepingCentre (84, 30));
         mid.removeFromRight (44);
         presetLabel = mid.removeFromLeft (52).toFloat();
         mid.removeFromLeft (8);
-        presetBox.setBounds (mid.withSizeKeepingCentre (mid.getWidth(), 30));
+        presetBox.setBounds (mid.withWidth (juce::jmin (mid.getWidth(), 380)).withSizeKeepingCentre (juce::jmin (mid.getWidth(), 380), 30));
     }
     r.removeFromBottom (10.0f);
 
-    // ---------------- variable-mu compressor (bottom) ----------------------------
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        for (int b = 0; b < kNumBands; ++b) bands[ch][b]->setVisible (! compact);
+        centers[ch]->setVisible (! compact);
+        comps[ch]->setVisible (! compact);
+    }
+    orderSwitch.setVisible (! compact);
+    autoPanel.setVisible (! compact);
+    linkButton.setVisible (! compact); copyLR.setVisible (! compact); copyRL.setVisible (! compact);
+    if (compact) { help.setBounds (getLocalBounds()); return; }
+
+    // ---------------- AUTO MASTER + MAXIMIZER (above the footer) --------------------
+    autoPlate = r.removeFromBottom (200.0f);
+    autoPanel.setBounds (autoPlate.toNearestInt());
+    r.removeFromBottom (10.0f);
+
+    // ---------------- variable-mu compressor ----------------------------------------
     compPlate = r.removeFromBottom (262.0f);
     {
         auto c = compPlate.reduced (26.0f, 10.0f).toNearestInt();
@@ -1943,31 +2544,113 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
             if (Faceplate::kH * sc <= area.getHeight() * 0.92f && Faceplate::kW * sc <= area.getWidth() * 0.95f)
                 fit = sc;
     }
-    const float scale = juce::jlimit (0.5f, 1.25f, (float) proc.apvts.state.getProperty ("uiScale", fit));
+    const float scale = juce::jlimit (0.45f, 1.6f, (float) proc.apvts.state.getProperty ("uiScale", fit));
+    face.setCompact ((bool) proc.apvts.state.getProperty ("uiCompact", false));
 
     setLookAndFeel (&laf);
     addAndMakeVisible (face);
-    face.setBounds (0, 0, Faceplate::kW, Faceplate::kH);
+    face.setBounds (0, 0, Faceplate::kW, designH());
 
-    const double aspect = (double) Faceplate::kW / Faceplate::kH;
     setResizable (true, true);
-    setResizeLimits (juce::roundToInt (Faceplate::kW * 0.5), juce::roundToInt (Faceplate::kH * 0.5),
-                     juce::roundToInt (Faceplate::kW * 1.25), juce::roundToInt (Faceplate::kH * 1.25));
-    getConstrainer()->setFixedAspectRatio (aspect);
+    updateLimits();
 
-    face.onScaleRequested = [this] (float s)
-    { setSize (juce::roundToInt (Faceplate::kW * s), juce::roundToInt (Faceplate::kH * s)); };
+    face.onScaleRequested   = [this] (float sc) { setSize (juce::roundToInt (Faceplate::kW * sc), juce::roundToInt (designH() * sc)); };
+    face.onToggleFullScreen = [this] { toggleFullScreen(); };
+    face.onToggleCompact    = [this] { toggleCompact(); };
 
-    setSize (juce::roundToInt (Faceplate::kW * scale), juce::roundToInt (Faceplate::kH * scale));
+    setSize (juce::roundToInt (Faceplate::kW * scale), juce::roundToInt (designH() * scale));
     sizeRestored = true;
 }
 
 PassiveMasterEQEditor::~PassiveMasterEQEditor() { setLookAndFeel (nullptr); }
 
+void PassiveMasterEQEditor::updateLimits()
+{
+    // Everything scales together, so the panel always keeps its proportions.
+    // In a DAW the corner drag is locked to the panel's shape. In the standalone app the window
+    // may take any shape (e.g. full screen); the panel is then centred at the largest size that fits.
+    setResizeLimits (juce::roundToInt (Faceplate::kW * 0.45), juce::roundToInt (designH() * 0.45),
+                     juce::roundToInt (Faceplate::kW * 3.0), juce::roundToInt (designH() * 3.0));
+    const bool standalone = proc.wrapperType == juce::AudioProcessor::wrapperType_Standalone;
+    getConstrainer()->setFixedAspectRatio (standalone ? 0.0 : (double) Faceplate::kW / (double) designH());
+}
+
+void PassiveMasterEQEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colour (0xff0b0b0c));         // shows only around the panel when the window is a different shape
+}
+
 void PassiveMasterEQEditor::resized()
 {
-    const float scale = (float) getWidth() / (float) Faceplate::kW;
-    face.setTransform (juce::AffineTransform::scale (scale));
-    if (sizeRestored) proc.apvts.state.setProperty ("uiScale", scale, nullptr);
+    // one uniform scale for the whole panel, centred in the window
+    const float scale = juce::jmin ((float) getWidth() / (float) Faceplate::kW, (float) getHeight() / (float) designH());
+    face.setBounds (0, 0, Faceplate::kW, designH());
+    const float offX = ((float) getWidth()  - (float) Faceplate::kW * scale) * 0.5f;
+    const float offY = ((float) getHeight() - (float) designH() * scale) * 0.5f;
+    face.setTransform (juce::AffineTransform::scale (scale).translated (offX, offY));
+    if (sizeRestored && ! pluginFullScreen && (standaloneWindow() == nullptr || ! standaloneWindow()->isFullScreen()))
+        proc.apvts.state.setProperty ("uiScale", scale, nullptr);
     face.setScaleChoice (scale);
+}
+
+juce::DocumentWindow* PassiveMasterEQEditor::standaloneWindow() const
+{
+    return proc.wrapperType == juce::AudioProcessor::wrapperType_Standalone ? findParentComponentOfClass<juce::DocumentWindow>() : nullptr;
+}
+
+void PassiveMasterEQEditor::parentHierarchyChanged()
+{
+    // Standalone app: give its window the normal green full-screen / zoom button
+    // (JUCE's default standalone window only has close + minimise).
+    if (standaloneSetupDone) return;
+    if (auto* w = standaloneWindow())
+    {
+        standaloneSetupDone = true;
+        juce::Component::SafePointer<juce::DocumentWindow> safe (w);
+        juce::MessageManager::callAsync ([safe]
+        {
+            if (safe == nullptr) return;
+            safe->setTitleBarButtonsRequired (juce::DocumentWindow::allButtons, false);
+            safe->setResizable (true, false);      // re-creates the native window with the new buttons
+        });
+    }
+}
+
+void PassiveMasterEQEditor::toggleFullScreen()
+{
+    if (auto* w = standaloneWindow())                  // standalone: real full screen
+    {
+        const bool fs = ! w->isFullScreen();
+        w->setFullScreen (fs);
+        face.setFullScreenState (fs);
+        return;
+    }
+
+    // Inside a DAW the window belongs to the host, so fill the screen with the plug-in instead
+    if (! pluginFullScreen)
+    {
+        sizeBeforeFull = getBounds();
+        auto area = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds())->userArea;
+        pluginFullScreen = true;
+        // largest size with the panel's proportions; leave room for the host's window header
+        const float sc = juce::jmin ((float) (area.getWidth() - 20) / (float) Faceplate::kW,
+                                     (float) (area.getHeight() - 110) / (float) designH());
+        setSize (juce::roundToInt (Faceplate::kW * sc), juce::roundToInt (designH() * sc));
+    }
+    else
+    {
+        pluginFullScreen = false;
+        setSize (sizeBeforeFull.getWidth(), sizeBeforeFull.getHeight());
+    }
+    face.setFullScreenState (pluginFullScreen);
+}
+
+void PassiveMasterEQEditor::toggleCompact()
+{
+    const float scale = juce::jmin ((float) getWidth() / (float) Faceplate::kW, (float) getHeight() / (float) designH());
+    face.setCompact (! face.isCompact());
+    proc.apvts.state.setProperty ("uiCompact", face.isCompact(), nullptr);
+    updateLimits();
+    setSize (juce::roundToInt (Faceplate::kW * scale), juce::roundToInt (designH() * scale));     // same zoom, new height
+    resized();
 }

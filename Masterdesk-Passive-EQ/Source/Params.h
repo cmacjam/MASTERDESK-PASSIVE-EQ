@@ -22,6 +22,15 @@ inline const juce::String link      { "link" };
 inline const juce::String tubeOn    { "tube_on" };
 inline const juce::String tubeDrive { "tube_drive" };
 inline const juce::String compOrder { "comp_order" };   // 0 = EQ > COMP, 1 = COMP > EQ
+inline const juce::String inputGain { "input_gain" };   // dB, applied before everything
+inline const juce::String keyOn     { "key_on" };       // key shifter on/off
+inline const juce::String keySemis  { "key_semis" };    // -12 .. +12 semitones
+inline const juce::String keyCents  { "key_cents" };    // -50 .. +50 cents
+inline const juce::String maxOn     { "max_on" };       // MAXIMIZER (final limiter) on/off
+inline const juce::String maxGain   { "max_gain" };     // dB pushed into the limiter
+inline const juce::String maxCeiling { "max_ceiling" }; // highest peak allowed out, dBFS
+inline const juce::String amGenre   { "am_genre" };     // AUTO MASTER genre
+inline const juce::String amAmount  { "am_amount" };    // AUTO MASTER EQ amount, %
 
 inline juce::String formatHz (double hz)
 {
@@ -111,6 +120,25 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { tubeDrive, version }, "Tube Drive",
                                                        NormalisableRange<float> (-6.0f, 18.0f, 0.5f), 0.0f,
                                                        AudioParameterFloatAttributes().withLabel ("dB")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { inputGain, version }, "Input Gain",
+                                                       NormalisableRange<float> (-24.0f, 24.0f, 0.5f), 0.0f,
+                                                       AudioParameterFloatAttributes().withLabel ("dB")));
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { keyOn, version }, "Key Shift On", false));
+    layout.add (std::make_unique<AudioParameterInt>  (ParameterID { keySemis, version }, "Key Shift Semitones", -12, 12, 0,
+                                                      AudioParameterIntAttributes().withLabel ("st")));
+    layout.add (std::make_unique<AudioParameterInt>  (ParameterID { keyCents, version }, "Key Shift Fine", -50, 50, 0,
+                                                      AudioParameterIntAttributes().withLabel ("cents")));
+    layout.add (std::make_unique<AudioParameterBool>  (ParameterID { maxOn, version }, "Maximizer On", false));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { maxGain, version }, "Maximizer Gain",
+                                                       NormalisableRange<float> (-12.0f, 18.0f, 0.1f), 0.0f,
+                                                       AudioParameterFloatAttributes().withLabel ("dB")));
+    layout.add (std::make_unique<AudioParameterFloat> (ParameterID { maxCeiling, version }, "Maximizer Ceiling",
+                                                       NormalisableRange<float> (-3.0f, 0.0f, 0.1f), -1.0f,
+                                                       AudioParameterFloatAttributes().withLabel ("dBFS")));
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { amGenre, version }, "Auto Master Genre",
+                                                        StringArray { "Pop", "Jazz", "70's", "80's", "90's", "R&B", "Hip Hop" }, 0));
+    layout.add (std::make_unique<AudioParameterInt>  (ParameterID { amAmount, version }, "Auto Master Amount", 0, 100, 60,
+                                                      AudioParameterIntAttributes().withLabel ("%")));
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { compOrder, version }, "Comp Order",
                                                         StringArray { "EQ > COMP", "COMP > EQ" }, 0));
     return layout;

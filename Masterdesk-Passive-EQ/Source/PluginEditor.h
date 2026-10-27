@@ -8,6 +8,7 @@
 // =============================================================================
 #pragma once
 #include "PluginProcessor.h"
+#include "dsp/KeyDetect.h"
 
 namespace ui
 {
@@ -146,7 +147,7 @@ private:
 // Rolling copy of the plugin's output, filled from the processor's FIFO each frame
 struct AudioHistory
 {
-    static constexpr int kSize = 16384;            // > 80 ms even at 192 kHz
+    static constexpr int kSize = 65536;            // enough for key detection (0.34 s) even at 192 kHz
     std::vector<float> l = std::vector<float> (kSize, 0.0f), r = std::vector<float> (kSize, 0.0f);
     int write = 0;
     int newSamples = 0;                            // arrived since the last pull
@@ -197,6 +198,33 @@ private:
     float corr = 0.0f, corrHold = 1.0f, corrHoldTimer = 0.0f;
     float balance = 0.0f, gain = 1.0f;
     bool  hasSignal = false;
+};
+
+// KEY panel: detected song key + key shifter controls ------------------------------
+class KeyPanel : public juce::Component, public juce::TooltipClient
+{
+public:
+    KeyPanel (PassiveMasterEQProcessor&, const AudioHistory&);
+    void update (float dtSeconds);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    juce::String getTooltip() override;
+    ppm::KeyResult getDetected() const { return detected; }     // key of the song before shifting
+    int getShiftedKey() const;
+
+private:
+    PassiveMasterEQProcessor& proc;
+    const AudioHistory& hist;
+    ppm::KeyDetector detector;
+    double detectorRate = 0.0;
+    std::vector<float> mono;
+    float sinceAnalysis = 0.0f;
+    ppm::KeyResult outKey, detected;
+    SteppedKnob semis, cents;
+    JewelButton onButton { "KEY SHIFT", "SHIFT OFF", col::amber };
+    juce::TextButton relearn { "RELEARN" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> onAtt;
+    juce::Rectangle<float> screen, display;
 };
 
 // LUFS loudness panel (EBU R128) --------------------------------------------------
@@ -267,6 +295,30 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> scHpAtt, compInAtt;
 };
 
+// AUTO MASTER + MAXIMIZER plate --------------------------------------------------
+class AutoMasterPanel : public juce::Component, public juce::TooltipClient
+{
+public:
+    explicit AutoMasterPanel (PassiveMasterEQProcessor&);
+    void update (float dtSeconds);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    juce::String getTooltip() override;
+
+private:
+    void selectGenre (int g);
+    PassiveMasterEQProcessor& proc;
+    std::unique_ptr<JewelButton> genreButtons[ppm::automaster::kNumGenres];
+    SteppedKnob amount, maxGain, ceiling;
+    juce::TextButton listen { "LISTEN" }, undo { "UNDO" };
+    JewelButton maxOn { "MAXIMIZER", "MAX OFF", col::red };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> maxOnAtt;
+    juce::Rectangle<float> genreArea, display, chart, grMeter, maxArea;
+    PassiveMasterEQProcessor::AutoState lastState = PassiveMasterEQProcessor::AutoState::Idle;
+    int lastGenre = -1, lastAmount = -1;
+    float amountTimer = 0.0f, gr = 0.0f, grHold = 0.0f, grHoldTimer = 0.0f, pulse = 0.0f;
+};
+
 // HELP overlay: a printed "manual card" explaining the panel --------------------
 class HelpOverlay : public juce::Component
 {
@@ -275,11 +327,22 @@ public:
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override { setVisible (false); }
 };
+// Small L/R LED input meter that sits under the INPUT knob -----------------------
+class InputMeter : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    void setLevels (float peakL, float peakR, float dt);
+    void paint (juce::Graphics&) override;
+private:
+    float level[2] { -80.0f, -80.0f }, hold[2] { -80.0f, -80.0f }, holdTimer[2] {};
+};
+
 // The whole panel, drawn at a fixed design size (kW x kH); the editor scales it.
 class Faceplate : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int kW = 1280, kH = 1330;
+    static constexpr int kW = 1440, kH = 1540;
+    static constexpr int kHCompact = 594;        // MINI view: meters, displays and footer only
 
     explicit Faceplate (PassiveMasterEQProcessor&);
     void paint (juce::Graphics&) override;
@@ -289,9 +352,14 @@ public:
     void animate (int frames) { for (int i = 0; i < frames; ++i) timerCallback(); }   // tests: advance the displays
     const SpectrumAnalyzer& getAnalyzer() const { return analyzer; }
     const Vectorscope& getVectorscope() const { return vectorscope; }
+    const KeyPanel& getKeyPanel() const { return keyPanel; }
     void showHelp() { help.setVisible (true); help.toFront (false); }
     void setScaleChoice (float scale);
     std::function<void (float)> onScaleRequested;                  // set by the editor
+    std::function<void()> onToggleFullScreen, onToggleCompact;      // set by the editor
+    void setCompact (bool c);
+    bool isCompact() const { return compact; }
+    void setFullScreenState (bool fs) { fullButton.setButtonText (fs ? "EXIT FULL" : "FULL SCREEN"); }
 
 private:
     void timerCallback() override;
@@ -310,6 +378,8 @@ private:
     SpectrumAnalyzer analyzer { history };
     Vectorscope vectorscope { history };
     LoudnessPanel loudnessPanel { proc };
+    KeyPanel keyPanel { proc, history };
+    AutoMasterPanel autoPanel { proc };
     std::unique_ptr<BandStrip>   bands[2][ppm::kNumBands];
     std::unique_ptr<CenterStrip> centers[2];
     std::unique_ptr<CompStrip>   comps[2];
@@ -319,12 +389,14 @@ private:
     JewelButton tubeButton { "TUBE ON", "TUBE OFF", col::amber };
     juce::TextButton copyLR { "L > R" }, copyRL { "R > L" }, helpButton { "HELP  ?" };
     juce::ComboBox presetBox, sizeBox;
-    SteppedKnob drive;
+    SteppedKnob drive, inputKnob;
+    InputMeter inputMeter;
+    juce::TextButton fullButton { "FULL SCREEN" }, miniButton { "MINI" };
     HelpOverlay help;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linkAtt, tubeAtt;
 
-    juce::Rectangle<float> topPlate, curvePlate, analyzerScreen, scopeScreen, rowPlates[2], compPlate, footerPlate, nameplate, presetLabel;
-    bool lastLinked = true;
+    juce::Rectangle<float> topPlate, curvePlate, analyzerScreen, scopeScreen, rowPlates[2], compPlate, autoPlate, footerPlate, nameplate, presetLabel;
+    bool lastLinked = true, compact = false;
     int clipHold = 0;
     int lastProgram = -1;
     float flicker = 0.0f;
@@ -338,6 +410,7 @@ class PassiveMasterEQEditor : public juce::AudioProcessorEditor
 public:
     explicit PassiveMasterEQEditor (PassiveMasterEQProcessor&);
     ~PassiveMasterEQEditor() override;
+    void paint (juce::Graphics&) override;
     void resized() override;
 
     void simulateMeters (float vuL, float vuR, float thd) { face.simulateMeters (vuL, vuR, thd); }
@@ -346,15 +419,24 @@ public:
     float analyzerBandDb (int band) const { return face.getAnalyzer().bandLevelDb (band); }
     float vectorscopeCorrelation() const  { return face.getVectorscope().getCorrelation(); }
     float vectorscopeBalance() const      { return face.getVectorscope().getBalance(); }
+    int detectedKey() const               { return face.getKeyPanel().getDetected().key; }
+    int shiftedKey() const                { return face.getKeyPanel().getShiftedKey(); }
     static int designWidth()  { return ui::Faceplate::kW; }
     static int designHeight() { return ui::Faceplate::kH; }
+    void parentHierarchyChanged() override;
+    void toggleFullScreen();
+    void toggleCompact();
 
 private:
+    int designH() const { return face.isCompact() ? ui::Faceplate::kHCompact : ui::Faceplate::kH; }
+    void updateLimits();
+    juce::DocumentWindow* standaloneWindow() const;
     PassiveMasterEQProcessor& proc;
     ui::MasterdeskLookAndFeel laf;
     ui::Faceplate face;
     juce::TooltipWindow tooltips { this, 500 };
-    bool sizeRestored = false;
+    bool sizeRestored = false, standaloneSetupDone = false, pluginFullScreen = false;
+    juce::Rectangle<int> sizeBeforeFull;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PassiveMasterEQEditor)
 };
