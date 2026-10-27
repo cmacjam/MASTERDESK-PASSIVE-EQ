@@ -122,20 +122,77 @@ jobs:
           auval -v aufx Mdeq Bsmt
 
       # --- packaging ------------------------------------------------------------
+      # Plain zip of the Mac plug-ins first, so you always get them even if the .pkg step has a problem
+      - name: Zip macOS plug-ins
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          for b in "$ART/VST3/$NAME.vst3" "$ART/AU/$NAME.component" "$ART/Standalone/$NAME.app"; do
+            codesign --force --deep --sign - "$b"
+          done
+          (cd "$ART" && zip -qry "$GITHUB_WORKSPACE/dist/Masterdesk-Passive-EQ-${{ steps.ver.outputs.version }}-macOS-plugins.zip" \
+              "VST3/$NAME.vst3" "AU/$NAME.component" "Standalone/$NAME.app")
+
+      # The .pkg installer is built right here, so this workflow file is the only thing to keep up to date
       - name: Package macOS installer
         if: runner.os == 'macOS'
-        env:
-          MACOS_APP_IDENTITY:       ${{ secrets.MACOS_APP_IDENTITY }}
-          MACOS_INSTALLER_IDENTITY: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
-          APPLE_ID:                 ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID:            ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD:       ${{ secrets.APPLE_APP_PASSWORD }}
+        continue-on-error: true
         run: |
-          chmod +x installer/macos/build_pkg.sh
-          installer/macos/build_pkg.sh "$ART" "${{ steps.ver.outputs.version }}" dist
-          # plain zip of the bundles too, for manual installs
-          (cd "$ART" && zip -qry "$GITHUB_WORKSPACE/dist/Masterdesk-Passive-EQ-${{ steps.ver.outputs.version }}-macOS-bundles.zip" \
-              "VST3/$NAME.vst3" "AU/$NAME.component" "Standalone/$NAME.app")
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          ID="com.basemental.masterdeskpassiveeq"
+          STAGE="$(mktemp -d)"
+          mkdir -p "$STAGE/vst3" "$STAGE/au" "$STAGE/app" "$STAGE/pkgs" "$STAGE/resources" dist
+          cp -R "$ART/VST3/$NAME.vst3"      "$STAGE/vst3/"
+          cp -R "$ART/AU/$NAME.component"   "$STAGE/au/"
+          cp -R "$ART/Standalone/$NAME.app" "$STAGE/app/"
+
+          make_pkg () {   # <root> <id-suffix> <install-location>
+            local root="$1" suffix="$2" location="$3" plist="$STAGE/$2.plist" i=0
+            pkgbuild --analyze --root "$root" "$plist"
+            # mark every bundle pkgbuild found as non-relocatable (the list may be empty: that's fine)
+            while /usr/libexec/PlistBuddy -c "Print :$i" "$plist" >/dev/null 2>&1; do
+              /usr/libexec/PlistBuddy -c "Delete :$i:BundleIsRelocatable" "$plist" >/dev/null 2>&1 || true
+              /usr/libexec/PlistBuddy -c "Add :$i:BundleIsRelocatable bool false" "$plist"
+              i=$((i + 1))
+            done
+            echo "$suffix: $i bundle(s) marked non-relocatable"
+            pkgbuild --root "$root" --component-plist "$plist" --identifier "$ID.$suffix" \
+                     --version "$VERSION" --install-location "$location" "$STAGE/pkgs/$suffix.pkg"
+          }
+          make_pkg "$STAGE/vst3" vst3 "/Library/Audio/Plug-Ins/VST3"
+          make_pkg "$STAGE/au"   au   "/Library/Audio/Plug-Ins/Components"
+          make_pkg "$STAGE/app"  app  "/Applications"
+
+          printf '%s\n' "Masterdesk Passive EQ by Basemental" "" \
+            "Passive EQ + Vari-Mu compressor with VU, spectrum, vectorscope and LUFS metering." "" \
+            "Choose what to install on the next screens:" \
+            "  - VST3 plug-in   -> /Library/Audio/Plug-Ins/VST3" \
+            "  - Audio Unit     -> /Library/Audio/Plug-Ins/Components   (Logic Pro, GarageBand)" \
+            "  - Standalone app -> /Applications" "" \
+            "Afterwards, rescan plug-ins in your DAW. Inside the plug-in, press HELP ? for a guide." \
+            > "$STAGE/resources/welcome.txt"
+
+          cat > "$STAGE/distribution.xml" <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <installer-gui-script minSpecVersion="2">
+            <title>$NAME $VERSION</title>
+            <welcome file="welcome.txt" mime-type="text/plain"/>
+            <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+            <domains enable_localSystem="true"/>
+            <choices-outline><line choice="vst3"/><line choice="au"/><line choice="app"/></choices-outline>
+            <choice id="vst3" title="VST3 plug-in" description="For Cubase, Ableton Live, Studio One, Reaper, FL Studio, Bitwig."><pkg-ref id="$ID.vst3"/></choice>
+            <choice id="au" title="Audio Unit (AU)" description="For Logic Pro, GarageBand and other AU hosts."><pkg-ref id="$ID.au"/></choice>
+            <choice id="app" title="Standalone app" description="Runs on its own without a DAW."><pkg-ref id="$ID.app"/></choice>
+            <pkg-ref id="$ID.vst3" version="$VERSION">vst3.pkg</pkg-ref>
+            <pkg-ref id="$ID.au" version="$VERSION">au.pkg</pkg-ref>
+            <pkg-ref id="$ID.app" version="$VERSION">app.pkg</pkg-ref>
+          </installer-gui-script>
+          XML
+
+          productbuild --distribution "$STAGE/distribution.xml" --package-path "$STAGE/pkgs" \
+                       --resources "$STAGE/resources" "dist/Masterdesk-Passive-EQ-$VERSION-macOS.pkg"
+          echo "Built dist/Masterdesk-Passive-EQ-$VERSION-macOS.pkg"
 
       - name: Package Windows installer
         if: runner.os == 'Windows'
@@ -161,10 +218,12 @@ jobs:
           rm -rf "dist/$pkg"
 
       - name: Upload installers
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Masterdesk-Passive-EQ-${{ matrix.name }}
           path: dist/*
+          if-no-files-found: ignore
 
   release:
     name: Publish release
