@@ -91,6 +91,8 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 cmake -B build -DPPM_BUILD_TESTS=ON && cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
+`key_test` checks the key shifter (pitch within 0.1 cent from −12 to +12 semitones, level within 0.1 dB on tones and
+~1 dB on noise, exact reproduction at 0, stereo phase kept) and key detection on major/minor progressions, also after shifting.
 `loudness_test` runs the EBU Tech 3341 and 3342 conformance cases (loudness within
 ±0.1 LU and LRA within ±1 LU at 44.1/48/96 kHz, all pass) and true-peak checks.
 `comp_test` checks the compressor's curve, timing, link, sidechain, mix/bypass and
@@ -126,6 +128,22 @@ preset, state save/restore, and renders UI screenshots.
 | Loud & Warm Master | More EQ, LIMIT mode at −18, +6 dB tube drive, +5 dB make-up |
 | Parallel Punch | Heavy compression (−24) blended in at 40 % for density without losing transients |
 | Gentle Leveler (Comp > EQ) | Compressor first (−15, 2 s recovery), then gentle shelves |
+| Engineer Move – Air Lift (27k shelf) | The classic passive "air" band: wide 27 kHz shelf, ~+2.8 dB |
+| Engineer Move – Silk Top (16k up, 3.3k down) | More top end without more harshness |
+| Engineer Move – Low-End Tuck (Pultec trick) | 68 Hz shelf with the dip-and-bump, mud trimmed at 180 Hz, HP 23 |
+| Engineer Move – Mud Scoop (270 Hz) | Clears the low mids, a touch of 8.2k shelf to balance |
+| Engineer Move – Box Clear (470 Hz) | Removes boxy / cardboard tone |
+| Engineer Move – Vocal Forward (2.2k) | Broad presence lift, low mids eased |
+| Engineer Move – Smile Curve (club / loud) | Lows and highs up, 820 Hz relaxed |
+| Engineer Move – Dark Mix Rescue | 5.6 kHz shelf + 4.7 kHz presence to open a dull mix |
+| Engineer Move – Harsh Mix Tame | Softens 3.3 kHz bite and lowers the top shelf |
+| Engineer Move – Thin Mix Weight | 100 Hz shelf + 180 Hz body |
+| Engineer Move – Boomy Mix Tighten | Cuts 150 Hz boom, HP 30 |
+| Engineer Move – Vinyl Pre-Master | HP 30, sibilance eased at 6.8k, LP 20k |
+| Engineer Move – Streaming Translation | Gentle all-rounder for earbuds, cars and phones |
+| Engineer Move – Analog Warmth (tubes) | 120 Hz bloom, soft air, +6 dB tube drive |
+
+The "Engineer Move" presets are the well-known moves mastering engineers use on passive EQs. They are not any particular engineer's settings, and no real engineers' names are used.
 
 The first ten presets leave the compressor at threshold 0 dB (transparent).
 
@@ -141,21 +159,27 @@ anything for a tooltip, or press **HELP ?** for the full guide page.
 
 | Area | What it is | What it tells you / does |
 |---|---|---|
-| **VU LEFT / VU RIGHT** (top left) | Moving-needle VU meters on the output | Average loudness. 0 VU = −18 dBFS RMS. Real VU ballistics (~300 ms). The orange lamp under each meter flashes when peaks pass −1 dBFS. |
+| **INPUT** knob + meter (top left) | Input level | −24 to +24 dB of gain before everything else (EQ, tubes, compressor, meters), click-free. The L/R LED meter under it shows the peak level after INPUT: green, amber above −6 dBFS, red above −1 dBFS; white tick = 2 s peak hold. |
+| **VU LEFT / VU RIGHT** | Moving-needle VU meters on the output | Average loudness. 0 VU = −18 dBFS RMS. Real VU ballistics (~300 ms). The orange lamp under each meter flashes when peaks pass −1 dBFS. |
 | **HARMONICS** meter | Needle meter in % THD | How much colour the tube stage is adding. < 0.3 % = subtle sheen, red zone (1 %+) = audible saturation. Green lamp = tube stage on. |
 | **TUBE STAGE** glass tubes | Visual indicator | Dark when the tube stage is off; glow brighter with level and DRIVE. |
 | **Jewel lamps** | SIGNAL (green), LINK (yellow), CLIP (red), TUBE (amber) | Audio present · right follows left · output went over 0 dBFS (holds ~1 s) · tube stage on. |
 | **DRIVE** knob + **TUBE ON** | Tube make-up stage | DRIVE pushes harder into the tubes for more harmonics; output loudness stays matched. |
 | **SPECTRUM** screen | Live 1/3-octave analyzer | 31 segmented bars (25 Hz–16 kHz) that move up and down with the output, with peak-hold caps. Range 0 to −66 dBFS; red segments = within 6 dB of full scale. A full-scale sine reads 0 dB in its band. |
+| **SONG KEY** panel | Key detection + key shift | Shows the song's musical key (e.g. *A minor*), its Camelot code and key signature, with a certainty bar. It listens to about the last 20 s; **RELEARN** starts over for a new song. **SEMITONES** (−12…+12) and **FINE** (−50…+50 cents) with **KEY SHIFT** on move the whole song to a new key; the panel then shows *A minor → B minor*. The shifter is a stereo-locked phase vocoder (left/right phase kept exactly); it adds 85 ms latency only while on (your DAW compensates), so switch it while stopped. Like any pitch shifter it changes formants ("chipmunk" at large shifts) — small shifts (±1–3 st) sound most natural. |
 | **VECTORSCOPE** screen | Stereo image | Dot cloud of the output: vertical = mid (L+R), horizontal = side (L−R); tall/narrow = centred, wide = stereo. Auto-zooms quiet material (shown as "AUTO x…"). Top meter: L/R balance. Bottom meter: phase correlation −1…+1 (above 0 = mono-safe); the cream mark holds the lowest value for 3 s. |
 | **LOUDNESS** panel | EBU R128 / ITU-R BS.1770-4 | INTEGRATED, SHORT-TERM (3 s), MOMENTARY (0.4 s), TRUE PEAK MAX (4× oversampled, dBTP), LRA, PLR, PSR, short-term and momentary maxima. Choose a TARGET (−14 streaming, −16 Apple Music, −23 EBU, −24 ATSC, −9 loud); INTEGRATED turns green within ±1 LU, red above, blue below. TRUE PEAK MAX turns red above −1 dBTP. RESET clears the integrated and maximum readings. Measured on the plugin's output and keeps running with the window closed. |
+| **AUTO MASTER** (plate above the footer) | Genre-based mastering assistant | Choose a **GENRE** (POP, JAZZ, 70'S, 80'S, 90'S, R&B, HIP HOP), press **LISTEN** and play the song, ideally its fullest part. After 30 s of music (silence is skipped), it does the following: (1) measures the mix's tonal balance in 10 octave bands, using only the louder passages; (2) compares that balance with the genre's target curve; (3) fits the four passive bands to the difference using the real switch positions, preferring a few broad, gentle moves (max ±6 dB, scaled by **AMOUNT**); (4) sets INPUT so the mix arrives at about −16 LUFS (gain staging), then sets the tubes, filters and compressor for the style, finding the THRESHOLD that gives the genre's amount of gain reduction; (5) sets the **MAXIMIZER** gain that lands the song on the genre's loudness. Steps 4 and 5 work by rendering the recording through the real EQ, compressor and limiter. After applying, it measures the actual loudness for a few seconds and corrects the maximizer by up to two small steps. The display shows the mix (grey), the target (red dashes) and the result after EQ (green), plus the moves made and the loudness before → after. Clicking another genre or moving AMOUNT re-plans straight away from the same recording. **UNDO** returns to your own settings. Everything it sets stays adjustable. The genre targets are stylistic starting points, not measurements of particular records: POP −10, JAZZ −16, 70'S −14, 80'S −12, 90'S −10.5, R&B −10, HIP HOP −9 LUFS. |
+| **MAXIMIZER** (right of AUTO MASTER) | Final look-ahead brickwall limiter | **GAIN** (−12…+18 dB) pushes into the limiter; **CEILING** (−3…0 dBFS) is the highest sample peak that can come out (−1 dB is the safe choice for streaming). It uses 1.5 ms of look-ahead, a release that slows down when limiting is sustained, and identical gain on both sides. The GR bar shows how much it is limiting: up to 2–3 dB is clean, while constant 5–6 dB+ starts to flatten the punch. It is the last stage, and its 1.5 ms delay is always included in the reported latency, so switching it never shifts timing. |
 | **Channel rows** (LEFT / RIGHT) | Four EQ bands + FILTERS / TRIM | See the table below. When LINK is on, the right row dims because it follows the left. |
 | **Cream windows** under knobs | Value readouts | The GAIN window shows the *actual* dB after the gain/bandwidth interaction. |
 | **LINK · L > R · R > L · HELP** (footer) | Stereo + guide | Link channels, copy settings between them, open the help page. |
 | **VARI-MU TUBE COMPRESSOR** (bottom panel) | Left and right compressor strips | See "Compressor controls" below. Each side has its own GAIN REDUCTION meter; with LINK on, the right side follows the left. |
 | **ORDER** switch (compressor panel) | Signal order | EQ > COMP (default: shape tone, then level it) or COMP > EQ. Switching is click-free. |
 | **PRESET** menu (footer) | Factory presets | Mastering starting points (list below). Your own settings save with your DAW session. |
-| **SIZE** menu (footer) | Window size | 60 / 70 / 85 / 100 %, or drag the bottom-right corner. Opens at the largest size that fits your screen; remembered per session. |
+| **SIZE** menu (footer) | Window size | 60 / 70 / 85 / 100 %, or drag the bottom-right corner. Everything scales **in proportion**. Opens at the largest size that fits your screen; size is remembered per session. |
+| **MINI / FULL PANEL** (footer) | Compact view | MINI collapses to the metering only (VU, harmonics, input, spectrum, vectorscope, loudness) — handy on a second screen while mixing. FULL PANEL brings the EQ and compressor back. |
+| **FULL SCREEN / EXIT FULL** (footer) | Fill the screen | In the standalone app this is real macOS full screen (the window's green button also works, and the yellow button minimises); the panel is centred at the largest size that keeps its proportions. Inside a DAW the plug-in window grows as large as the screen allows; press again to return to the previous size. |
 | **Nameplate** (footer right) | Branding | "BASEMENTAL MASTERDESK" brass plate; edit the text in `PluginEditor.cpp` (`Faceplate::paint`). |
 
 Tips: double-click any knob to reset it; every knob clicks through its detents like the hardware.
