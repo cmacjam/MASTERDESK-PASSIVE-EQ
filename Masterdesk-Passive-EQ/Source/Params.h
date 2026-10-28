@@ -26,6 +26,7 @@ inline const juce::String inputGain { "input_gain" };   // dB, applied before ev
 inline const juce::String keyOn     { "key_on" };       // key shifter on/off
 inline const juce::String keySemis  { "key_semis" };    // -12 .. +12 semitones
 inline const juce::String keyCents  { "key_cents" };    // -50 .. +50 cents
+inline const juce::String keyFormant { "key_formant" }; // keep formants while shifting (natural timbre)
 inline const juce::String maxOn     { "max_on" };       // MAXIMIZER (final limiter) on/off
 inline const juce::String maxGain   { "max_gain" };     // dB pushed into the limiter
 inline const juce::String maxCeiling { "max_ceiling" }; // highest peak allowed out, dBFS
@@ -128,6 +129,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                       AudioParameterIntAttributes().withLabel ("st")));
     layout.add (std::make_unique<AudioParameterInt>  (ParameterID { keyCents, version }, "Key Shift Fine", -50, 50, 0,
                                                       AudioParameterIntAttributes().withLabel ("cents")));
+    layout.add (std::make_unique<AudioParameterBool>  (ParameterID { keyFormant, version }, "Key Shift Formant", true));
     layout.add (std::make_unique<AudioParameterBool>  (ParameterID { maxOn, version }, "Maximizer On", false));
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { maxGain, version }, "Maximizer Gain",
                                                        NormalisableRange<float> (-12.0f, 18.0f, 0.1f), 0.0f,

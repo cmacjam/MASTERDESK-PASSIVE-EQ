@@ -158,7 +158,7 @@ struct AudioHistory
     float atR (int ago) const { return r[(size_t) ((write - 1 - ago + 4 * kSize) % kSize)]; }
 };
 
-// Live spectrum analyzer: 31 one-third-octave bars that move with the music --------
+// Live spectrum analyzer: 31 one-third-octave pins that move with the music --------
 class SpectrumAnalyzer : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -167,7 +167,7 @@ public:
     void paint (juce::Graphics&) override;
 
     static constexpr int kBands = 31;              // 20 Hz .. 20 kHz, ISO 1/3-octave centres
-    static constexpr float kFloorDb = -66.0f, kTopDb = 0.0f;
+    static constexpr float kFloorDb = -62.0f, kTopDb = 0.0f;     // 62 dB live range
     float bandLevelDb (int b) const { return level[(size_t) b]; }
     static float bandCentreHz (int b) { return 1000.0f * std::pow (2.0f, (float) (b - 17) / 3.0f); }
 
@@ -222,8 +222,9 @@ private:
     ppm::KeyResult outKey, detected;
     SteppedKnob semis, cents;
     JewelButton onButton { "KEY SHIFT", "SHIFT OFF", col::amber };
+    JewelButton formantButton { "FORMANT", "FORMANT", col::green };
     juce::TextButton relearn { "RELEARN" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> onAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> onAtt, formantAtt;
     juce::Rectangle<float> screen, display;
 };
 
@@ -403,6 +404,22 @@ private:
     bool simulated = false;
     juce::Random rng;
 };
+// Grab handle on the left or right edge: drag sideways to make the whole plug-in bigger or smaller
+class EdgeGrip : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit EdgeGrip (bool rightEdge);
+    void paint (juce::Graphics&) override;
+    void mouseEnter (const juce::MouseEvent&) override { repaint(); }
+    void mouseExit (const juce::MouseEvent&) override  { repaint(); }
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override { dragging = false; repaint(); }
+    std::function<void (int deltaX, bool rightEdge, bool start)> onDrag;
+private:
+    bool right, dragging = false;
+    int startX = 0;
+};
 } // namespace ui
 
 class PassiveMasterEQEditor : public juce::AudioProcessorEditor
@@ -426,6 +443,7 @@ public:
     void parentHierarchyChanged() override;
     void toggleFullScreen();
     void toggleCompact();
+    void testEdgeDrag (int deltaX, bool rightEdge) { edgeDrag (0, rightEdge, true); edgeDrag (deltaX, rightEdge, false); }   // tests
 
 private:
     int designH() const { return face.isCompact() ? ui::Faceplate::kHCompact : ui::Faceplate::kH; }
@@ -435,6 +453,9 @@ private:
     ui::MasterdeskLookAndFeel laf;
     ui::Faceplate face;
     juce::TooltipWindow tooltips { this, 500 };
+    ui::EdgeGrip leftGrip { false }, rightGrip { true };
+    juce::Rectangle<int> dragStartBounds, dragStartWindow;
+    void edgeDrag (int deltaX, bool rightEdge, bool start);
     bool sizeRestored = false, standaloneSetupDone = false, pluginFullScreen = false;
     juce::Rectangle<int> sizeBeforeFull;
 

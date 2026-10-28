@@ -253,6 +253,112 @@ int main()
         }
     }
 
+    std::printf ("\n== Clean shifting: close notes, chords, formants ==\n");
+    {
+        // shift a whole segment, latency removed
+        auto shifted = [&] (std::vector<float> x, double semis, bool formant)
+        {
+            KeyShifter ks; ks.prepare (fs); ks.setShift (semis); ks.setFormantPreserve (formant);
+            const int lat = ks.latency(); const size_t n = x.size();
+            x.resize (n + (size_t) lat); std::vector<float> r = x;
+            for (size_t pos = 0; pos < x.size(); pos += 512) ks.process (x.data() + pos, r.data() + pos, (int) std::min<size_t> (512, x.size() - pos));
+            return std::vector<float> (x.begin() + lat, x.begin() + lat + (long) n);
+        };
+        auto tone = [&] (const std::vector<float>& x, double f, size_t s0, size_t len)    // amplitude of one frequency
+        {
+            double re = 0, im = 0;
+            for (size_t i = 0; i < len; ++i) { const double w = 0.5 - 0.5 * std::cos (2 * PI * i / len); re += x[s0 + i] * w * std::cos (2 * PI * f * i / fs); im += x[s0 + i] * w * std::sin (2 * PI * f * i / fs); }
+            return 2 * std::sqrt (re * re + im * im) / (len * 0.5);
+        };
+        // a quiet note right beside a louder one (E and C overtones in a chord): both must land on their own new pitch
+        {
+            std::vector<float> x ((size_t) (fs * 4));
+            for (size_t i = 0; i < x.size(); ++i) x[i] = (float) (0.2 * std::sin (2 * PI * 523.25 * i / fs) + 0.09 * std::sin (2 * PI * 494.43 * i / fs));
+            auto y = shifted (x, 7.0, false);
+            const double r7 = std::pow (2.0, 7.0 / 12.0);
+            const size_t s0 = (size_t) (fs * 2), len = (size_t) fs;
+            const double right = tone (y, 494.43 * r7, s0, len), wrong = tone (y, 755.1, s0, len);   // where the old version put it
+            check (std::abs (20 * std::log10 (right / 0.09)) < 1.0 && 20 * std::log10 (wrong / right) < -12.0,
+                   "quiet note beside a loud one, +7 st: lands on its own pitch (level " + std::to_string (20 * std::log10 (right / 0.09)).substr (0, 5)
+                   + " dB, wrong-pitch copy " + std::to_string (20 * std::log10 (wrong / right)).substr (0, 5) + " dB)");
+        }
+        // chord with shared overtones: energy that is not part of the shifted chord
+        for (double semis : { 2.0, -3.0, 7.0 })
+        {
+            const double notes[] = { 130.81, 164.81, 196.0, 261.63 };
+            auto chord = [&] (double ratio)
+            {
+                std::vector<float> x ((size_t) (fs * 5));
+                for (size_t i = 0; i < x.size(); ++i)
+                {
+                    double v = 0;
+                    for (double f0 : notes) for (int h = 1; h <= 10; ++h) if (f0 * h * ratio < 20000) v += 0.05 / h * std::sin (2 * PI * f0 * h * ratio * i / fs + h * 0.7);
+                    x[i] = (float) v;
+                }
+                return x;
+            };
+            const double ratio = std::pow (2.0, semis / 12.0);
+            auto y = shifted (chord (1.0), semis, false);
+            auto ideal = chord (ratio);
+            const int order = 16, n = 1 << order; const size_t s0 = (size_t) (fs * 2.5), len = (size_t) (fs * 0.85);
+            auto spec = [&] (const std::vector<float>& s)
+            {
+                std::vector<FFT::cpx> b ((size_t) n);
+                for (int i = 0; i < n; ++i)
+                {
+                    const double w = i < (int) len ? 0.35875 - 0.48829 * std::cos (2 * PI * i / len) + 0.14128 * std::cos (4 * PI * i / len) - 0.01168 * std::cos (6 * PI * i / len) : 0.0;
+                    b[(size_t) i] = i < (int) len ? s[s0 + (size_t) i] * w : 0.0;
+                }
+                FFT f (order); f.transform (b.data(), false);
+                std::vector<double> p ((size_t) n / 2); for (int k = 0; k < n / 2; ++k) p[(size_t) k] = std::norm (b[(size_t) k]);
+                return p;
+            };
+            auto py = spec (y), pi = spec (ideal);
+            double mx = 0; for (double v : pi) mx = std::max (mx, v);
+            std::vector<char> mask ((size_t) n / 2, 0);
+            // "part of the chord" = within 10 cents (or 6 Hz) of a component of the ideal shifted chord
+            for (int k = 0; k < n / 2; ++k)
+                if (pi[(size_t) k] > mx * 1e-6)
+                {
+                    const int w = std::max (8, (int) (k * 0.0058));
+                    for (int d = -w; d <= w; ++d) if (k + d >= 0 && k + d < n / 2) mask[(size_t) (k + d)] = 1;
+                }
+            double tot = 0, sp = 0;
+            for (int k = 1; k < n / 2; ++k) { const double f = k * fs / n; if (f < 30 || f > 20000) continue; tot += py[(size_t) k]; if (! mask[(size_t) k]) sp += py[(size_t) k]; }
+            const double db = 10 * std::log10 (sp / tot + 1e-30);
+            check (db < -30.0, std::string ("chord with shared overtones ") + (semis > 0 ? "+" : "") + std::to_string ((int) semis)
+                               + " st: energy more than 10 cents off the chord " + std::to_string (db).substr (0, 5) + " dB");
+        }
+        // FORMANT: a sung vowel keeps its resonances (no chipmunk)
+        auto envDb = [] (double f) { auto pk = [&] (double fc, double bw, double g) { const double x = (f - fc) / bw; return g / (1 + x * x); };
+                                     return 20 * std::log10 (0.02 + pk (700, 90, 1.0) + pk (1200, 110, 0.6) + pk (2600, 160, 0.3)); };
+        for (double semis : { 4.0, -4.0 })
+        {
+            const double f0 = 180, ratio = std::pow (2.0, semis / 12.0);
+            std::vector<float> x ((size_t) (fs * 4));
+            for (size_t i = 0; i < x.size(); ++i)
+            {
+                double v = 0;
+                for (int h = 1; f0 * h < 16000; ++h) v += std::pow (10, envDb (f0 * h) / 20) * 0.02 * std::sin (2 * PI * f0 * h * i / fs + h * h * 0.3);
+                x[i] = (float) v;
+            }
+            double dev[2];
+            for (int fm = 0; fm < 2; ++fm)
+            {
+                auto y = shifted (x, semis, fm == 1);
+                double e = 0; int cnt = 0;
+                for (int h = 1; f0 * ratio * h < 5000; ++h, ++cnt)
+                {
+                    const double a = 20 * std::log10 (tone (y, f0 * ratio * h, (size_t) (fs * 2), (size_t) fs) / 0.02 + 1e-12);
+                    e += std::pow (a - envDb (f0 * ratio * h), 2);
+                }
+                dev[fm] = std::sqrt (e / cnt);
+            }
+            check (dev[1] < 4.5 && dev[1] < dev[0] - 3.0, std::string ("FORMANT, vowel ") + (semis > 0 ? "+" : "") + std::to_string ((int) semis)
+                   + " st: resonances off by " + std::to_string (dev[1]).substr (0, 4) + " dB (without FORMANT " + std::to_string (dev[0]).substr (0, 4) + " dB)");
+        }
+    }
+
     std::printf ("\n== Key info ==\n");
     check (camelotNumber (12 + 9) == 8 && camelotNumber (0) == 8 && camelotNumber (7) == 9 && camelotNumber (12 + 4) == 9, "Camelot: A minor 8A, C major 8B, G major 9B, E minor 9A");
     check (keySignature (9) == 3 && keySignature (5) == -1 && keySignature (12 + 4) == 1 && keySignature (10) == -2, "Key signatures: A major 3#, F major 1b, E minor 1#, Bb major 2b");

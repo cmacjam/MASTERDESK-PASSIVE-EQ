@@ -12,6 +12,13 @@
 //      combined L+R energy and applied identically to both channels, so the
 //      phase difference between left and right is preserved exactly: the stereo
 //      image and mono compatibility don't change.
+//    * Peaks are local maxima over +-1 window bin (so a quieter note right next to
+//      a louder one keeps its own region and lands on the right pitch); window
+//      sidelobes (> 30 dB below a big neighbour) are not treated as peaks.
+//    * FORMANT (optional, on by default): the spectral envelope (cepstrally
+//      smoothed, ~1.5 ms lifter) stays where it was while the notes move, so
+//      voices and instruments keep their natural timbre instead of the
+//      "chipmunk" / "giant" sound of plain pitch shifting.
 //    * Strong onsets reset the phase rotation, which keeps drum hits sharper.
 //    * Noise-like regions (no stable frequency from frame to frame) overlap-add
 //      partly incoherently and would come out quieter (by 0.2-7 dB depending on
@@ -41,6 +48,9 @@ public:
         // shifted partials at full level (the residual phase error is spread over 1/4 of a cycle)
         M = N * kPad;  half = M / 2;
         fft = std::make_unique<FFT> (order + 2);
+        fftEnv = std::make_unique<FFT> (order);
+        envBuf.assign ((size_t) N, {}); env.assign ((size_t) half + 1, 0.0);
+        lifter = std::max (8, (int) std::lround (0.0015 * sampleRate));
         window.resize ((size_t) N);
         for (int i = 0; i < N; ++i) window[(size_t) i] = 0.5 - 0.5 * std::cos (2.0 * kPi_ * i / N);
         // Hann analysis x Hann synthesis at 8x overlap sums to 3
@@ -74,13 +84,16 @@ public:
 
     int latency() const { return N; }                 // samples of delay through the shifter
 
+    // Keep the spectral envelope (formants) in place while shifting
+    void setFormantPreserve (bool on) { formant = on; }
+
     // Shift in semitones (fractional allowed, e.g. +0.5 = 50 cents). Can change while running.
     void setShift (double semitones)
     {
         ratio = std::pow (2.0, semitones / 12.0);
         // measured level loss of noise-like content at this shift (white noise, 48 kHz): compensated below
         static const double st[] = { -12, -7, -5, -3, -2, -1, -0.5, -0.1, 0, 0.1, 0.5, 1, 2, 3, 5, 7, 12 };
-        static const double db[] = { -2.71, -2.25, -1.96, -1.49, -1.16, -0.79, -0.57, -0.29, 0, -0.32, -0.71, -1.08, -1.75, -2.39, -3.47, -4.41, -6.82 };
+        static const double db[] = { -2.63, -1.92, -1.60, -1.20, -0.95, -0.68, -0.50, -0.27, 0, -0.30, -0.66, -0.99, -1.57, -2.13, -3.19, -4.18, -6.81 };
         const double x = std::clamp (semitones, -12.0, 12.0);
         int i = 0; while (i < 15 && x > st[i + 1]) ++i;
         const double t = (x - st[i]) / (st[i + 1] - st[i]);
@@ -133,15 +146,43 @@ private:
         const bool onset = energy > prevEnergy * 6.3 && energy > 1e-6;
         prevEnergy = energy;
 
+        // --- spectral envelope (formants): cepstrally smoothed log magnitude ---------------
+        const bool useFormant = formant && std::abs (ratio - 1.0) > 1e-9;
+        if (useFormant)
+        {
+            const int n2 = N / 2;
+            for (int k = 0; k <= n2; ++k) envBuf[(size_t) k] = std::log (mag[(size_t) (k * kPad)] + maxMag * 1e-5 + 1e-20);
+            for (int k = 1; k < n2; ++k) envBuf[(size_t) (N - k)] = envBuf[(size_t) k];
+            fftEnv->transform (envBuf.data(), true);                    // -> cepstrum (unscaled)
+            for (int q = 0; q < N; ++q)
+            {
+                const int qq = std::min (q, N - q);
+                const double w = qq < lifter ? 1.0 : (qq < 2 * lifter ? 0.5 + 0.5 * std::cos (kPi_ * (qq - lifter) / lifter) : 0.0);
+                envBuf[(size_t) q] *= w / N;
+            }
+            fftEnv->transform (envBuf.data(), false);                   // -> smooth log envelope
+            for (int k = 0; k <= half; ++k)
+            {
+                const double x = (double) k / kPad; const int i0 = std::min ((int) x, n2 - 1); const double fr = x - i0;
+                env[(size_t) k] = (1.0 - fr) * envBuf[(size_t) i0].real() + fr * envBuf[(size_t) (i0 + 1)].real();
+            }
+        }
+
         // --- peaks and their regions ----------------------------------------------------------
         peaks.clear();
         const double floorMag = std::max (maxMag * 1e-6, 1e-12);
-        for (int k = kPad * 2; k <= half - kPad * 2; ++k)
+        for (int k = kPad * 4; k <= half - kPad * 4; ++k)
         {
             const double m = mag[(size_t) k];
             bool isPeak = m > floorMag;
-            for (int d = 1; d <= kPad * 2 && isPeak; ++d)          // local maximum over +-2 original bins
+            for (int d = 1; d <= kPad && isPeak; ++d)               // local maximum over +-1 window bin
                 isPeak = m > mag[(size_t) (k - d)] && m >= mag[(size_t) (k + d)];
+            if (isPeak)
+            {   // not a window sidelobe: those sit > 30 dB under a big peak just beside them
+                double big = 0.0;
+                for (int d = -kPad * 4; d <= kPad * 4; ++d) big = std::max (big, mag[(size_t) (k + d)]);
+                isPeak = m > big * 0.03;
+            }
             if (isPeak) peaks.push_back (k);
         }
 
@@ -197,6 +238,8 @@ private:
             }
             newTheta[(size_t) p] = theta;
             newOmega[(size_t) p] = omega;
+            if (useFormant && shift != 0)                            // move the note, not its formants
+                gain *= std::exp (std::clamp (env[(size_t) std::clamp (p + shift, 0, half)] - env[(size_t) p], -2.3, 2.3));
             const cpx rot = std::polar (gain, theta);
             for (int k = lo; k <= hi; ++k)
             {
@@ -244,7 +287,11 @@ private:
     static constexpr int kPad = 4;
     int order = 12, N = 4096, M = 16384, H = 512, half = 8192, rover = 0;
     double ratio = 1.0, olaScale = 1.0 / 3.0, prevEnergy = 0.0, noisePowerGain = 1.0;
-    std::unique_ptr<FFT> fft;
+    std::unique_ptr<FFT> fft, fftEnv;
+    std::vector<FFT::cpx> envBuf;
+    std::vector<double> env;
+    int lifter = 72;
+    bool formant = false;
     std::vector<double> window, inL, inR, outL, outR, accL, accR, mag, prevPhL, prevPhR, prevTheta, newTheta, prevOmega, newOmega;
     std::vector<int> prevOwner, newOwner, peaks, bounds;
     std::vector<FFT::cpx> buf, XL, XR, YL, YR;

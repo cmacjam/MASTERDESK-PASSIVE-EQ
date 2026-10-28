@@ -130,6 +130,7 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         if (keyActive)
         {
             keyShifter.setShift (getKeyShiftSemitones());
+            keyShifter.setFormantPreserve (apvts.getRawParameterValue (params::keyFormant)->load() > 0.5f);
             keyShifter.process (l, r, n);
         }
         if (keyFadeIn > 0)

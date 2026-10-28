@@ -180,6 +180,18 @@ int main()
                 snap (*ed, "editor_mini.png");
                 e->toggleCompact();
                 setParam (s, ppm::params::inputGain, 0.0f);
+                // edge handles: pull the right edge out 200 px, then the left edge in 150 px
+                ed->setSize (1008, 1078);
+                const int w0 = ed->getWidth();
+                e->testEdgeDrag (200, true);
+                const int w1 = ed->getWidth(), h1 = ed->getHeight();
+                e->testEdgeDrag (150, false);
+                const int w2 = ed->getWidth(), h2 = ed->getHeight();
+                const double aspect = (double) PassiveMasterEQEditor::designWidth() / PassiveMasterEQEditor::designHeight();
+                std::printf ("  edge handles: %d -> pull right +200 -> %dx%d -> push left in 150 -> %dx%d (shape %.3f / %.3f, want %.3f)\n",
+                             w0, w1, h1, w2, h2, (double) w1 / h1, (double) w2 / h2, aspect);
+                if (std::abs (w1 - (w0 + 200)) > 2 || std::abs (w2 - (w1 - 150)) > 2
+                    || std::abs ((double) w1 / h1 - aspect) > 0.01 || std::abs ((double) w2 / h2 - aspect) > 0.01) ++failures;
                 // (help snapshot taken above)
             }
         }

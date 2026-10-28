@@ -874,57 +874,56 @@ void SpectrumAnalyzer::paint (juce::Graphics& g)
 
     draw::engraved (g, "SPECTRUM", { screen.getX() + 38, screen.getY() + 4, 120, 13 }, 10.0f,
                     juce::Justification::centredLeft, col::cream.withAlpha (0.65f));
-    draw::engraved (g, "1/3 OCT  -  OUTPUT", { screen.getRight() - 176, screen.getY() + 4, 160, 13 }, 9.5f,
+    draw::engraved (g, "OUTPUT  0 TO -62 dB", { screen.getRight() - 176, screen.getY() + 4, 160, 13 }, 9.5f,
                     juce::Justification::centredRight, col::cream.withAlpha (0.45f));
 
     auto dbToY = [&] (float db) { return r.getBottom() - (db - kFloorDb) / (kTopDb - kFloorDb) * r.getHeight(); };
 
-    // dB scale
+    // dB scale: 0 to -62
     g.setFont (sans (9.5f, false));
-    for (float db : { 0.0f, -12.0f, -24.0f, -36.0f, -48.0f, -60.0f })
+    for (float db : { 0.0f, -12.0f, -24.0f, -36.0f, -48.0f, -62.0f })
     {
         const float y = dbToY (db);
-        g.setColour (col::cream.withAlpha (0.06f));
+        g.setColour (col::cream.withAlpha (db > -0.5f || db < -61.5f ? 0.12f : 0.06f));
         g.drawHorizontalLine ((int) y, r.getX(), r.getRight());
         g.setColour (col::cream.withAlpha (0.45f));
         g.drawText (juce::String ((int) db), juce::Rectangle<float> (screen.getX() + 2, y - 6, 28, 12), juce::Justification::centredRight);
     }
 
-    // segmented bars
+    // pins: a fine line from the floor to the level, a glowing round head on top, a cream peak-hold dot
     const float slot = r.getWidth() / (float) kBands;
-    const float barW = slot * 0.72f;
-    const float segDb = 3.0f;
-    const int   nSeg = (int) ((kTopDb - kFloorDb) / segDb);
-    const float segH = r.getHeight() / (float) nSeg;
+    const float headD = juce::jlimit (4.0f, 7.0f, slot * 0.48f);
+    const float lineW = juce::jmax (1.2f, slot * 0.14f);
+    auto colourFor = [] (float db) { return db > -6.0f ? col::red : (db > -18.0f ? col::amber : juce::Colour (0xffe8c06a)); };
     for (int b = 0; b < kBands; ++b)
     {
-        const float x = r.getX() + slot * (float) b + (slot - barW) * 0.5f;
-        const float v = level[(size_t) b];
-        for (int sgi = 0; sgi < nSeg; ++sgi)
+        const float cx = r.getX() + slot * ((float) b + 0.5f);
+        // faint guide for every pin position
+        g.setColour (col::cream.withAlpha (0.05f));
+        g.fillRect (juce::Rectangle<float> (cx - lineW * 0.5f, r.getY(), lineW, r.getHeight()));
+
+        const float v = juce::jlimit (kFloorDb, kTopDb, level[(size_t) b]);
+        if (v > kFloorDb + 0.5f)
         {
-            const float segTop = kFloorDb + segDb * (float) (sgi + 1);
-            const auto seg = juce::Rectangle<float> (x, r.getBottom() - segH * (float) (sgi + 1) + 1.0f, barW, segH - 1.6f);
-            const juce::Colour base = segTop > -6.0f ? col::red : (segTop > -18.0f ? col::amber : juce::Colour (0xffe8c06a));
-            if (v >= segTop - segDb * 0.5f)
-            {
-                g.setColour (base.withAlpha (0.25f));
-                g.fillRect (seg.expanded (1.0f, 0.5f));           // glow
-                g.setColour (base);
-                g.fillRect (seg);
-            }
-            else
-            {
-                g.setColour (base.withAlpha (0.07f));             // unlit segment
-                g.fillRect (seg);
-            }
+            const float y = dbToY (v);
+            juce::ColourGradient stem (colourFor (v).withAlpha (0.95f), cx, y, juce::Colour (0xffe8c06a).withAlpha (0.25f), cx, r.getBottom(), false);
+            g.setGradientFill (stem);
+            g.fillRect (juce::Rectangle<float> (cx - lineW * 0.5f, y, lineW, r.getBottom() - y));
+            const auto head = juce::Rectangle<float> (headD, headD).withCentre ({ cx, y });
+            g.setColour (colourFor (v).withAlpha (0.28f));
+            g.fillEllipse (head.expanded (headD * 0.45f));                    // glow
+            g.setColour (colourFor (v));
+            g.fillEllipse (head);
+            g.setColour (juce::Colours::white.withAlpha (0.55f));
+            g.fillEllipse (head.reduced (headD * 0.3f).translated (-headD * 0.12f, -headD * 0.12f));   // highlight
         }
-        // peak-hold cap
+        // peak hold
         const float p = peak[(size_t) b];
         if (p > kFloorDb + 1.0f)
         {
             const float y = dbToY (juce::jmin (p, kTopDb));
             g.setColour (col::cream);
-            g.fillRect (juce::Rectangle<float> (x, y - 1.5f, barW, 2.0f));
+            g.fillEllipse (juce::Rectangle<float> (headD * 0.55f, headD * 0.55f).withCentre ({ cx, y - headD * 0.9f }));
         }
     }
 
@@ -1310,8 +1309,12 @@ KeyPanel::KeyPanel (PassiveMasterEQProcessor& p, const AudioHistory& h)
                          "compensates automatically). Best switched while playback is stopped.");
     relearn.setTooltip ("RELEARN - forget the key heard so far and start detecting again (use it when you load a new song).");
     onAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::keyOn, onButton);
+    formantAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::keyFormant, formantButton);
+    formantButton.setTooltip ("FORMANT - keeps the natural tone of voices and instruments while the key moves (no 'chipmunk' "
+                              "when shifting up, no 'giant' when shifting down). Leave it lit for songs with vocals; switch it off "
+                              "for pure electronic tones if you prefer the plain shift.");
     relearn.onClick = [this] { detector.reset(); outKey = detected = {}; repaint(); };
-    for (auto* c : std::initializer_list<juce::Component*> { &semis, &cents, &onButton, &relearn }) addAndMakeVisible (c);
+    for (auto* c : std::initializer_list<juce::Component*> { &semis, &cents, &onButton, &formantButton, &relearn }) addAndMakeVisible (c);
 }
 
 int KeyPanel::getShiftedKey() const
@@ -1361,9 +1364,11 @@ void KeyPanel::resized()
     display = r.removeFromTop (78.0f);
     r.removeFromTop (4.0f);
     auto bottom = r.toNearestInt();
-    auto btns = bottom.removeFromRight (96);
-    onButton.setBounds (btns.removeFromTop (btns.getHeight() / 2).withSizeKeepingCentre (96, 30));
-    relearn.setBounds  (btns.withSizeKeepingCentre (86, 26));
+    auto btns = bottom.removeFromRight (100);
+    const int bh = btns.getHeight() / 3;
+    onButton.setBounds      (btns.removeFromTop (bh).withSizeKeepingCentre (100, juce::jmin (30, bh - 4)));
+    formantButton.setBounds (btns.removeFromTop (bh).withSizeKeepingCentre (100, juce::jmin (28, bh - 4)));
+    relearn.setBounds       (btns.withSizeKeepingCentre (86, juce::jmin (26, bh - 4)));
     bottom.removeFromRight (4);
     semis.setBounds (bottom.removeFromLeft (bottom.getWidth() / 2));
     cents.setBounds (bottom);
@@ -1492,7 +1497,8 @@ namespace tips
     static const juce::String order = "ORDER - EQ > COMP: the EQ shapes tone, then the compressor levels it (most common). "
         "COMP > EQ: compress first, then EQ, so EQ boosts don't push the compressor harder.";
     static const juce::String spectrum = "SPECTRUM - live level of your output in 31 one-third-octave bands (25 Hz to 16 kHz). "
-        "Bars jump up with the music and fall back slowly; the cream caps hold the recent peaks. Use it to see what your EQ moves are doing.";
+        "Range 0 to -62 dB. Each pin rises with the music and falls back slowly; the cream dots hold the recent peaks "
+        "(amber above -18 dB, red above -6 dB). Use it to see what your EQ moves are doing.";
     static const juce::String scope = "VECTORSCOPE - shows the stereo image. A tall, narrow cloud = mostly mono/centre; wide = lots of stereo; "
         "leaning toward L or R = one side louder. Top meter: L/R balance. Bottom meter: phase correlation (+1 = mono-safe, 0 = very wide, "
         "below 0 = out of phase: parts will cancel on mono speakers). The cream mark holds the lowest reading for 3 s.";
@@ -2019,8 +2025,8 @@ void HelpOverlay::paint (juce::Graphics& g)
           "The orange lamp under each meter flashes when peaks go above -1 dBFS.\n"
           "HARMONICS shows how much tube colour is being added, in % THD. Below 0.3 % is a subtle sheen; the red zone (1 %+) is obvious saturation." },
         { "1b  SPECTRUM, KEY, VECTORSCOPE, LOUDNESS (second row)",
-          "SPECTRUM: 31 bars moving with your output.  SONG KEY: the detected key (give it ~20 s); SEMITONES / FINE + KEY SHIFT "
-          "move the song to a new key (adds 85 ms latency while on).  VECTORSCOPE: stereo image; keep correlation above 0.  "
+          "SPECTRUM: 31 pins moving with your output (0 to -62 dB).  SONG KEY: the detected key (give it ~20 s); SEMITONES / FINE + KEY SHIFT "
+          "move the song to a new key (85 ms latency while on); FORMANT keeps voices natural.  VECTORSCOPE: stereo image; keep correlation above 0.  "
           "LOUDNESS: pick a TARGET, press RESET, play the song; keep TRUE PEAK MAX at -1 dBTP or lower." },
         { "2  LAMPS & TUBES",
           "SIGNAL (green) = audio is coming in.  LINK (yellow) = right channel follows left.  "
@@ -2045,7 +2051,7 @@ void HelpOverlay::paint (juce::Graphics& g)
           "EQ IN / OUT bypasses the EQ for a quick before/after." },
         { "7  STEREO & WINDOW",
           "LINK keeps both sides identical; unlink to treat left and right separately. L > R / R > L copy one side to the other.  "
-          "WINDOW: drag the bottom-right corner to resize - everything scales together. MINI shows just the meters; "
+          "WINDOW: pull the chrome handle on the left or right edge (or the bottom-right corner) to resize - everything scales together. MINI shows just the meters; "
           "FULL PANEL brings everything back. FULL SCREEN fills the screen (press EXIT FULL to go back)." },
         { "8  VARI-MU COMPRESSOR (bottom panel)",
           "A tube 'variable-mu' compressor: very soft knee, and the ratio rises the harder you push (about 1.5:1 up to 4:1), "
@@ -2530,6 +2536,51 @@ void Faceplate::resized()
 // =============================================================================
 //  Editor: hosts the faceplate and scales it to the window size
 // =============================================================================
+// =============================================================================
+//  EdgeGrip
+// =============================================================================
+EdgeGrip::EdgeGrip (bool rightEdge) : right (rightEdge)
+{
+    setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+    setTooltip ("Drag sideways to make the Masterdesk bigger or smaller (everything stays in proportion).");
+}
+
+void EdgeGrip::paint (juce::Graphics& g)
+{
+    const bool hot = dragging || isMouseOver();
+    auto r = getLocalBounds().toFloat();
+    // a chrome handle with three ridges, centred vertically
+    const float hh = juce::jmin (90.0f, r.getHeight() * 0.3f);
+    auto h = r.withSizeKeepingCentre (juce::jmin (8.0f, r.getWidth() - 2.0f), hh);
+    g.setColour (juce::Colours::black.withAlpha (hot ? 0.75f : 0.5f));
+    g.fillRoundedRectangle (h.expanded (1.5f), 4.0f);
+    juce::ColourGradient metalGrad (juce::Colour (hot ? 0xffd8d8d8 : 0xff8a8a8a), h.getX(), h.getY(),
+                                    juce::Colour (hot ? 0xff7a7a7a : 0xff3a3a3a), h.getRight(), h.getY(), false);
+    g.setGradientFill (metalGrad);
+    g.fillRoundedRectangle (h, 3.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.55f));
+    for (int i = -1; i <= 1; ++i)
+        g.fillRect (juce::Rectangle<float> (h.getX() + 1.5f, h.getCentreY() + (float) i * 7.0f - 0.75f, h.getWidth() - 3.0f, 1.5f));
+    if (hot)
+    {
+        g.setColour (col::amber.withAlpha (0.8f));
+        g.drawRoundedRectangle (h.expanded (1.5f), 4.0f, 1.0f);
+    }
+}
+
+void EdgeGrip::mouseDown (const juce::MouseEvent& e)
+{
+    dragging = true;
+    startX = e.getScreenX();
+    if (onDrag) onDrag (0, right, true);
+    repaint();
+}
+
+void EdgeGrip::mouseDrag (const juce::MouseEvent& e)
+{
+    if (onDrag) onDrag (e.getScreenX() - startX, right, false);
+}
+
 PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
     : AudioProcessorEditor (&p), proc (p), face (p)
 {
@@ -2558,8 +2609,39 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
     face.onToggleFullScreen = [this] { toggleFullScreen(); };
     face.onToggleCompact    = [this] { toggleCompact(); };
 
+    for (auto* gr : { &leftGrip, &rightGrip })
+    {
+        gr->onDrag = [this] (int dx, bool rightEdge, bool start) { edgeDrag (dx, rightEdge, start); };
+        addAndMakeVisible (*gr);
+    }
+
     setSize (juce::roundToInt (Faceplate::kW * scale), juce::roundToInt (designH() * scale));
     sizeRestored = true;
+}
+
+// Pulling the left or right edge: wider (or narrower), with the height following so nothing distorts
+void PassiveMasterEQEditor::edgeDrag (int deltaX, bool rightEdge, bool start)
+{
+    auto* win = standaloneWindow();
+    if (start)
+    {
+        dragStartBounds = getBounds();
+        if (win != nullptr) dragStartWindow = win->getBounds();
+        return;
+    }
+    if (win != nullptr && win->isFullScreen()) return;
+    const int dw = rightEdge ? deltaX : -deltaX;
+    const double aspect = (double) Faceplate::kW / (double) designH();
+    // keep the current shape's zoom as the reference, so a letterboxed standalone window grows evenly
+    const double startScale = juce::jmin ((double) dragStartBounds.getWidth() / Faceplate::kW, (double) dragStartBounds.getHeight() / designH());
+    double newScale = (Faceplate::kW * startScale + dw) / Faceplate::kW;
+    newScale = juce::jlimit (0.45, 3.0, newScale);
+    if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds()))
+        newScale = juce::jmin (newScale, (double) d->userArea.getHeight() / designH(), (double) d->userArea.getWidth() / Faceplate::kW);
+    const int w = (int) std::lround (Faceplate::kW * newScale), h = (int) std::lround (w / aspect);
+    setSize (w, h);
+    if (win != nullptr && ! rightEdge)                  // standalone: the left edge moves, the right stays put
+        win->setTopLeftPosition (dragStartWindow.getRight() - win->getWidth(), win->getY());
 }
 
 PassiveMasterEQEditor::~PassiveMasterEQEditor() { setLookAndFeel (nullptr); }
@@ -2588,6 +2670,10 @@ void PassiveMasterEQEditor::resized()
     const float offX = ((float) getWidth()  - (float) Faceplate::kW * scale) * 0.5f;
     const float offY = ((float) getHeight() - (float) designH() * scale) * 0.5f;
     face.setTransform (juce::AffineTransform::scale (scale).translated (offX, offY));
+    const int gw = juce::jlimit (8, 14, juce::roundToInt (12.0f * scale + 2.0f));
+    leftGrip.setBounds (0, 0, gw, getHeight());
+    rightGrip.setBounds (getWidth() - gw, 0, gw, getHeight());
+    leftGrip.toFront (false); rightGrip.toFront (false);
     if (sizeRestored && ! pluginFullScreen && (standaloneWindow() == nullptr || ! standaloneWindow()->isFullScreen()))
         proc.apvts.state.setProperty ("uiScale", scale, nullptr);
     face.setScaleChoice (scale);
