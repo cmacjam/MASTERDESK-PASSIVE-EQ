@@ -1,6 +1,6 @@
-# Masterdesk Passive EQ — by Basemental
+# Basemental MasterDesk Mastering Suite
 
-A two-in-one mastering channel:
+A complete mastering suite in one plug-in:
 
 - **Top: Passive EQ.** A stereo, four-band, all-passive *parallel* equaliser with
   tube make-up gain, modelled on the behaviour of the Manley Massive Passive **Mastering Version**.
@@ -35,9 +35,9 @@ provided free by GitHub.
    `.github` folder — on a Mac press ⌘⇧. in Finder to show it), and **Commit**.
 4. Open the **Actions** tab. A run called **Build plugin** starts by itself
    (≈ 15–25 min). When it shows a green tick, open it and download from **Artifacts**:
-   - `Masterdesk-Passive-EQ-macOS` → **.pkg installer** (VST3 + AU + app)
-   - `Masterdesk-Passive-EQ-Windows` → **Setup .exe** (VST3 + app)
-   - `Masterdesk-Passive-EQ-Linux` → **.tar.gz** with `install.sh`
+   - `MasterDesk-Mastering-Suite-macOS` → **.pkg installer** (VST3 + AU + app)
+   - `MasterDesk-Mastering-Suite-Windows` → **Setup .exe** (VST3 + app)
+   - `MasterDesk-Mastering-Suite-Linux` → **.tar.gz** with `install.sh`
 5. Optional: create a tag such as `v1.0.0` (Releases → *Draft a new release*)
    and the installers are attached to a public-facing release automatically.
 
@@ -182,7 +182,7 @@ anything for a tooltip, or press **HELP ?** for the full guide page.
 | Area | What it is | What it tells you / does |
 |---|---|---|
 | **INPUT** knob + meter (top left) | Input level | −24 to +24 dB of gain before everything else (EQ, tubes, compressor, meters), click-free. The L/R LED meter under it shows the peak level after INPUT: green, amber above −6 dBFS, red above −1 dBFS; white tick = 2 s peak hold. |
-| **VU LEFT / VU RIGHT** | Moving-needle VU meters on the output | Average loudness. 0 VU = −18 dBFS RMS. Real VU ballistics (~300 ms). The orange lamp under each meter flashes when peaks pass −1 dBFS. |
+| **VU LEFT / VU RIGHT** | Moving-needle VU meters on the output (black faces, white scale) | Average loudness. 0 VU = −18 dBFS RMS. Real VU ballistics (~300 ms). The orange lamp under each meter flashes when peaks pass −1 dBFS. |
 | **HARMONICS** meter | Needle meter in % THD | How much colour the tube stage is adding. < 0.3 % = subtle sheen, red zone (1 %+) = audible saturation. Green lamp = tube stage on. |
 | **TUBE STAGE** glass tubes | Visual indicator | Dark when the tube stage is off; glow brighter with level and DRIVE. |
 | **Jewel lamps** | SIGNAL (green), LINK (yellow), CLIP (red), TUBE (amber) | Audio present · right follows left · output went over 0 dBFS (holds ~1 s) · tube stage on. |
@@ -191,7 +191,7 @@ anything for a tooltip, or press **HELP ?** for the full guide page.
 | **SONG KEY** panel | Key detection + key shift | Shows the song's musical key (e.g. *A minor*), its Camelot code and key signature, with a certainty bar. It listens to about the last 20 s; **RELEARN** starts over for a new song. **SEMITONES** (−12…+12) and **FINE** (−50…+50 cents) with **KEY SHIFT** on move the whole song to a new key; the panel then shows *A minor → B minor*. The shifter is a stereo-locked, peak-locked phase vocoder (left/right phase kept exactly) that keeps each note — even a quiet one right next to a loud one — on its own new pitch. **FORMANT** (on by default) keeps the spectral envelope in place, so voices and instruments keep their natural tone instead of the "chipmunk" (up) or "giant" (down) sound. It adds 85 ms latency only while on (your DAW compensates), so switch it while stopped. Small shifts (±1–3 st) sound most natural. |
 | **VECTORSCOPE** screen | Stereo image | Dot cloud of the output: vertical = mid (L+R), horizontal = side (L−R); tall/narrow = centred, wide = stereo. Auto-zooms quiet material (shown as "AUTO x…"). Top meter: L/R balance. Bottom meter: phase correlation −1…+1 (above 0 = mono-safe); the cream mark holds the lowest value for 3 s. |
 | **LOUDNESS** panel | EBU R128 / ITU-R BS.1770-4 | INTEGRATED, SHORT-TERM (3 s), MOMENTARY (0.4 s), TRUE PEAK MAX (4× oversampled, dBTP), LRA, PLR, PSR, short-term and momentary maxima. Choose a TARGET (−14 streaming, −16 Apple Music, −23 EBU, −24 ATSC, −9 loud); INTEGRATED turns green within ±1 LU, red above, blue below. TRUE PEAK MAX turns red above −1 dBTP. RESET clears the integrated and maximum readings. Measured on the plugin's output and keeps running with the window closed. |
-| **AUTO MASTER** (plate above the footer) | Genre-based mastering assistant | Choose a **GENRE** (POP, JAZZ, 70'S, 80'S, 90'S, R&B, HIP HOP), press **LISTEN** and play the song, ideally its fullest part. After 30 s of music (silence is skipped), it does the following: (1) measures the mix's tonal balance in 10 octave bands, using only the louder passages; (2) compares that balance with the genre's target curve; (3) fits the four passive bands to the difference using the real switch positions, preferring a few broad, gentle moves (max ±6 dB, scaled by **AMOUNT**); (4) sets INPUT so the mix arrives at about −16 LUFS (gain staging), then sets the tubes, filters and compressor for the style, finding the THRESHOLD that gives the genre's amount of gain reduction; (5) sets the **MAXIMIZER** gain that lands the song on the genre's loudness. Steps 4 and 5 work by rendering the recording through the real EQ, compressor and limiter. After applying, it measures the actual loudness for a few seconds and corrects the maximizer by up to two small steps. The display shows the mix (grey), the target (red dashes) and the result after EQ (green), plus the moves made and the loudness before → after. Clicking another genre or moving AMOUNT re-plans straight away from the same recording. **UNDO** returns to your own settings. Everything it sets stays adjustable. The genre targets are stylistic starting points, not measurements of particular records: POP −10, JAZZ −16, 70'S −14, 80'S −12, 90'S −10.5, R&B −10, HIP HOP −9 LUFS. |
+| **AUTO MASTER** (plate above the footer) | Genre-based mastering assistant | Choose a **GENRE** (POP, JAZZ, 70'S, 80'S, 90'S, R&B, HIP HOP), press **LISTEN** and play the song, ideally its fullest part. After 30 s of music (silence is skipped), it does the following: (1) measures the mix's tonal balance in 10 octave bands, using only the louder passages; (2) compares that balance with the genre's target curve; (3) fits the four passive bands to the difference using the real switch positions, preferring a few broad, gentle moves (max ±6 dB, scaled by **AMOUNT**); (4) sets INPUT so the mix arrives at about −16 LUFS (gain staging), then sets the tubes, filters and compressor for the style, finding the THRESHOLD that gives the genre's amount of gain reduction; (5) sets the **MAXIMIZER** gain that lands the song on the genre's loudness. Steps 4 and 5 work by rendering the recording through the real EQ, compressor and limiter. After applying, it measures the actual loudness for a few seconds and corrects the maximizer by up to two small steps. The blue display shows the mix (steel blue), the target (white dashes) and the result after EQ (aqua), plus the moves made and the loudness before → after. Clicking another genre or moving AMOUNT re-plans straight away from the same recording. **UNDO** returns to your own settings. Everything it sets stays adjustable. The genre targets are stylistic starting points, not measurements of particular records: POP −10, JAZZ −16, 70'S −14, 80'S −12, 90'S −10.5, R&B −10, HIP HOP −9 LUFS. |
 | **MAXIMIZER** (right of AUTO MASTER) | Final look-ahead brickwall limiter | **GAIN** (−12…+18 dB) pushes into the limiter; **CEILING** (−3…0 dBFS) is the highest sample peak that can come out (−1 dB is the safe choice for streaming). It uses 1.5 ms of look-ahead, a release that slows down when limiting is sustained, and identical gain on both sides. The GR bar shows how much it is limiting: up to 2–3 dB is clean, while constant 5–6 dB+ starts to flatten the punch. It is the last stage, and its 1.5 ms delay is always included in the reported latency, so switching it never shifts timing. |
 | **Channel rows** (LEFT / RIGHT) | Four EQ bands + FILTERS / TRIM | See the table below. When LINK is on, the right row dims because it follows the left. |
 | **Cream windows** under knobs | Value readouts | The GAIN window shows the *actual* dB after the gain/bandwidth interaction. |
@@ -203,7 +203,7 @@ anything for a tooltip, or press **HELP ?** for the full guide page.
 | **SIZE** menu (footer) | Window size | 60 / 70 / 85 / 100 %, drag the bottom-right corner, or pull an edge handle. Everything scales **in proportion**. Opens at the largest size that fits your screen; size is remembered per session. |
 | **MINI / FULL PANEL** (footer) | Compact view | MINI collapses to the metering only (VU, harmonics, input, spectrum, vectorscope, loudness) — handy on a second screen while mixing. FULL PANEL brings the EQ and compressor back. |
 | **FULL SCREEN / EXIT FULL** (footer) | Fill the screen | In the standalone app this is real macOS full screen (the window's green button also works, and the yellow button minimises); the panel is centred at the largest size that keeps its proportions. Inside a DAW the plug-in window grows as large as the screen allows; press again to return to the previous size. |
-| **Nameplate** (footer right) | Branding | "BASEMENTAL MASTERDESK" brass plate; edit the text in `PluginEditor.cpp` (`Faceplate::paint`). |
+| **Nameplate** (footer right) | Branding | "BASEMENTAL MASTERDESK / MASTERING SUITE" brass plate; edit the text in `PluginEditor.cpp` (`Faceplate::paint`). |
 
 Tips: double-click any knob to reset it; every knob clicks through its detents like the hardware.
 
