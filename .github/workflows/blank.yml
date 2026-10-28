@@ -17,12 +17,12 @@ env:
   HAS_APPLE_SIGNING: ${{ secrets.MACOS_CERTS_P12 != '' }}
   HAS_APPLE_NOTARY: ${{ secrets.APPLE_APP_PASSWORD != '' }}
   ART: build/PassiveMasterEQ_artefacts/Release
-  NAME: MasterDesk Mastering Suite
   OLD_NAME: Masterdesk Passive EQ        # earlier versions: removed when installing
+  # NAME (the plug-in's name) is read from CMakeLists.txt in the "Version" step
 
 jobs:
   build:
-    name: ${{ matrix.name }}
+    name: ${{ matrix.name }}å
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -35,22 +35,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Works whether the project files are at the top of the repository or
-      # inside a folder (e.g. "MasterDesk-Mastering-Suite/") after a web upload.
+      # Works whether the project files are at the top of the repository or inside a
+      # folder (e.g. "MasterDesk-Mastering-Suite/") after a web upload. If there are
+      # several copies (an old one at the top and a new one in a folder), the newest wins.
       - name: Locate project
         shell: bash
         run: |
-          if [ -f CMakeLists.txt ] && grep -q juce_add_plugin CMakeLists.txt; then
-            echo "Project is at the repository root."
-          else
-            f=$(grep -rl --include=CMakeLists.txt "juce_add_plugin" . | head -1 || true)
-            if [ -z "$f" ]; then
-              echo "::error::Could not find the plugin project (CMakeLists.txt with juce_add_plugin). Upload the files from the zip."
-              exit 1
+          best=""; bestv=""
+          while IFS= read -r f; do
+            v=$(sed -n 's/^project(PassiveMasterEQ VERSION \([0-9.]*\).*/\1/p' "$f" | head -1)
+            [ -z "$v" ] && continue
+            echo "Found version $v in $(dirname "$f")"
+            if [ -z "$bestv" ] || [ "$(printf '%s\n%s\n' "$bestv" "$v" | sort -V | tail -1)" = "$v" ] && [ "$v" != "$bestv" ]; then
+              best=$(dirname "$f"); bestv="$v"
             fi
-            dir=$(dirname "$f")
-            echo "Project found in $dir - using it."
-            cp -R "$dir"/. .
+          done < <(grep -rl --include=CMakeLists.txt "juce_add_plugin" . | grep -v "^./build/" | sort)
+          if [ -z "$best" ]; then
+            echo "::error::Could not find the plugin project (CMakeLists.txt with juce_add_plugin). Upload the files from the zip."
+            exit 1
+          fi
+          if [ "$best" = "." ]; then
+            echo "Using the project at the repository root (version $bestv)."
+          else
+            echo "::notice::Using the newest project, version $bestv, from the folder $best"
+            cp -R "$best"/. .
           fi
 
       - name: Version
@@ -59,6 +67,10 @@ jobs:
         run: |
           v=$(sed -n 's/^project(PassiveMasterEQ VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          # the plug-in's name, exactly as the build will call its files
+          n=$(sed -n 's/^ *PRODUCT_NAME *"\(.*\)".*/\1/p' CMakeLists.txt | head -1)
+          echo "Building $n $v"
+          echo "NAME=$n" >> "$GITHUB_ENV"
 
       - name: Linux dependencies
         if: runner.os == 'Linux'
