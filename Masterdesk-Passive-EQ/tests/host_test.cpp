@@ -180,25 +180,27 @@ int main()
                 snap (*ed, "editor_mini.png");
                 e->toggleCompact();
                 setParam (s, ppm::params::inputGain, 0.0f);
-                // edge handles: pull the right edge out 200 px, then the left edge in 150 px
-                // (the plug-in never grows past the screen, so allow for small screens such as CI machines)
+                // side handles: sideways = wider (panel spreads out, height stays), down = bigger, narrower = smaller
                 const double aspect = (double) PassiveMasterEQEditor::designWidth() / PassiveMasterEQEditor::designHeight();
-                int maxW = 100000;
+                int maxW = 100000, maxH = 100000;
                 if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (ed->getScreenBounds()))
-                    maxW = (int) std::floor (std::min ((double) d->userArea.getWidth(), d->userArea.getHeight() * aspect));
-                ed->setSize (600, (int) std::lround (600 / aspect));
-                const int w0 = ed->getWidth();
-                const int want1 = std::min (w0 + 200, maxW);
-                e->testEdgeDrag (200, true);
-                const int w1 = ed->getWidth(), h1 = ed->getHeight();
-                const int want2 = std::max (w1 - 150, (int) std::lround (PassiveMasterEQEditor::designWidth() * 0.45));
-                e->testEdgeDrag (150, false);
+                    { maxW = d->userArea.getWidth(); maxH = d->userArea.getHeight() - 80; }
+                ed->setSize (760, (int) std::lround (760 / aspect));      // (the smallest size is 45 %: 648 x 693)
+                const int w0 = ed->getWidth(), h0 = ed->getHeight();
+                e->testEdgeDrag (300, 0, true);                       // pull the right side out
+                const int w1 = ed->getWidth(), h1 = ed->getHeight(), p1 = e->panelWidth();
+                e->testEdgeDrag (-200, 0, false);                     // pull the left side out (leftwards = wider)
                 const int w2 = ed->getWidth(), h2 = ed->getHeight();
-                std::printf ("  edge handles: %d -> pull right +200 -> %dx%d -> push left in 150 -> %dx%d (shape %.3f / %.3f, want %.3f)\n",
-                             w0, w1, h1, w2, h2, (double) w1 / h1, (double) w2 / h2, aspect);
-                std::printf ("    (screen allows up to %d px wide; expected %d then %d)\n", maxW, want1, want2);
-                if (std::abs (w1 - want1) > 2 || std::abs (w2 - want2) > 2
-                    || std::abs ((double) w1 / h1 - aspect) > 0.01 || std::abs ((double) w2 / h2 - aspect) > 0.01) ++failures;
+                e->testEdgeDrag (0, 60, true);                        // pull down: bigger
+                const int w3 = ed->getWidth(), h3 = ed->getHeight();
+                e->testEdgeDrag (-2000, 0, true);                     // push far in: never narrower than the panel's shape
+                const int w4 = ed->getWidth(), h4 = ed->getHeight();
+                std::printf ("  side handles: %dx%d -> right +300 -> %dx%d (panel %d wide, standard %d) -> left +200 -> %dx%d -> down +60 -> %dx%d -> pushed in -> %dx%d (shape %.3f, min %.3f)\n",
+                             w0, h0, w1, h1, p1, PassiveMasterEQEditor::designWidth(), w2, h2, w3, h3, w4, h4, (double) w4 / h4, aspect);
+                if (std::abs (w1 - std::min (w0 + 300, maxW)) > 2 || h1 != h0 || p1 <= PassiveMasterEQEditor::designWidth()
+                    || std::abs (w2 - std::min (w1 + 200, maxW)) > 2 || h2 != h0
+                    || std::abs (h3 - std::min (h2 + 60, maxH)) > 2 || w3 < w2
+                    || (double) w4 / h4 < aspect - 0.01) ++failures;
                 // (help snapshot taken above)
             }
         }

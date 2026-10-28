@@ -425,10 +425,20 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override { dragging = false; repaint(); }
-    std::function<void (int deltaX, bool rightEdge, bool start)> onDrag;
+    std::function<void (int deltaX, int deltaY, bool rightEdge, bool start)> onDrag;
 private:
     bool right, dragging = false;
-    int startX = 0;
+    int startX = 0, startY = 0;
+};
+
+// Window shape rules: never narrower than the panel's own shape (it shrinks instead),
+// and up to kMaxWide times wider (the panel spreads out to fill the width).
+class WidthRangeConstrainer : public juce::ComponentBoundsConstrainer
+{
+public:
+    double minRatio = 0.0, maxRatio = 0.0;            // width / height, 0 = no limit
+    void checkBounds (juce::Rectangle<int>& b, const juce::Rectangle<int>& prev, const juce::Rectangle<int>& limits,
+                      bool top, bool left, bool bottom, bool right) override;
 };
 } // namespace ui
 
@@ -448,12 +458,14 @@ public:
     float vectorscopeBalance() const      { return face.getVectorscope().getBalance(); }
     int detectedKey() const               { return face.getKeyPanel().getDetected().key; }
     int shiftedKey() const                { return face.getKeyPanel().getShiftedKey(); }
+    static constexpr double kMaxWide = 2.2;     // the panel can become up to 2.2x its standard width
+    int panelWidth() const { return face.getWidth(); }           // tests
     static int designWidth()  { return ui::Faceplate::kW; }
     static int designHeight() { return ui::Faceplate::kH; }
     void parentHierarchyChanged() override;
     void toggleFullScreen();
     void toggleCompact();
-    void testEdgeDrag (int deltaX, bool rightEdge) { edgeDrag (0, rightEdge, true); edgeDrag (deltaX, rightEdge, false); }   // tests
+    void testEdgeDrag (int deltaX, int deltaY, bool rightEdge) { edgeDrag (0, 0, rightEdge, true); edgeDrag (deltaX, deltaY, rightEdge, false); }   // tests
 
 private:
     int designH() const { return face.isCompact() ? ui::Faceplate::kHCompact : ui::Faceplate::kH; }
@@ -465,7 +477,8 @@ private:
     juce::TooltipWindow tooltips { this, 500 };
     ui::EdgeGrip leftGrip { false }, rightGrip { true };
     juce::Rectangle<int> dragStartBounds, dragStartWindow;
-    void edgeDrag (int deltaX, bool rightEdge, bool start);
+    void edgeDrag (int deltaX, int deltaY, bool rightEdge, bool start);
+    ui::WidthRangeConstrainer shapeConstrainer;
     bool sizeRestored = false, standaloneSetupDone = false, pluginFullScreen = false;
     juce::Rectangle<int> sizeBeforeFull;
 

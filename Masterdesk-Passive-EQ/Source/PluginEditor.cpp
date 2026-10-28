@@ -2083,7 +2083,7 @@ void HelpOverlay::paint (juce::Graphics& g)
           "EQ IN / OUT bypasses the EQ for a quick before/after." },
         { "7  STEREO & WINDOW",
           "LINK keeps both sides identical; unlink to treat left and right separately. L > R / R > L copy one side to the other.  "
-          "WINDOW: pull the chrome handle on the left or right edge (or the bottom-right corner) to resize - everything scales together. MINI shows just the meters; "
+          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed. MINI shows just the meters; "
           "FULL PANEL brings everything back. FULL SCREEN fills the screen (press EXIT FULL to go back)." },
         { "8  VARI-MU COMPRESSOR (bottom panel)",
           "A tube 'variable-mu' compressor: very soft knee, and the ratio rises the harder you push (about 1.5:1 up to 4:1), "
@@ -2455,35 +2455,38 @@ void Faceplate::resized()
     topPlate = r.removeFromTop (236.0f);
     {
         auto t = topPlate.reduced (22.0f, 18.0f).toNearestInt();
-        auto inCol = t.removeFromLeft (100);
+        // meters grow a little when the panel is made wider; then everything is spaced evenly across the plate
+        const int extra = juce::jmax (0, t.getWidth() - 1368);
+        const int vuW = juce::jmin (330, 286 + extra / 6), harmW = juce::jmin (260, 226 + extra / 8);
+        const int tubeW = 62, pairW = 2 * tubeW + 16, inW = 100, lampW = 60, driveW = 106;
+        const int gap = juce::jmax (12, (t.getWidth() - (inW + 2 * vuW + harmW + pairW + lampW + driveW)) / 6);
+
+        auto inCol = t.removeFromLeft (inW);
         inputKnob.setBounds (inCol.removeFromTop (150));
         inCol.removeFromTop (6);
         inputMeter.setBounds (inCol.removeFromTop (40));
-        t.removeFromLeft (12);
-
-        // meters grow a little when the window is made wider
-        const int extra = juce::jmax (0, t.getWidth() - 1080);
-        const int vuW = juce::jmin (330, 286 + extra / 6), harmW = juce::jmin (260, 226 + extra / 8);
+        t.removeFromLeft (gap);
         vuL.setBounds (t.removeFromLeft (vuW));
-        t.removeFromLeft (12);
+        t.removeFromLeft (gap);
         vuR.setBounds (t.removeFromLeft (vuW));
-        t.removeFromLeft (12);
+        t.removeFromLeft (gap);
         harm.setBounds (t.removeFromLeft (harmW).withSizeKeepingCentre (harmW, juce::jmin (172, t.getHeight())));
-        t.removeFromLeft (12);
+        t.removeFromLeft (gap);
 
-        auto driveCol = t.removeFromRight (106);
+        auto driveCol = t.removeFromRight (driveW);
         drive.setBounds (driveCol.removeFromTop (138));
         driveCol.removeFromTop (8);
         tubeButton.setBounds (driveCol.removeFromTop (32));
+        t.removeFromRight (gap);
 
-        auto lampCol = t.removeFromRight (60);
+        auto lampCol = t.removeFromRight (lampW);
         const int lampH = lampCol.getHeight() / 4;
         for (auto* lamp : { &lampSignal, &lampLink, &lampClip, &lampTube })
             lamp->setBounds (lampCol.removeFromTop (lampH));
 
-        // the two tubes stay together as a pair, centred in whatever space is left
+        // the two tubes stay together as a pair, centred in the space between the meters and the lamps
         auto tubes = t.withTrimmedTop (22);
-        const int tw = juce::jlimit (30, 62, tubes.getWidth() / 2 - 8);
+        const int tw = juce::jlimit (30, tubeW, tubes.getWidth() / 2 - 8);
         auto pair = tubes.withSizeKeepingCentre (juce::jmin (tubes.getWidth(), 2 * tw + 16), tubes.getHeight());
         tube1.setBounds (pair.removeFromLeft (tw).withTrimmedBottom (6));
         tube2.setBounds (pair.removeFromRight (tw).withTrimmedBottom (6));
@@ -2496,11 +2499,14 @@ void Faceplate::resized()
     if (compact) r.removeFromTop (curvePlate.getHeight());
     {
         auto d = curvePlate.reduced (8.0f).toNearestInt();
-        analyzer.setBounds (d.removeFromLeft (d.getWidth() * 31 / 100));
+        // standard widths, then extra width (a wider panel) mostly goes to the spectrum
+        const int std = 1396, ex = juce::jmax (0, d.getWidth() - std);
+        const int specW = std * 31 / 100 + ex * 60 / 100, keyW = 300 + ex * 8 / 100, scopeW = 232 + ex * 7 / 100;
+        analyzer.setBounds (d.removeFromLeft (ex > 0 ? specW : d.getWidth() * 31 / 100));
         d.removeFromLeft (8);
-        keyPanel.setBounds (d.removeFromLeft (300));
+        keyPanel.setBounds (d.removeFromLeft (keyW));
         d.removeFromLeft (8);
-        vectorscope.setBounds (d.removeFromLeft (232));
+        vectorscope.setBounds (d.removeFromLeft (scopeW));
         d.removeFromLeft (8);
         loudnessPanel.setBounds (d);
     }
@@ -2583,7 +2589,8 @@ void Faceplate::resized()
 EdgeGrip::EdgeGrip (bool rightEdge) : right (rightEdge)
 {
     setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
-    setTooltip ("Drag sideways to make the Masterdesk bigger or smaller (everything stays in proportion).");
+    setTooltip ("Grab and pull: sideways makes the MasterDesk wider (the panel spreads out), up or down makes it bigger. "
+                "Nothing ever gets squashed or stretched.");
 }
 
 void EdgeGrip::paint (juce::Graphics& g)
@@ -2612,14 +2619,30 @@ void EdgeGrip::paint (juce::Graphics& g)
 void EdgeGrip::mouseDown (const juce::MouseEvent& e)
 {
     dragging = true;
-    startX = e.getScreenX();
-    if (onDrag) onDrag (0, right, true);
+    startX = e.getScreenX(); startY = e.getScreenY();
+    if (onDrag) onDrag (0, 0, right, true);
     repaint();
 }
 
 void EdgeGrip::mouseDrag (const juce::MouseEvent& e)
 {
-    if (onDrag) onDrag (e.getScreenX() - startX, right, false);
+    if (onDrag) onDrag (e.getScreenX() - startX, e.getScreenY() - startY, right, false);
+}
+
+void WidthRangeConstrainer::checkBounds (juce::Rectangle<int>& b, const juce::Rectangle<int>& prev, const juce::Rectangle<int>& limits,
+                                         bool top, bool left, bool bottom, bool right)
+{
+    ComponentBoundsConstrainer::checkBounds (b, prev, limits, top, left, bottom, right);
+    const bool vertical = top || bottom;
+    if (minRatio > 0.0 && b.getWidth() < b.getHeight() * minRatio)
+    {
+        if (vertical) b.setWidth ((int) std::ceil (b.getHeight() * minRatio));       // taller -> also wider: bigger
+        else          b.setHeight ((int) std::floor (b.getWidth() / minRatio));     // narrower than the panel -> smaller
+    }
+    if (maxRatio > 0.0 && b.getWidth() > b.getHeight() * maxRatio)
+        b.setWidth ((int) std::floor (b.getHeight() * maxRatio));
+    if (left) b.setX (prev.getRight() - b.getWidth());
+    if (top)  b.setY (prev.getBottom() - b.getHeight());
 }
 
 PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
@@ -2644,6 +2667,7 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
     face.setBounds (0, 0, Faceplate::kW, designH());
 
     setResizable (true, true);
+    setConstrainer (&shapeConstrainer);
     updateLimits();
 
     face.onScaleRequested   = [this] (float sc) { setSize (juce::roundToInt (Faceplate::kW * sc), juce::roundToInt (designH() * sc)); };
@@ -2652,16 +2676,19 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
 
     for (auto* gr : { &leftGrip, &rightGrip })
     {
-        gr->onDrag = [this] (int dx, bool rightEdge, bool start) { edgeDrag (dx, rightEdge, start); };
+        gr->onDrag = [this] (int dx, int dy, bool rightEdge, bool start) { edgeDrag (dx, dy, rightEdge, start); };
         addAndMakeVisible (*gr);
     }
 
-    setSize (juce::roundToInt (Faceplate::kW * scale), juce::roundToInt (designH() * scale));
+    // remembered window size (may be wider than the standard shape), else the standard shape at `scale`
+    const int savedW = (int) proc.apvts.state.getProperty ("uiW", 0), savedH = (int) proc.apvts.state.getProperty ("uiH", 0);
+    if (savedW > 200 && savedH > 150) setSize (savedW, savedH);
+    else setSize (juce::roundToInt (Faceplate::kW * scale), juce::roundToInt (designH() * scale));
     sizeRestored = true;
 }
 
-// Pulling the left or right edge: wider (or narrower), with the height following so nothing distorts
-void PassiveMasterEQEditor::edgeDrag (int deltaX, bool rightEdge, bool start)
+// Pulling a side handle: sideways = wider / narrower, up / down = bigger / smaller
+void PassiveMasterEQEditor::edgeDrag (int deltaX, int deltaY, bool rightEdge, bool start)
 {
     auto* win = standaloneWindow();
     if (start)
@@ -2671,16 +2698,18 @@ void PassiveMasterEQEditor::edgeDrag (int deltaX, bool rightEdge, bool start)
         return;
     }
     if (win != nullptr && win->isFullScreen()) return;
-    const int dw = rightEdge ? deltaX : -deltaX;
-    const double aspect = (double) Faceplate::kW / (double) designH();
-    // keep the current shape's zoom as the reference, so a letterboxed standalone window grows evenly
-    const double startScale = juce::jmin ((double) dragStartBounds.getWidth() / Faceplate::kW, (double) dragStartBounds.getHeight() / designH());
-    double newScale = (Faceplate::kW * startScale + dw) / Faceplate::kW;
-    newScale = juce::jlimit (0.45, 3.0, newScale);
-    if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds()))
-        newScale = juce::jmin (newScale, (double) d->userArea.getHeight() / designH(), (double) d->userArea.getWidth() / Faceplate::kW);
-    const int w = (int) std::lround (Faceplate::kW * newScale), h = (int) std::lround (w / aspect);
-    setSize (w, h);
+    juce::Rectangle<int> b (dragStartBounds.getX(), dragStartBounds.getY(),
+                            dragStartBounds.getWidth() + (rightEdge ? deltaX : -deltaX), dragStartBounds.getHeight() + deltaY);
+    const auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds());
+    if (d != nullptr)                                   // fit the screen
+        b.setSize (juce::jmin (b.getWidth(), d->userArea.getWidth()), juce::jmin (b.getHeight(), d->userArea.getHeight() - (win != nullptr ? 40 : 80)));
+    shapeConstrainer.checkBounds (b, dragStartBounds, {}, false, ! rightEdge && deltaX != 0, deltaY != 0, rightEdge && deltaX != 0);
+    if (d != nullptr && (b.getHeight() > d->userArea.getHeight() || b.getWidth() > d->userArea.getWidth()))
+    {   // the shape rule pushed it past the screen: shrink to fit, keeping that shape
+        const double k = juce::jmin ((double) d->userArea.getWidth() / b.getWidth(), (double) d->userArea.getHeight() / b.getHeight());
+        b.setSize ((int) (b.getWidth() * k), (int) (b.getHeight() * k));
+    }
+    setSize (b.getWidth(), b.getHeight());
     if (win != nullptr && ! rightEdge)                  // standalone: the left edge moves, the right stays put
         win->setTopLeftPosition (dragStartWindow.getRight() - win->getWidth(), win->getY());
 }
@@ -2692,10 +2721,15 @@ void PassiveMasterEQEditor::updateLimits()
     // Everything scales together, so the panel always keeps its proportions.
     // In a DAW the corner drag is locked to the panel's shape. In the standalone app the window
     // may take any shape (e.g. full screen); the panel is then centred at the largest size that fits.
-    setResizeLimits (juce::roundToInt (Faceplate::kW * 0.45), juce::roundToInt (designH() * 0.45),
-                     juce::roundToInt (Faceplate::kW * 3.0), juce::roundToInt (designH() * 3.0));
+    // Nothing is ever squashed: the height sets the zoom, and extra width (up to kMaxWide x) spreads the panel out.
+    // In a DAW the window can't be narrower than the panel's own shape; in the standalone app it can be any shape
+    // (the panel is then centred).
+    shapeConstrainer.setSizeLimits (juce::roundToInt (Faceplate::kW * 0.45), juce::roundToInt (designH() * 0.45),
+                                    juce::roundToInt (Faceplate::kW * kMaxWide * 3.0), juce::roundToInt (designH() * 3.0));
     const bool standalone = proc.wrapperType == juce::AudioProcessor::wrapperType_Standalone;
-    getConstrainer()->setFixedAspectRatio (standalone ? 0.0 : (double) Faceplate::kW / (double) designH());
+    const double ratio = (double) Faceplate::kW / (double) designH();
+    shapeConstrainer.minRatio = standalone ? 0.0 : ratio;
+    shapeConstrainer.maxRatio = standalone ? 0.0 : ratio * kMaxWide;
 }
 
 void PassiveMasterEQEditor::paint (juce::Graphics& g)
@@ -2705,10 +2739,11 @@ void PassiveMasterEQEditor::paint (juce::Graphics& g)
 
 void PassiveMasterEQEditor::resized()
 {
-    // one uniform scale for the whole panel, centred in the window
+    // one uniform zoom for the whole panel; width beyond the standard shape makes the panel itself wider
     const float scale = juce::jmin ((float) getWidth() / (float) Faceplate::kW, (float) getHeight() / (float) designH());
-    face.setBounds (0, 0, Faceplate::kW, designH());
-    const float offX = ((float) getWidth()  - (float) Faceplate::kW * scale) * 0.5f;
+    const int panelW = juce::jlimit (Faceplate::kW, (int) (Faceplate::kW * kMaxWide), (int) std::floor ((float) getWidth() / scale));
+    if (face.getWidth() != panelW || face.getHeight() != designH()) face.setBounds (0, 0, panelW, designH());
+    const float offX = ((float) getWidth()  - (float) panelW * scale) * 0.5f;
     const float offY = ((float) getHeight() - (float) designH() * scale) * 0.5f;
     face.setTransform (juce::AffineTransform::scale (scale).translated (offX, offY));
     const int gw = juce::jlimit (8, 14, juce::roundToInt (12.0f * scale + 2.0f));
@@ -2716,7 +2751,11 @@ void PassiveMasterEQEditor::resized()
     rightGrip.setBounds (getWidth() - gw, 0, gw, getHeight());
     leftGrip.toFront (false); rightGrip.toFront (false);
     if (sizeRestored && ! pluginFullScreen && (standaloneWindow() == nullptr || ! standaloneWindow()->isFullScreen()))
+    {
         proc.apvts.state.setProperty ("uiScale", scale, nullptr);
+        proc.apvts.state.setProperty ("uiW", getWidth(), nullptr);
+        proc.apvts.state.setProperty ("uiH", getHeight(), nullptr);
+    }
     face.setScaleChoice (scale);
 }
 
@@ -2760,9 +2799,7 @@ void PassiveMasterEQEditor::toggleFullScreen()
         auto area = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds())->userArea;
         pluginFullScreen = true;
         // largest size with the panel's proportions; leave room for the host's window header
-        const float sc = juce::jmin ((float) (area.getWidth() - 20) / (float) Faceplate::kW,
-                                     (float) (area.getHeight() - 110) / (float) designH());
-        setSize (juce::roundToInt (Faceplate::kW * sc), juce::roundToInt (designH() * sc));
+        setSize (area.getWidth() - 20, area.getHeight() - 110);      // the panel spreads out to fill it
     }
     else
     {
@@ -2778,6 +2815,6 @@ void PassiveMasterEQEditor::toggleCompact()
     face.setCompact (! face.isCompact());
     proc.apvts.state.setProperty ("uiCompact", face.isCompact(), nullptr);
     updateLimits();
-    setSize (juce::roundToInt (Faceplate::kW * scale), juce::roundToInt (designH() * scale));     // same zoom, new height
+    setSize (juce::jmax (getWidth(), juce::roundToInt (Faceplate::kW * scale)), juce::roundToInt (designH() * scale));     // same zoom and width, new height
     resized();
 }
