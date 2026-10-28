@@ -42,19 +42,41 @@ provided free by GitHub.
    and the installers are attached to a public-facing release automatically.
 
 ### Installing
-- **macOS:** double-click the `.pkg`. Unsigned builds: right-click → **Open** the
-  first time (or System Settings → Privacy & Security → *Open Anyway*). Then
+- **macOS:** double-click the `.pkg`. Signed builds open without a warning (see
+  "Signing" below). Unsigned builds: right-click → **Open** the first time (or
+  System Settings → Privacy & Security → *Open Anyway*). Then
   rescan in your DAW; Logic validates AUs on launch.
 - **Windows:** run the Setup `.exe` → installs to `C:\Program Files\Common Files\VST3`.
   Windows SmartScreen may warn on unsigned installers: *More info → Run anyway*.
 - **Linux:** extract, run `./install.sh` (installs to `~/.vst3`).
 
-### Signing for public distribution (optional)
-Add these repository secrets (Settings → Secrets → Actions) and the macOS
-installer is signed and notarized automatically, so it opens without warnings:
-`MACOS_APP_IDENTITY`, `MACOS_INSTALLER_IDENTITY`, `APPLE_ID`, `APPLE_TEAM_ID`,
-`APPLE_APP_PASSWORD` (requires an Apple Developer account, $99/yr; the signing
-certificates must be in the runner keychain — see Apple's "Developer ID" docs).
+### Signing for public distribution (removes the macOS warning)
+macOS shows *"Apple could not verify … is free of malware"* for any installer that
+isn't signed with an Apple **Developer ID** and **notarized** by Apple. Only Apple
+can issue those, through the Apple Developer Program ($99/year). Once you have it,
+the workflow signs and notarizes everything automatically:
+
+1. In Xcode (Settings → Accounts → Manage Certificates) or at developer.apple.com,
+   create a **Developer ID Application** and a **Developer ID Installer** certificate.
+2. In Keychain Access, select both certificates (with their private keys) →
+   right-click → **Export 2 items…** → save as `certs.p12` with a password.
+3. In Terminal: `base64 -i certs.p12 | pbcopy` (copies it as text).
+4. At appleid.apple.com → Sign-In and Security → **App-Specific Passwords**, create one.
+5. In your GitHub repository → Settings → Secrets and variables → Actions →
+   **New repository secret**, add:
+
+| Secret | Value |
+|---|---|
+| `MACOS_CERTS_P12` | the text copied in step 3 |
+| `MACOS_CERTS_PASSWORD` | the password from step 2 |
+| `APPLE_ID` | your Apple Account email |
+| `APPLE_TEAM_ID` | your 10-character Team ID (developer.apple.com → Membership) |
+| `APPLE_APP_PASSWORD` | the app-specific password from step 4 |
+
+The next build produces a signed, notarized and stapled `.pkg` (and a notarized
+plug-in zip) that opens with no warning. Until then the build is unsigned; to
+install an unsigned build: right-click the `.pkg` → **Open** → **Open**, or
+System Settings → Privacy & Security → **Open Anyway**.
 
 ---
 
@@ -165,8 +187,8 @@ anything for a tooltip, or press **HELP ?** for the full guide page.
 | **TUBE STAGE** glass tubes | Visual indicator | Dark when the tube stage is off; glow brighter with level and DRIVE. |
 | **Jewel lamps** | SIGNAL (green), LINK (yellow), CLIP (red), TUBE (amber) | Audio present · right follows left · output went over 0 dBFS (holds ~1 s) · tube stage on. |
 | **DRIVE** knob + **TUBE ON** | Tube make-up stage | DRIVE pushes harder into the tubes for more harmonics; output loudness stays matched. |
-| **SPECTRUM** screen | Live 1/3-octave analyzer | 31 segmented bars (25 Hz–16 kHz) that move up and down with the output, with peak-hold caps. Range 0 to −66 dBFS; red segments = within 6 dB of full scale. A full-scale sine reads 0 dB in its band. |
-| **SONG KEY** panel | Key detection + key shift | Shows the song's musical key (e.g. *A minor*), its Camelot code and key signature, with a certainty bar. It listens to about the last 20 s; **RELEARN** starts over for a new song. **SEMITONES** (−12…+12) and **FINE** (−50…+50 cents) with **KEY SHIFT** on move the whole song to a new key; the panel then shows *A minor → B minor*. The shifter is a stereo-locked phase vocoder (left/right phase kept exactly); it adds 85 ms latency only while on (your DAW compensates), so switch it while stopped. Like any pitch shifter it changes formants ("chipmunk" at large shifts) — small shifts (±1–3 st) sound most natural. |
+| **SPECTRUM** screen | Live 1/3-octave analyzer | 31 pin-style meters (25 Hz–16 kHz): a fine line with a glowing round head for each band that moves up and down with the output, plus a cream peak-hold dot. Range 0 to −62 dB; heads turn amber above −18 dB and red within 6 dB of full scale. A full-scale sine reads 0 dB in its band. |
+| **SONG KEY** panel | Key detection + key shift | Shows the song's musical key (e.g. *A minor*), its Camelot code and key signature, with a certainty bar. It listens to about the last 20 s; **RELEARN** starts over for a new song. **SEMITONES** (−12…+12) and **FINE** (−50…+50 cents) with **KEY SHIFT** on move the whole song to a new key; the panel then shows *A minor → B minor*. The shifter is a stereo-locked, peak-locked phase vocoder (left/right phase kept exactly) that keeps each note — even a quiet one right next to a loud one — on its own new pitch. **FORMANT** (on by default) keeps the spectral envelope in place, so voices and instruments keep their natural tone instead of the "chipmunk" (up) or "giant" (down) sound. It adds 85 ms latency only while on (your DAW compensates), so switch it while stopped. Small shifts (±1–3 st) sound most natural. |
 | **VECTORSCOPE** screen | Stereo image | Dot cloud of the output: vertical = mid (L+R), horizontal = side (L−R); tall/narrow = centred, wide = stereo. Auto-zooms quiet material (shown as "AUTO x…"). Top meter: L/R balance. Bottom meter: phase correlation −1…+1 (above 0 = mono-safe); the cream mark holds the lowest value for 3 s. |
 | **LOUDNESS** panel | EBU R128 / ITU-R BS.1770-4 | INTEGRATED, SHORT-TERM (3 s), MOMENTARY (0.4 s), TRUE PEAK MAX (4× oversampled, dBTP), LRA, PLR, PSR, short-term and momentary maxima. Choose a TARGET (−14 streaming, −16 Apple Music, −23 EBU, −24 ATSC, −9 loud); INTEGRATED turns green within ±1 LU, red above, blue below. TRUE PEAK MAX turns red above −1 dBTP. RESET clears the integrated and maximum readings. Measured on the plugin's output and keeps running with the window closed. |
 | **AUTO MASTER** (plate above the footer) | Genre-based mastering assistant | Choose a **GENRE** (POP, JAZZ, 70'S, 80'S, 90'S, R&B, HIP HOP), press **LISTEN** and play the song, ideally its fullest part. After 30 s of music (silence is skipped), it does the following: (1) measures the mix's tonal balance in 10 octave bands, using only the louder passages; (2) compares that balance with the genre's target curve; (3) fits the four passive bands to the difference using the real switch positions, preferring a few broad, gentle moves (max ±6 dB, scaled by **AMOUNT**); (4) sets INPUT so the mix arrives at about −16 LUFS (gain staging), then sets the tubes, filters and compressor for the style, finding the THRESHOLD that gives the genre's amount of gain reduction; (5) sets the **MAXIMIZER** gain that lands the song on the genre's loudness. Steps 4 and 5 work by rendering the recording through the real EQ, compressor and limiter. After applying, it measures the actual loudness for a few seconds and corrects the maximizer by up to two small steps. The display shows the mix (grey), the target (red dashes) and the result after EQ (green), plus the moves made and the loudness before → after. Clicking another genre or moving AMOUNT re-plans straight away from the same recording. **UNDO** returns to your own settings. Everything it sets stays adjustable. The genre targets are stylistic starting points, not measurements of particular records: POP −10, JAZZ −16, 70'S −14, 80'S −12, 90'S −10.5, R&B −10, HIP HOP −9 LUFS. |
@@ -177,7 +199,8 @@ anything for a tooltip, or press **HELP ?** for the full guide page.
 | **VARI-MU TUBE COMPRESSOR** (bottom panel) | Left and right compressor strips | See "Compressor controls" below. Each side has its own GAIN REDUCTION meter; with LINK on, the right side follows the left. |
 | **ORDER** switch (compressor panel) | Signal order | EQ > COMP (default: shape tone, then level it) or COMP > EQ. Switching is click-free. |
 | **PRESET** menu (footer) | Factory presets | Mastering starting points (list below). Your own settings save with your DAW session. |
-| **SIZE** menu (footer) | Window size | 60 / 70 / 85 / 100 %, or drag the bottom-right corner. Everything scales **in proportion**. Opens at the largest size that fits your screen; size is remembered per session. |
+| **Edge handles** (left and right sides) | Resize by pulling sideways | Grab the chrome handle on either side and pull outward to make the whole plug-in bigger (inward for smaller); the height follows, so everything stays in proportion. In the standalone app the left handle grows the window to the left. |
+| **SIZE** menu (footer) | Window size | 60 / 70 / 85 / 100 %, drag the bottom-right corner, or pull an edge handle. Everything scales **in proportion**. Opens at the largest size that fits your screen; size is remembered per session. |
 | **MINI / FULL PANEL** (footer) | Compact view | MINI collapses to the metering only (VU, harmonics, input, spectrum, vectorscope, loudness) — handy on a second screen while mixing. FULL PANEL brings the EQ and compressor back. |
 | **FULL SCREEN / EXIT FULL** (footer) | Fill the screen | In the standalone app this is real macOS full screen (the window's green button also works, and the yellow button minimises); the panel is centred at the largest size that keeps its proportions. Inside a DAW the plug-in window grows as large as the screen allows; press again to return to the previous size. |
 | **Nameplate** (footer right) | Branding | "BASEMENTAL MASTERDESK" brass plate; edit the text in `PluginEditor.cpp` (`Faceplate::paint`). |
