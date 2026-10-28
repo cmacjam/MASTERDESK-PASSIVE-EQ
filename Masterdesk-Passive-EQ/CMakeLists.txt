@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "")
 
-project(PassiveMasterEQ VERSION 1.3.1 LANGUAGES C CXX)
+project(PassiveMasterEQ VERSION 1.3.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,7 +32,7 @@ option(PPM_COPY_AFTER_BUILD "Install the plugin into the system plugin folders a
 option(PPM_HEADLESS_LINUX   "CI only: build on Linux without Xrandr/Xinerama/Xcursor/ALSA dev headers" OFF)
 
 juce_add_plugin(PassiveMasterEQ
-    PRODUCT_NAME              "Masterdesk Passive EQ"
+    PRODUCT_NAME              "MasterDesk Mastering Suite"
     COMPANY_NAME              "Basemental"
     COMPANY_WEBSITE           ""
     BUNDLE_ID                 com.basemental.masterdeskpassiveeq
@@ -99,7 +99,7 @@ if(PPM_BUILD_TESTS)
     juce_add_console_app(host_test PRODUCT_NAME "host_test")
     target_sources(host_test PRIVATE tests/host_test.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp)
     target_include_directories(host_test PRIVATE Source)
-    target_compile_definitions(host_test PRIVATE JucePlugin_Name="Masterdesk Passive EQ"
+    target_compile_definitions(host_test PRIVATE JucePlugin_Name="MasterDesk Mastering Suite"
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     if(PPM_HEADLESS_LINUX)
         target_compile_definitions(host_test PRIVATE
