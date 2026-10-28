@@ -1,4 +1,4 @@
-# Builds, tests, validates and packages Masterdesk Passive EQ on macOS, Windows and Linux.
+# Builds, tests, validates and packages Basemental MasterDesk Mastering Suite on macOS, Windows and Linux.
 #  - Every push / pull request: installers appear under the run's "Artifacts".
 #  - Pushing a tag like v1.0.0: also publishes a GitHub Release with the installers.
 name: Build plugin
@@ -12,8 +12,13 @@ on:
 
 env:
   BUILD_TYPE: Release
+  # Apple signing + notarization switch on automatically once these repository secrets exist
+  # (Settings -> Secrets and variables -> Actions). Without them the Mac build is unsigned.
+  HAS_APPLE_SIGNING: ${{ secrets.MACOS_CERTS_P12 != '' }}
+  HAS_APPLE_NOTARY: ${{ secrets.APPLE_APP_PASSWORD != '' }}
   ART: build/PassiveMasterEQ_artefacts/Release
-  NAME: Masterdesk Passive EQ
+  NAME: MasterDesk Mastering Suite
+  OLD_NAME: Masterdesk Passive EQ        # earlier versions: removed when installing
 
 jobs:
   build:
@@ -31,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Works whether the project files are at the top of the repository or
-      # inside a folder (e.g. "Masterdesk-Passive-EQ/") after a web upload.
+      # inside a folder (e.g. "MasterDesk-Mastering-Suite/") after a web upload.
       - name: Locate project
         shell: bash
         run: |
@@ -121,22 +126,76 @@ jobs:
           killall -9 AudioComponentRegistrar || true
           auval -v aufx Mdeq Bsmt
 
+      # --- Apple Developer ID signing (removes the "Apple could not verify..." warning) -------
+      - name: Set up Apple signing
+        if: runner.os == 'macOS' && env.HAS_APPLE_SIGNING == 'true'
+        env:
+          MACOS_CERTS_P12: ${{ secrets.MACOS_CERTS_P12 }}
+          MACOS_CERTS_PASSWORD: ${{ secrets.MACOS_CERTS_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          KCPW="$(openssl rand -hex 16)"
+          echo "$MACOS_CERTS_P12" | base64 --decode > "$RUNNER_TEMP/certs.p12"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          security import "$RUNNER_TEMP/certs.p12" -P "$MACOS_CERTS_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "$KCPW" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/certs.p12"
+          APP_ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)
+          PKG_ID=$(security find-identity -v -p basic "$KC" | grep "Developer ID Installer" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)
+          if [ -z "$APP_ID" ]; then echo "::error::MACOS_CERTS_P12 has no 'Developer ID Application' certificate (with its private key)."; exit 1; fi
+          if [ -z "$PKG_ID" ]; then echo "::error::MACOS_CERTS_P12 has no 'Developer ID Installer' certificate (with its private key)."; exit 1; fi
+          echo "Signing with: $APP_ID / $PKG_ID"
+          echo "SIGN_APP=$APP_ID" >> "$GITHUB_ENV"
+          echo "SIGN_PKG=$PKG_ID" >> "$GITHUB_ENV"
+          # the standalone app may use the microphone / audio input under the hardened runtime
+          cat > "$RUNNER_TEMP/app.entitlements" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict><key>com.apple.security.device.audio-input</key><true/></dict></plist>
+          PLIST
+          echo "APP_ENTITLEMENTS=$RUNNER_TEMP/app.entitlements" >> "$GITHUB_ENV"
+
       # --- packaging ------------------------------------------------------------
       # Plain zip of the Mac plug-ins first, so you always get them even if the .pkg step has a problem
       - name: Zip macOS plug-ins
         if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
+          set -euo pipefail
           mkdir -p dist
+          ZIP="$GITHUB_WORKSPACE/dist/MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-macOS-plugins.zip"
           for b in "$ART/VST3/$NAME.vst3" "$ART/AU/$NAME.component" "$ART/Standalone/$NAME.app"; do
-            codesign --force --deep --sign - "$b"
+            if [ -n "${SIGN_APP:-}" ]; then
+              ent=""; case "$b" in *.app) ent="--entitlements $APP_ENTITLEMENTS" ;; esac
+              codesign --force --options runtime --timestamp $ent --sign "$SIGN_APP" "$b"
+              codesign --verify --strict --verbose=2 "$b"
+            else
+              codesign --force --deep --sign - "$b"          # unsigned build (no Apple secrets set)
+            fi
           done
-          (cd "$ART" && zip -qry "$GITHUB_WORKSPACE/dist/Masterdesk-Passive-EQ-${{ steps.ver.outputs.version }}-macOS-plugins.zip" \
-              "VST3/$NAME.vst3" "AU/$NAME.component" "Standalone/$NAME.app")
+          (cd "$ART" && zip -qry "$ZIP" "VST3/$NAME.vst3" "AU/$NAME.component" "Standalone/$NAME.app")
+          if [ -n "${SIGN_APP:-}" ] && [ "$HAS_APPLE_NOTARY" = "true" ]; then
+            echo "Notarizing the plug-ins with Apple (takes a few minutes)..."
+            xcrun notarytool submit "$ZIP" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait --timeout 30m
+            for b in "$ART/VST3/$NAME.vst3" "$ART/AU/$NAME.component" "$ART/Standalone/$NAME.app"; do xcrun stapler staple "$b"; done
+            rm -f "$ZIP"
+            (cd "$ART" && zip -qry "$ZIP" "VST3/$NAME.vst3" "AU/$NAME.component" "Standalone/$NAME.app")
+          fi
 
       # The .pkg installer is built right here, so this workflow file is the only thing to keep up to date
       - name: Package macOS installer
         if: runner.os == 'macOS'
-        continue-on-error: true
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           set -euo pipefail
           VERSION="${{ steps.ver.outputs.version }}"
@@ -146,6 +205,15 @@ jobs:
           cp -R "$ART/VST3/$NAME.vst3"      "$STAGE/vst3/"
           cp -R "$ART/AU/$NAME.component"   "$STAGE/au/"
           cp -R "$ART/Standalone/$NAME.app" "$STAGE/app/"
+
+          # removes copies installed under the old name, so the DAW doesn't list the plug-in twice
+          mkdir -p "$STAGE/scripts"
+          cat > "$STAGE/scripts/preinstall" <<SH
+          #!/bin/sh
+          rm -rf "/Library/Audio/Plug-Ins/VST3/$OLD_NAME.vst3" "/Library/Audio/Plug-Ins/Components/$OLD_NAME.component" "/Applications/$OLD_NAME.app"
+          exit 0
+          SH
+          chmod +x "$STAGE/scripts/preinstall"
 
           make_pkg () {   # <root> <id-suffix> <install-location>
             local root="$1" suffix="$2" location="$3" plist="$STAGE/$2.plist" i=0
@@ -157,15 +225,16 @@ jobs:
               i=$((i + 1))
             done
             echo "$suffix: $i bundle(s) marked non-relocatable"
-            pkgbuild --root "$root" --component-plist "$plist" --identifier "$ID.$suffix" \
+            pkgbuild --root "$root" --component-plist "$plist" --identifier "$ID.$suffix" --scripts "$STAGE/scripts" \
                      --version "$VERSION" --install-location "$location" "$STAGE/pkgs/$suffix.pkg"
           }
           make_pkg "$STAGE/vst3" vst3 "/Library/Audio/Plug-Ins/VST3"
           make_pkg "$STAGE/au"   au   "/Library/Audio/Plug-Ins/Components"
           make_pkg "$STAGE/app"  app  "/Applications"
 
-          printf '%s\n' "Masterdesk Passive EQ by Basemental" "" \
-            "Passive EQ + Vari-Mu compressor with VU, spectrum, vectorscope and LUFS metering." "" \
+          printf '%s\n' "Basemental MasterDesk Mastering Suite" "" \
+            "Passive EQ, Vari-Mu compressor, Auto Master and Maximizer, with VU, spectrum, song key, vectorscope and LUFS metering." "" \
+            "Earlier versions installed as 'Masterdesk Passive EQ' are replaced automatically (your saved sessions keep working)." "" \
             "Choose what to install on the next screens:" \
             "  - VST3 plug-in   -> /Library/Audio/Plug-Ins/VST3" \
             "  - Audio Unit     -> /Library/Audio/Plug-Ins/Components   (Logic Pro, GarageBand)" \
@@ -190,9 +259,23 @@ jobs:
           </installer-gui-script>
           XML
 
+          PKG="dist/MasterDesk-Mastering-Suite-$VERSION-macOS.pkg"
+          SIGNARGS=()
+          [ -n "${SIGN_PKG:-}" ] && SIGNARGS=(--sign "$SIGN_PKG" --timestamp)
           productbuild --distribution "$STAGE/distribution.xml" --package-path "$STAGE/pkgs" \
-                       --resources "$STAGE/resources" "dist/Masterdesk-Passive-EQ-$VERSION-macOS.pkg"
-          echo "Built dist/Masterdesk-Passive-EQ-$VERSION-macOS.pkg"
+                       --resources "$STAGE/resources" ${SIGNARGS[@]+"${SIGNARGS[@]}"} "$PKG"
+          if [ -n "${SIGN_PKG:-}" ]; then
+            pkgutil --check-signature "$PKG"
+            if [ "$HAS_APPLE_NOTARY" = "true" ]; then
+              echo "Notarizing the installer with Apple (takes a few minutes)..."
+              xcrun notarytool submit "$PKG" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait --timeout 30m
+              xcrun stapler staple "$PKG"
+              spctl --assess --type install --verbose=2 "$PKG"     # what Gatekeeper will say on your Mac
+            fi
+          else
+            echo "::warning::The Mac installer is NOT signed, so macOS will warn when opening it. Add the Apple secrets (see README) to sign and notarize it."
+          fi
+          echo "Built $PKG"
 
       - name: Package Windows installer
         if: runner.os == 'Windows'
@@ -204,12 +287,12 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           $out  = Resolve-Path dist
           & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" "/DArtefacts=$art" "/DOutDir=$out" installer\windows\installer.iss
-          Compress-Archive -Path "$art\VST3\$env:NAME.vst3" -DestinationPath "dist\Masterdesk-Passive-EQ-${{ steps.ver.outputs.version }}-Windows-VST3.zip"
+          Compress-Archive -Path "$art\VST3\$env:NAME.vst3" -DestinationPath "dist\MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Windows-VST3.zip"
 
       - name: Package Linux tarball
         if: runner.os == 'Linux'
         run: |
-          pkg="Masterdesk-Passive-EQ-${{ steps.ver.outputs.version }}-Linux-x64"
+          pkg="MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Linux-x64"
           mkdir -p "dist/$pkg"
           cp -R "$ART/VST3/$NAME.vst3" "dist/$pkg/"
           cp "$ART/Standalone/$NAME" "dist/$pkg/"
@@ -221,7 +304,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Masterdesk-Passive-EQ-${{ matrix.name }}
+          name: MasterDesk-Mastering-Suite-${{ matrix.name }}
           path: dist/*
           if-no-files-found: ignore
 
@@ -235,7 +318,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: Masterdesk-Passive-EQ-*
+          pattern: MasterDesk-Mastering-Suite-*
           path: dist
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
