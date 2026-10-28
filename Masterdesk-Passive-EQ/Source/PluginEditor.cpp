@@ -76,7 +76,7 @@ void draw::chromeRing (juce::Graphics& g, juce::Rectangle<float> r, float t)
     g.strokePath (ring, juce::PathStrokeType (t));
 }
 
-void draw::plate (juce::Graphics& g, juce::Rectangle<float> r, const juce::Image& texture, bool screws)
+void draw::plate (juce::Graphics& g, juce::Rectangle<float> r, const juce::Image& texture, bool screws, juce::Colour tint)
 {
     const float corner = 6.0f;
     // drop shadow
@@ -91,6 +91,18 @@ void draw::plate (juce::Graphics& g, juce::Rectangle<float> r, const juce::Image
         g.drawImage (texture, r, juce::RectanglePlacement::fillDestination);
         g.setColour (juce::Colours::white.withAlpha (0.035f));
         g.fillRect (r);
+        if (! tint.isTransparent())
+        {   // anodised colour over the brushed metal, then the grain again on top
+            juce::ColourGradient anod (tint.brighter (0.12f), r.getX(), r.getY(), tint.darker (0.45f), r.getX(), r.getBottom(), false);
+            g.setGradientFill (anod);
+            g.fillRect (r);
+            g.setOpacity (0.22f);
+            g.drawImage (texture, r, juce::RectanglePlacement::fillDestination);
+            g.setOpacity (1.0f);
+            juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.10f), r.getX(), r.getY(), juce::Colours::transparentWhite, r.getX(), r.getY() + r.getHeight() * 0.4f, false);
+            g.setGradientFill (sheen);
+            g.fillRect (r);
+        }
     }
     // bevel
     juce::ColourGradient bevel (juce::Colours::white.withAlpha (0.35f), r.getX(), r.getY(),
@@ -415,7 +427,7 @@ void SteppedKnob::paint (juce::Graphics& g)
 {
     const auto on = isEnabled();
     draw::engraved (g, caption, getLocalBounds().removeFromTop (15).toFloat(), 11.0f,
-                    juce::Justification::centred, on ? col::engrave : col::engraveDim);
+                    juce::Justification::centred, on ? captionColour : col::engraveDim);
 
     // end labels in the strip just under the knob, below the 7:30 / 4:30 ticks
     const auto sb = slider.getBounds().toFloat();
@@ -423,7 +435,7 @@ void SteppedKnob::paint (juce::Graphics& g)
     const float cx = sb.getCentreX();
     const float y  = sb.getBottom() - 1.0f;
     const float off = juce::jmin (R * 0.72f, sb.getWidth() * 0.5f - 15.0f);
-    const auto lc = on ? col::engraveDim.brighter (0.5f) : col::engraveDim.darker (0.4f);
+    const auto lc = on ? endLabelColour : col::engraveDim.darker (0.4f);
     draw::engraved (g, minLabel, { cx - off - 16.0f, y, 32.0f, 11.0f }, 9.0f, juce::Justification::centred, lc);
     draw::engraved (g, maxLabel, { cx + off - 16.0f, y, 32.0f, 11.0f }, 9.0f, juce::Justification::centred, lc);
 
@@ -662,7 +674,7 @@ void AnalogMeter::paint (juce::Graphics& g)
         g.drawText (kind == Kind::VU ? "VU" : (isGr ? "GAIN REDUCTION" : "HARMONICS"), juce::Rectangle<float> (face.getWidth(), 24).withCentre ({ face.getCentreX(), face.getY() + face.getHeight() * 0.66f }),
                     juce::Justification::centred);
         g.setFont (sans (8.5f, false));
-        g.drawText (kind == Kind::VU ? "0 VU = -18 dBFS" : (isGr ? "dB  -  VARIABLE MU" : "TUBE MAKE-UP STAGE"),
+        g.drawText (subtitle.isNotEmpty() ? subtitle : (kind == Kind::VU ? "0 VU = -18 dBFS" : (isGr ? "dB  -  VARIABLE MU" : "TUBE MAKE-UP STAGE")),
                     juce::Rectangle<float> (face.getWidth(), 12).withCentre ({ face.getCentreX(), face.getY() + face.getHeight() * 0.83f }),
                     juce::Justification::centred);
 
@@ -1650,6 +1662,78 @@ void CenterStrip::resized()
 }
 
 // =============================================================================
+//  MetalToggle  (chrome bat-handle toggle)
+// =============================================================================
+MetalToggle::MetalToggle (juce::AudioProcessorValueTreeState& s, const juce::String& paramId, const juce::String& up,
+                          const juce::String& down, float upV, float downV)
+    : upLabel (up), downLabel (down), upValue (upV), downValue (downV),
+      attachment (*s.getParameter (paramId), [this] (float v) { value = v; repaint(); })
+{
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    attachment.sendInitialUpdate();
+}
+
+void MetalToggle::mouseDown (const juce::MouseEvent&)
+{
+    if (! isEnabled()) return;
+    attachment.setValueAsCompleteGesture (isUp() ? downValue : upValue);
+}
+
+void MetalToggle::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    const bool up = isUp(), on = isEnabled();
+    const auto lc = on ? labelColour : labelColour.withAlpha (0.4f);
+    auto top = r.removeFromTop (13.0f), bottom = r.removeFromBottom (13.0f);
+    draw::engraved (g, upLabel,   top,    10.0f, juce::Justification::centred, up ? lc : lc.withAlpha (on ? 0.55f : 0.3f));
+    draw::engraved (g, downLabel, bottom, 10.0f, juce::Justification::centred, up ? lc.withAlpha (on ? 0.55f : 0.3f) : lc);
+
+    const auto c = r.getCentre();
+    const float R = juce::jmin (r.getHeight() * 0.26f, 9.0f);
+    // mounting plate + hex nut
+    g.setColour (juce::Colours::black.withAlpha (0.5f));
+    g.fillEllipse (juce::Rectangle<float> (R * 2.6f, R * 2.6f).withCentre (c.translated (0, 1.5f)));
+    juce::Path hex;
+    for (int i = 0; i < 6; ++i)
+    {
+        const float a = juce::MathConstants<float>::pi / 3.0f * (float) i + juce::MathConstants<float>::pi / 6.0f;
+        const juce::Point<float> p (c.x + R * 1.25f * std::cos (a), c.y + R * 1.25f * std::sin (a));
+        if (i == 0) hex.startNewSubPath (p); else hex.lineTo (p);
+    }
+    hex.closeSubPath();
+    juce::ColourGradient nut (juce::Colour (0xffeeeeee), c.x - R, c.y - R, juce::Colour (0xff5a5a5a), c.x + R, c.y + R, false);
+    g.setGradientFill (nut); g.fillPath (hex);
+    g.setColour (juce::Colours::black.withAlpha (0.6f)); g.strokePath (hex, juce::PathStrokeType (0.8f));
+    // threaded bushing
+    juce::ColourGradient bush (juce::Colour (0xffcfcfcf), c.x - R * 0.7f, c.y, juce::Colour (0xff3c3c3c), c.x + R * 0.7f, c.y, false);
+    g.setGradientFill (bush); g.fillEllipse (juce::Rectangle<float> (R * 1.4f, R * 1.4f).withCentre (c));
+    g.setColour (juce::Colours::black.withAlpha (0.7f)); g.drawEllipse (juce::Rectangle<float> (R * 1.4f, R * 1.4f).withCentre (c), 0.8f);
+
+    // bat handle: tapered chrome lever, pointing up or down (with perspective: shorter, it leans toward you)
+    const float len = r.getHeight() * 0.44f, dir = up ? -1.0f : 1.0f;
+    const juce::Point<float> tip (c.x, c.y + dir * len);
+    juce::Path lever;
+    const float w0 = R * 0.55f, w1 = R * 0.85f;
+    lever.startNewSubPath (c.x - w0, c.y);
+    lever.lineTo (tip.x - w1 * 0.55f, tip.y);
+    lever.lineTo (tip.x + w1 * 0.55f, tip.y);
+    lever.lineTo (c.x + w0, c.y);
+    lever.closeSubPath();
+    g.setColour (juce::Colours::black.withAlpha (0.35f));
+    g.fillPath (lever, juce::AffineTransform::translation (2.0f, 2.5f));
+    juce::ColourGradient chrome (juce::Colour (0xff6a6a6a), c.x - w1, c.y, juce::Colour (0xff4a4a4a), c.x + w1, c.y, false);
+    chrome.addColour (0.35, juce::Colour (0xfff8f8f8));
+    chrome.addColour (0.55, juce::Colour (0xffbdbdbd));
+    g.setGradientFill (chrome); g.fillPath (lever);
+    // rounded tip
+    const auto tipBall = juce::Rectangle<float> (w1 * 1.25f, w1 * 1.25f).withCentre (tip);
+    juce::ColourGradient ball (juce::Colours::white, tipBall.getX() + tipBall.getWidth() * 0.3f, tipBall.getY() + tipBall.getHeight() * 0.3f,
+                               juce::Colour (0xff6a6a6a), tipBall.getRight(), tipBall.getBottom(), true);
+    g.setGradientFill (ball); g.fillEllipse (tipBall);
+    g.setColour (juce::Colours::black.withAlpha (0.45f)); g.drawEllipse (tipBall, 0.7f);
+}
+
+// =============================================================================
 //  CompStrip  (one channel of the variable-mu compressor)
 // =============================================================================
 CompStrip::CompStrip (juce::AudioProcessorValueTreeState& s, int channel)
@@ -1660,12 +1744,12 @@ CompStrip::CompStrip (juce::AudioProcessorValueTreeState& s, int channel)
       recovery (s, params::chanId (channel, "c_recovery"), "RECOVERY",  ".2", "8s"),
       output   (s, params::chanId (channel, "c_output"),   "OUTPUT",    "0", "+12"),
       mix      (s, params::chanId (channel, "c_mix"),      "MIX",       "DRY", "WET"),
-      mode     (s, params::chanId (channel, "c_mode"), { "COMPRESS", "LIMIT" }, { col::amber, col::red })
+      mode     (s, params::chanId (channel, "c_mode"), "LIMIT", "COMPRESS", 1.0f, 0.0f),
+      scHp     (s, params::chanId (channel, "c_schp"), "HP SC IN", "OFF", 1.0f, 0.0f),
+      compIn   (s, params::chanId (channel, "c_in"),   "IN", "BYPASS", 1.0f, 0.0f)
 {
     for (auto* c : std::initializer_list<juce::Component*> { &meter, &thresh, &attack, &recovery, &output, &mix, &mode, &scHp, &compIn })
         addAndMakeVisible (c);
-    scHpAtt   = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (s, params::chanId (channel, "c_schp"), scHp);
-    compInAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (s, params::chanId (channel, "c_in"), compIn);
 
     meter.setTooltip (tips::grMeter);
     thresh.setTooltip (tips::cThresh);   attack.setTooltip (tips::cAttack);   recovery.setTooltip (tips::cRecovery);
@@ -1675,6 +1759,20 @@ CompStrip::CompStrip (juce::AudioProcessorValueTreeState& s, int channel)
 
 void CompStrip::paint (juce::Graphics& g)
 {
+    // black inset panel behind the knobs, like the hardware
+    {
+        auto k = knobPanel.toFloat();
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.fillRoundedRectangle (k.translated (0, 2.0f), 6.0f);
+        juce::ColourGradient blk (juce::Colour (0xff1b1b1d), k.getX(), k.getY(), juce::Colour (0xff0b0b0c), k.getX(), k.getBottom(), false);
+        g.setGradientFill (blk);
+        g.fillRoundedRectangle (k, 6.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.10f));
+        g.drawRoundedRectangle (k.reduced (0.5f), 6.0f, 1.0f);
+        for (auto pt : { k.getTopLeft() + juce::Point<float> (9, 9), k.getTopRight() + juce::Point<float> (-9, 9),
+                         k.getBottomLeft() + juce::Point<float> (9, -9), k.getBottomRight() + juce::Point<float> (-9, -9) })
+            draw::screw (g, pt, 7.0f, 0.4f);
+    }
     const auto c = ch == 0 ? col::amber : (isEnabled() ? col::blue : col::engraveDim);
     draw::engraved (g, ch == 0 ? "LEFT CHANNEL" : (isEnabled() ? "RIGHT CHANNEL" : "RIGHT  (LINKED)"),
                     meter.getBounds().toFloat().withHeight (14.0f).translated (0, -17.0f), 11.0f, juce::Justification::centred, c);
@@ -1688,8 +1786,10 @@ void CompStrip::resized()
     meter.setBounds (left.withSizeKeepingCentre (left.getWidth(), juce::jmin (left.getHeight(), 142)).withY (left.getY()));
     r.removeFromLeft (10);
 
-    auto switches = r.removeFromBottom (30);
-    r.removeFromBottom (8);
+    auto switches = r.removeFromBottom (58);
+    r.removeFromBottom (6);
+    knobPanel = r.expanded (6, 4).withTrimmedRight (0);
+    r = r.reduced (8, 4);
     // THRESHOLD and OUTPUT are the big knobs; ATTACK, RECOVERY and MIX sit between, a step smaller
     const int total = r.getWidth();
     const int big = total * 27 / 100, small = (total - 2 * big) / 3;
@@ -1699,10 +1799,11 @@ void CompStrip::resized()
     output.setBounds   (r.removeFromLeft (big));
     mix.setBounds      (r.withTrimmedTop (30));
 
-    switches = switches.withSizeKeepingCentre (juce::jmin (switches.getWidth(), 440), switches.getHeight());
-    const int sw = switches.getWidth();
-    mode.setBounds   (switches.removeFromLeft (sw * 42 / 100)); switches.removeFromLeft (8);
-    scHp.setBounds   (switches.removeFromLeft ((switches.getWidth() - 8) / 2)); switches.removeFromLeft (8);
+    // three metal toggles: LIMIT/COMPRESS, HP SC IN, IN/BYPASS
+    switches = switches.withSizeKeepingCentre (juce::jmin (switches.getWidth(), 420), switches.getHeight());
+    const int sw = switches.getWidth() / 3;
+    mode.setBounds   (switches.removeFromLeft (sw));
+    scHp.setBounds   (switches.removeFromLeft (sw));
     compIn.setBounds (switches);
 }
 
@@ -2027,6 +2128,246 @@ void AutoMasterPanel::paint (juce::Graphics& g)
 }
 
 // =============================================================================
+//  M/S CLASS-A compressor (ash-blue unit)
+// =============================================================================
+namespace tips
+{
+    static const juce::String aThresh = "THRESHOLD - where compression starts (33 dB range, +2 to -31 dBFS). In M/S mode the left knobs work on the MID "
+        "(centre), the right ones on the SIDE (width).";
+    static const juce::String aAttack = "ATTACK - 0.01 to 150 ms: the time it takes to build up 10 dB of gain reduction. In FEED FWD mode it is about twice as long.";
+    static const juce::String aRelease = "RELEASE - 60 ms to 1.8 s: the time to come back from 6 dB of gain reduction. The release is linear, and the attack "
+        "time adds to it.";
+    static const juce::String aRatio = "RATIO - FEEDBACK: 1:1.1 to 1:2.5 (the ratio at 6 dB of reduction; it rises the harder you push, ~1:4.5 at 17 dB) - smooth "
+        "and even. FEED FWD: the ratios double, and the top of the scale (X) goes through limiting into NEGATIVE ratios, where louder parts come out quieter.";
+    static const juce::String aGain = "GAIN - make-up gain, 0 to +12 dB. In M/S mode, use the two GAIN knobs to set the balance of centre and width.";
+    static const juce::String aMix = "MIX - from DIR (direct, untouched) to COM (compressed): parallel compression for this channel.";
+    static const juce::String aFF = "FEEDBACK / FEED FWD - where the detector listens. FEEDBACK (after the compressor): smooth, even, soft knee. "
+        "FEED FWD (before it): clearly harder and more aggressive, higher ratios up to limiting and negative ratios, double attack times.";
+    static const juce::String aAfa = "AUTO FAST (attack) - shortens the attack on fast, loud peaks once there is about 3 dB of gain reduction, then goes back to your setting.";
+    static const juce::String aAfr = "AUTO FAST (release) - after a short burst the release drops to about 20 ms and then glides back to your setting; long passages keep the set release.";
+    static const juce::String aWarm = "WARM - a slew-rate limiter: subtly rounds the fastest transients and the top end, for a less clinical sound.";
+    static const juce::String aScGain = "SC GAIN - sidechain filter (6 dB/oct): turn left (LP) and the compressor reacts less to highs, right (HP) and it reacts "
+        "less to lows (up to -12 dB). Only the detector is filtered, not the sound. Switch on with SC ON.";
+    static const juce::String aScFreq = "SC FREQ - the sidechain filter's frequency, 30 Hz to 3.3 kHz. E.g. HP at ~70 Hz so the kick doesn't pump the mix, ~2 kHz for de-essing.";
+    static const juce::String aEqGain = "NIVEAU FILTER - a tilt EQ after the compressor: right = brighter (highs up to +3 dB, lows down to -5 dB), left = darker "
+        "(lows up to +3 dB, highs down to -4.5 dB). Switch on with EQ ON.";
+    static const juce::String aEqFreq = "NIVEAU FREQ - the tilt's pivot, 20 Hz to 2 kHz; x10 = 200 Hz to 20 kHz.";
+    static const juce::String aMode = "STEREO / M/S - M/S: the left channel controls work on the MID (centre: vocal, kick, bass), the right ones on the SIDE "
+        "(stereo width, reverb). Unlinked STEREO = two independent channels.";
+    static const juce::String aLink = "LINK - one control voltage for both channels: the left compressor controls (threshold, attack, release, ratio, feed fwd, "
+        "auto fast) drive both. Filters, gain, mix and warm stay separate.";
+    static const juce::String aClip = "SOFT CLIP - saturation-style peak limiter after the M/S decoder: rounds peaks off (like tape) instead of hard clipping, "
+        "and never goes above its threshold. The LED should only flash briefly; keep it to a few dB.";
+    static const juce::String aIn = "ACTIVE - switches the whole unit in or out (click-free).";
+    static const juce::String aMeter = "GAIN REDUCTION - how many dB this channel (or MID / SIDE) is being turned down right now.";
+}
+
+// readouts
+static juce::String fmtFreq (double hz) { return hz >= 1000.0 ? juce::String (hz / 1000.0, hz >= 10000.0 ? 1 : 2) + " kHz" : juce::String ((int) std::lround (hz)) + " Hz"; }
+static juce::String fmtTilt (double t, const char* left, const char* right)
+{
+    if (std::abs (t) < 0.02) return "FLAT";
+    return juce::String (t < 0 ? left : right) + " " + juce::String ((int) std::lround (std::abs (t) * 100)) + "%";
+}
+
+ClassAStrip::ClassAStrip (juce::AudioProcessorValueTreeState& s, int channel)
+    : state (s), ch (channel),
+      meter   (AnalogMeter::Kind::GainReduction, "", ""),
+      thresh  (s, params::ca::chan (channel, "thr"),   "THRESHOLD", "+2", "-31"),
+      attack  (s, params::ca::chan (channel, "att"),   "ATTACK",    ".01", "150"),
+      release (s, params::ca::chan (channel, "rel"),   "RELEASE",   "60", "1.8s"),
+      ratio   (s, params::ca::chan (channel, "ratio"), "RATIO",     "1.1", "X"),
+      gain    (s, params::ca::chan (channel, "gain"),  "GAIN",      "0", "+12"),
+      scGain  (s, params::ca::chan (channel, "scg"),   "SC GAIN",   "LP", "HP"),
+      scFreq  (s, params::ca::chan (channel, "scf"),   "SC FREQ",   "30", "3k3"),
+      eqGain  (s, params::ca::chan (channel, "eqg"),   "EQ GAIN",   "LO", "HI"),
+      eqFreq  (s, params::ca::chan (channel, "eqf"),   "EQ FREQ",   "20", "2k"),
+      mix     (s, params::ca::chan (channel, "mix"),   "MIX",       "DIR", "COM")
+{
+    thresh.slider.textFromValueFunction  = [] (double v) { return (v > 0 ? "+" : "") + juce::String (v, 1) + " dB"; };
+    attack.slider.textFromValueFunction  = [] (double v) { return v < 1.0 ? juce::String (v, 2) + " ms" : (v < 10 ? juce::String (v, 1) : juce::String ((int) std::lround (v))) + " ms"; };
+    release.slider.textFromValueFunction = [] (double v) { return v >= 1000 ? juce::String (v / 1000.0, 2) + " s" : juce::String ((int) std::lround (v)) + " ms"; };
+    gain.slider.textFromValueFunction    = [] (double v) { return "+" + juce::String (v, 1) + " dB"; };
+    mix.slider.textFromValueFunction     = [] (double v) { return v < 0.5 ? juce::String ("DIR") : (v > 99.5 ? juce::String ("COM") : juce::String ((int) std::lround (v)) + " %"); };
+    scGain.slider.textFromValueFunction  = [] (double v) { return fmtTilt (v, "LP", "HP"); };
+    scFreq.slider.textFromValueFunction  = [] (double v) { return fmtFreq (v); };
+    eqGain.slider.textFromValueFunction  = [] (double v) { return fmtTilt (v, "DARK", "BRIGHT"); };
+    const juce::String ffId = params::ca::chan (channel, "ff"), x10Id = params::ca::chan (channel, "eqx");
+    ratio.valueText = [this, ffId]
+    {
+        const double pos = ratio.slider.getValue();
+        if (state.getRawParameterValue (ffId)->load() > 0.5f)
+        {
+            const double sl = ppm::classAFeedForwardSlope (pos);
+            if (sl >= 0.995 && sl <= 1.005) return juce::String ("LIMIT");
+            if (sl > 1.0) return juce::String ("NEG ") + juce::String (-1.0 / (sl - 1.0), 1);
+            return juce::String ("1:") + juce::String (1.0 / (1.0 - sl), 1);
+        }
+        return juce::String ("1:") + juce::String (ppm::classAPrintedRatio (pos), 2);
+    };
+    eqFreq.valueText = [this, x10Id] { return fmtFreq (eqFreq.slider.getValue() * (state.getRawParameterValue (x10Id)->load() > 0.5f ? 10.0 : 1.0)); };
+
+    for (auto* k : { &thresh, &attack, &release, &ratio, &gain, &scGain, &scFreq, &eqGain, &eqFreq, &mix })
+    {
+        k->captionColour = juce::Colours::white; k->endLabelColour = juce::Colours::white.withAlpha (0.8f);
+        k->refresh();
+    }
+    meter.subtitle = "dB  -  CLASS-A";
+    thresh.setTooltip (tips::aThresh); attack.setTooltip (tips::aAttack); release.setTooltip (tips::aRelease);
+    ratio.setTooltip (tips::aRatio);   gain.setTooltip (tips::aGain);     mix.setTooltip (tips::aMix);
+    scGain.setTooltip (tips::aScGain); scFreq.setTooltip (tips::aScFreq); eqGain.setTooltip (tips::aEqGain); eqFreq.setTooltip (tips::aEqFreq);
+    ff.setTooltip (tips::aFF); afa.setTooltip (tips::aAfa); afr.setTooltip (tips::aAfr); warm.setTooltip (tips::aWarm);
+    scOn.setTooltip (tips::aScGain); eqOn.setTooltip (tips::aEqGain); eqX10.setTooltip (tips::aEqFreq); meter.setTooltip (tips::aMeter);
+
+    auto attach = [&] (const char* id, juce::Button& b)
+    { atts.push_back (std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (s, params::ca::chan (channel, id), b)); };
+    attach ("ff", ff); attach ("afa", afa); attach ("afr", afr); attach ("warm", warm);
+    attach ("scon", scOn); attach ("eqon", eqOn); attach ("eqx", eqX10);
+    ff.onClick = [this] { ratio.refresh(); };
+    eqX10.onClick = [this] { eqFreq.refresh(); };
+    for (auto* c : std::initializer_list<juce::Component*> { &meter, &thresh, &attack, &release, &ratio, &gain, &scGain, &scFreq, &eqGain, &eqFreq, &mix,
+                                                             &ff, &afa, &afr, &warm, &scOn, &eqOn, &eqX10 })
+        addAndMakeVisible (c);
+}
+
+void ClassAStrip::setCompressorEnabled (bool e)
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &thresh, &attack, &release, &ratio, &ff, &afa, &afr })
+        c->setEnabled (e);
+}
+
+void ClassAStrip::paint (juce::Graphics& g)
+{
+    draw::engraved (g, title, meter.getBounds().toFloat().withHeight (14.0f).translated (0, -17.0f), 11.0f, juce::Justification::centred, titleColour);
+    // section legends on the lower row
+    auto legend = [&] (juce::Rectangle<int> r, const char* t)
+    { draw::engraved (g, t, r.toFloat().withHeight (12.0f).translated (0, -13.0f), 9.5f, juce::Justification::centred, juce::Colours::white.withAlpha (0.75f)); };
+    legend (scGain.getBounds().getUnion (scFreq.getBounds()).getUnion (scOn.getBounds()), "SIDECHAIN FILTER");
+    legend (eqGain.getBounds().getUnion (eqFreq.getBounds()).getUnion (eqX10.getBounds()), "NIVEAU FILTER");
+    g.setColour (juce::Colours::black.withAlpha (0.25f));
+    g.drawHorizontalLine (filterRow.getY() - 16, (float) filterRow.getX(), (float) filterRow.getRight());
+    g.setColour (juce::Colours::white.withAlpha (0.12f));
+    g.drawHorizontalLine (filterRow.getY() - 15, (float) filterRow.getX(), (float) filterRow.getRight());
+}
+
+void ClassAStrip::resized()
+{
+    auto r = getLocalBounds();
+    buttonRow = r.removeFromBottom (30);
+    r.removeFromBottom (8);
+    filterRow = r.removeFromBottom (112);
+    r.removeFromBottom (22);
+
+    // row 1: meter + compressor (THRESHOLD and GAIN are the big knobs)
+    auto left = r.removeFromLeft (180);
+    left.removeFromTop (18);
+    meter.setBounds (left.withHeight (juce::jmin (left.getHeight(), 132)));
+    r.removeFromLeft (8);
+    const int total = r.getWidth(), big = total * 24 / 100, small = (total - 2 * big) / 3;
+    thresh.setBounds  (r.removeFromLeft (big));
+    attack.setBounds  (r.removeFromLeft (small).withTrimmedTop (26));
+    release.setBounds (r.removeFromLeft (small).withTrimmedTop (26));
+    ratio.setBounds   (r.removeFromLeft (small).withTrimmedTop (26));
+    gain.setBounds    (r);
+
+    // row 2: sidechain filter | Niveau filter | mix
+    auto f = filterRow;
+    const int kw = juce::jmin (96, (f.getWidth() - 2 * 70 - 40) / 5);
+    auto btnCol = [] (juce::Rectangle<int> col, std::initializer_list<juce::Component*> bs)
+    {
+        const int h = juce::jmin (28, col.getHeight() / (int) bs.size() - 6);
+        auto c = col.withSizeKeepingCentre (col.getWidth(), (h + 6) * (int) bs.size());
+        for (auto* b : bs) b->setBounds (c.removeFromTop (h + 6).withSizeKeepingCentre (col.getWidth(), h));
+    };
+    scGain.setBounds (f.removeFromLeft (kw)); scFreq.setBounds (f.removeFromLeft (kw));
+    btnCol (f.removeFromLeft (70), { &scOn });
+    f.removeFromLeft (20);
+    eqGain.setBounds (f.removeFromLeft (kw)); eqFreq.setBounds (f.removeFromLeft (kw));
+    btnCol (f.removeFromLeft (70), { &eqOn, &eqX10 });
+    f.removeFromLeft (20);
+    mix.setBounds (f.removeFromLeft (kw));
+
+    // row 3: switches
+    auto b = buttonRow;
+    const int bw = (b.getWidth() - 3 * 10) / 4;
+    ff.setBounds (b.removeFromLeft (bw)); b.removeFromLeft (10);
+    afa.setBounds (b.removeFromLeft (bw)); b.removeFromLeft (10);
+    afr.setBounds (b.removeFromLeft (bw)); b.removeFromLeft (10);
+    warm.setBounds (b);
+}
+
+ClassAPanel::ClassAPanel (PassiveMasterEQProcessor& p)
+    : proc (p), strips { { p.apvts, 0 }, { p.apvts, 1 } },
+      mode (p.apvts, params::ca::mode, { "STEREO", "M / S" }, { col::amber, col::blue }),
+      clip (p.apvts, params::ca::clip, "CLIP THRESH", "-12", "0")
+{
+    clip.slider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " dB"; };
+    clip.captionColour = juce::Colours::white; clip.endLabelColour = juce::Colours::white.withAlpha (0.8f);
+    clip.refresh();
+    inAtt   = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, params::ca::in, inButton);
+    linkAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, params::ca::link, link);
+    clipAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, params::ca::clipOn, clipOn);
+    mode.setTooltip (tips::aMode); link.setTooltip (tips::aLink); inButton.setTooltip (tips::aIn);
+    clipOn.setTooltip (tips::aClip); clip.setTooltip (tips::aClip); clipLed.setTooltip (tips::aClip);
+    for (auto* c : std::initializer_list<juce::Component*> { &strips[0], &strips[1], &mode, &clip, &inButton, &link, &clipOn, &clipLed })
+        addAndMakeVisible (c);
+}
+
+void ClassAPanel::resized()
+{
+    auto r = getLocalBounds().reduced (22, 8);
+    auto head = r.removeFromTop (26);
+    mode.setBounds (head.removeFromRight (180).withSizeKeepingCentre (180, 26));
+    r.removeFromTop (6);
+    centre = r.withSizeKeepingCentre (150, r.getHeight());
+    const int sideW = (r.getWidth() - centre.getWidth() - 36) / 2;
+    strips[0].setBounds (r.withWidth (sideW));
+    strips[1].setBounds (r.withX (r.getRight() - sideW).withWidth (sideW));
+    auto c = centre.reduced (6, 0);
+    inButton.setBounds (c.removeFromTop (30)); c.removeFromTop (8);
+    link.setBounds (c.removeFromTop (30));     c.removeFromTop (16);
+    clipLed.setBounds (c.removeFromTop (34).withSizeKeepingCentre (50, 34)); c.removeFromTop (4);
+    clipOn.setBounds (c.removeFromTop (30));   c.removeFromTop (6);
+    clip.setBounds (c.withHeight (juce::jmin (c.getHeight(), 130)));
+}
+
+void ClassAPanel::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (22.0f, 8.0f);
+    auto head = r.withHeight (26.0f);
+    draw::engraved (g, "M/S CLASS-A COMPRESSOR", head, 14.0f, juce::Justification::centred, juce::Colours::white);
+    draw::engraved (g, "FEEDBACK / FEED FWD  -  MID/SIDE  -  SOFT CLIP", head.withWidth (420.0f), 9.5f, juce::Justification::centredLeft,
+                    juce::Colours::white.withAlpha (0.6f));
+    for (float x : { (float) centre.getX() - 10.0f, (float) centre.getRight() + 10.0f })
+    {
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.drawVerticalLine ((int) x, (float) centre.getY(), (float) centre.getBottom());
+        g.setColour (juce::Colours::white.withAlpha (0.15f));
+        g.drawVerticalLine ((int) x + 1, (float) centre.getY(), (float) centre.getBottom());
+    }
+}
+
+void ClassAPanel::update (float dt)
+{
+    const auto st = proc.getClassASettings();
+    const bool ms = st.mode == ppm::ClassAMidSide;
+    strips[0].setTitle (ms ? "MID" : "LEFT", col::amber);
+    strips[1].setTitle (ms ? (st.link ? "SIDE  (LINKED)" : "SIDE") : (st.link ? "RIGHT  (LINKED)" : "RIGHT"), st.link ? col::engraveDim : col::blue);
+    strips[1].setCompressorEnabled (! st.link);
+    auto& m = proc.meters;
+    for (int c = 0; c < 2; ++c)
+    {
+        const int src = (c == 1 && m.numChannels.load() < 2) ? 0 : c;
+        strips[c].setMeter (m.grA[src].load(), st.in);
+        strips[c].tickMeter (dt);
+        strips[c].refreshReadouts();
+    }
+    if (m.clipA.exchange (false)) clipHold = 6;
+    clipLed.setBrightness (clipHold > 0 ? 1.0f : 0.0f);
+    if (clipHold > 0) --clipHold;
+}
+
+// =============================================================================
 //  HelpOverlay
 // =============================================================================
 HelpOverlay::HelpOverlay() { setInterceptsMouseClicks (true, false); }
@@ -2034,7 +2375,7 @@ HelpOverlay::HelpOverlay() { setInterceptsMouseClicks (true, false); }
 void HelpOverlay::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colours::black.withAlpha (0.72f));
-    auto card = getLocalBounds().toFloat().reduced (40.0f, 30.0f).withSizeKeepingCentre ((float) getWidth() - 80.0f, 960.0f);
+    auto card = getLocalBounds().toFloat().reduced (40.0f, 30.0f).withSizeKeepingCentre ((float) getWidth() - 80.0f, 1100.0f);
     juce::ColourGradient paper (col::cream, card.getX(), card.getY(), col::creamDark, card.getX(), card.getBottom(), false);
     g.setGradientFill (paper);
     g.fillRoundedRectangle (card, 8.0f);
@@ -2094,6 +2435,11 @@ void HelpOverlay::paint (juce::Graphics& g)
           "COMPRESS / LIMIT: soft leveling or firmer peak control.  SC HP: the detector ignores bass below 100 Hz so the kick "
           "doesn't pump the mix.  COMP IN: bypass for comparison.  ORDER: EQ > COMP (usual) or COMP > EQ.  "
           "LINK also links the compressor, so both sides always move together and the stereo image stays put." },
+        { "9b  M/S CLASS-A COMPRESSOR (ash-blue panel)",
+          "Works like the elysia alpha.  FEEDBACK (smooth, ratio 1:1.1-1:2.5 rising with reduction) or FEED FWD (harder, double ratios and "
+          "attack, up to limiting and negative ratios).  ATTACK = time to 10 dB of reduction, RELEASE = time back from 6 dB (linear).  AUTO FAST for "
+          "attack and release.  SC filter (LP/HP tilt + freq) shapes what it reacts to; NIVEAU filter tilts the sound after it.  GAIN, MIX, WARM per "
+          "channel.  M/S: left = MID, right = SIDE.  LINK = one control voltage.  SOFT CLIP + threshold, LED.  ACTIVE switches it in (starts off)." },
         { "10  AUTO MASTER & MAXIMIZER (above the footer)",
           "Pick a GENRE (POP, JAZZ, 70'S, 80'S, 90'S, R&B, HIP HOP), press LISTEN and play the song - its fullest part is best. "
           "After 30 s of music it measures your mix's tonal balance and loudness and sets the EQ (broad moves toward the genre's "
@@ -2112,7 +2458,7 @@ void HelpOverlay::paint (juce::Graphics& g)
     auto colB = r;
     for (int i = 0; i < (int) std::size (sections); ++i)
     {
-        auto& col = i < 6 ? colA : colB;
+        auto& col = i < 7 ? colA : colB;
         juce::AttributedString s;
         s.append (juce::String (sections[i].title) + "\n", serif (19.0f), col::ink);
         s.append (sections[i].body, sans (15.0f, false), juce::Colour (0xff3a332a));
@@ -2193,7 +2539,7 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
       drive (p.apvts, ppm::params::tubeDrive, "DRIVE", "-6", "+18"),
       inputKnob (p.apvts, ppm::params::inputGain, "INPUT", "-24", "+24")
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &vuL, &vuR, &harm, &tube1, &tube2, &lampSignal, &lampLink, &lampClip, &lampTube, &analyzer, &vectorscope, &loudnessPanel, &keyPanel, &autoPanel })
+    for (auto* c : std::initializer_list<juce::Component*> { &vuL, &vuR, &harm, &tube1, &tube2, &lampSignal, &lampLink, &lampClip, &lampTube, &analyzer, &vectorscope, &loudnessPanel, &keyPanel, &autoPanel, &classAPanel })
         addAndMakeVisible (c);
 
     for (int ch = 0; ch < 2; ++ch)
@@ -2308,7 +2654,7 @@ void Faceplate::timerCallback()
     vectorscope.update (dt);
     loudnessPanel.update();
     keyPanel.update (dt);
-    if (! compact) autoPanel.update (dt);
+    if (! compact) { autoPanel.update (dt); classAPanel.update (dt); }
     auto& m = proc.meters;
     const bool linked = proc.isLinked();
     const bool tubeOn = proc.apvts.getRawParameterValue (ppm::params::tubeOn)->load() > 0.5f;
@@ -2393,12 +2739,13 @@ void Faceplate::paint (juce::Graphics& g)
     {
     draw::plate (g, rowPlates[0], metal);
     draw::plate (g, rowPlates[1], metal);
-    draw::plate (g, compPlate, metal);
+    draw::plate (g, compPlate, metal, true, col::steelGray);
     draw::plate (g, autoPlate, metal);
+    draw::plate (g, classAPlate, metal, true, col::ashBlue);
     {
         auto head = compPlate.reduced (30.0f, 10.0f).withHeight (22.0f);
-        draw::engraved (g, "VARI-MU TUBE COMPRESSOR", head, 14.0f, juce::Justification::centred);
-        draw::engraved (g, "ORDER", head.withX ((float) orderSwitch.getX() - 60.0f).withWidth (52.0f), 11.0f, juce::Justification::centredRight);
+        draw::engraved (g, "STEREO VARIABLE MU  LIMITER COMPRESSOR", head, 15.0f, juce::Justification::centred, juce::Colours::white);
+        draw::engraved (g, "ORDER", head.withX ((float) orderSwitch.getX() - 60.0f).withWidth (52.0f), 11.0f, juce::Justification::centredRight, juce::Colours::white);
         // divider between the two channels
         const float x = compPlate.getCentreX();
         g.setColour (juce::Colours::black.withAlpha (0.8f));
@@ -2541,6 +2888,7 @@ void Faceplate::resized()
     }
     orderSwitch.setVisible (! compact);
     autoPanel.setVisible (! compact);
+    classAPanel.setVisible (! compact);
     linkButton.setVisible (! compact); copyLR.setVisible (! compact); copyRL.setVisible (! compact);
     if (compact) { help.setBounds (getLocalBounds()); return; }
 
@@ -2549,8 +2897,13 @@ void Faceplate::resized()
     autoPanel.setBounds (autoPlate.toNearestInt());
     r.removeFromBottom (10.0f);
 
+    // ---------------- M/S CLASS-A compressor (ash-blue unit) ---------------------------
+    classAPlate = r.removeFromBottom (380.0f);
+    classAPanel.setBounds (classAPlate.toNearestInt());
+    r.removeFromBottom (10.0f);
+
     // ---------------- variable-mu compressor ----------------------------------------
-    compPlate = r.removeFromBottom (262.0f);
+    compPlate = r.removeFromBottom (292.0f);
     {
         auto c = compPlate.reduced (26.0f, 10.0f).toNearestInt();
         auto head = c.removeFromTop (26);

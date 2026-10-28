@@ -442,6 +442,45 @@ int main()
         if (! finite) ++failures;
     }
 
+    // ---- M/S CLASS-A compressor inside the plugin --------------------------------
+    {
+        std::printf ("M/S class-A compressor (48 kHz, EQ flat, tube and vari-mu off):\n");
+        PassiveMasterEQProcessor proc;
+        auto& s = proc.apvts;
+        setParam (s, ppm::params::tubeOn, 0.0f);
+        setParam (s, "L_c_in", 0.0f); setParam (s, "R_c_in", 0.0f);
+        namespace ca = ppm::params::ca;
+        setParam (s, ca::in, 1.0f); setParam (s, ca::mode, (float) ppm::ClassAMidSide); setParam (s, ca::link, 0.0f);
+        setParam (s, ca::chan (0, "thr"), -30.0f); setParam (s, ca::chan (0, "ratio"), 11.0f);  // squeeze the MID (1:2.5 feedback)
+        setParam (s, ca::chan (0, "att"), 2.0f);
+        setParam (s, ca::chan (1, "thr"), 2.0f);                                                 // leave the SIDE alone
+        proc.setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc.prepareToPlay (48000.0, 512);
+        const double a = std::pow (10.0, -10.0 / 20.0);
+        auto mid = measureStereo (proc, 48000.0, 1000.0, a, a, 1.0);
+        auto side = measureStereo (proc, 48000.0, 1000.0, a, -a, 1.0);
+        // expected: the feedback law, 20 dB over threshold: g = (R(g) - 1) / R(g) * 20  (solved by iteration)
+        double g = 0;
+        for (int it = 0; it < 50; ++it) { const double R = ppm::classAFeedbackRatio (11.0, g); g = (R - 1.0) / R * 20.0; }
+        const double want = -g;
+        std::printf ("  M/S, MID threshold -30 / 1:2.5 feedback, SIDE off: mono -10 dBFS -> %+.2f dB (curve %+.2f), out-of-phase -> %+.2f dB, MID meter %.1f dB\n",
+                     mid.first, want, side.first, proc.meters.grA[0].load());
+        if (std::abs (mid.first - want) > 1.0 || std::abs (side.first) > 0.1) ++failures;
+        // soft clip at the plug-in's output: +9 dBFS in, never above 0 dBFS out
+        setParam (s, ca::chan (0, "thr"), 2.0f);
+        setParam (s, ca::clipOn, 1.0f);
+        juce::AudioBuffer<float> buf (2, 512); double peak = 0, ph = 0;
+        for (int b = 0; b < 100; ++b)
+        {
+            for (int i = 0; i < 512; ++i, ph += 2 * juce::MathConstants<double>::pi * 1000.0 / 48000.0)
+                for (int c = 0; c < 2; ++c) buf.setSample (c, i, (float) (2.8 * std::sin (ph)));
+            juce::MidiBuffer m; proc.processBlock (buf, m);
+            if (b > 10) for (int c = 0; c < 2; ++c) peak = std::max (peak, (double) buf.getMagnitude (c, 0, 512));
+        }
+        std::printf ("  SOFT CLIP: +9 dBFS in -> output peak %.3f (%.2f dBFS)\n", peak, 20 * std::log10 (peak));
+        if (peak > 1.02) ++failures;                    // (the oversampling filter may add a hair above the clipper's 1.0)
+    }
+
     // ---- MAXIMIZER + AUTO MASTER inside the plugin --------------------------------
     {
         std::printf ("auto master (48 kHz):\n");

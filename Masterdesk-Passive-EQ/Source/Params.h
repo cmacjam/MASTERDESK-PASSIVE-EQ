@@ -7,6 +7,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "dsp/Model.h"
 #include "dsp/VariMu.h"
+#include "dsp/ClassAComp.h"
 
 namespace ppm::params
 {
@@ -32,6 +33,13 @@ inline const juce::String maxGain   { "max_gain" };     // dB pushed into the li
 inline const juce::String maxCeiling { "max_ceiling" }; // highest peak allowed out, dBFS
 inline const juce::String amGenre   { "am_genre" };     // AUTO MASTER genre
 inline const juce::String amAmount  { "am_amount" };    // AUTO MASTER EQ amount, %
+
+// M/S CLASS-A compressor (ash-blue unit). Channel 1 = Left or Mid, channel 2 = Right or Side.
+namespace ca
+{
+    inline const juce::String in { "x_in" }, mode { "x_mode" }, link { "x_link" }, clipOn { "x_clipon" }, clip { "x_clip" };
+    inline juce::String chan (int ch, const char* what) { return juce::String ("x_") + what + juce::String (ch + 1); }   // x_thr1, x_att2 ...
+}
 
 inline juce::String formatHz (double hz)
 {
@@ -141,6 +149,41 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                         StringArray { "Pop", "Jazz", "70's", "80's", "90's", "R&B", "Hip Hop" }, 0));
     layout.add (std::make_unique<AudioParameterInt>  (ParameterID { amAmount, version }, "Auto Master Amount", 0, 100, 60,
                                                       AudioParameterIntAttributes().withLabel ("%")));
+    // ---- M/S CLASS-A compressor (controls and ranges follow the hardware's front panel) ----
+    {
+        auto g = std::make_unique<AudioProcessorParameterGroup> ("classa", "M/S Class-A Compressor", " | ");
+        auto fl = [&g] (const String& id, const String& name, NormalisableRange<float> r, float def, const char* label)
+        { g->addChild (std::make_unique<AudioParameterFloat> (ParameterID { id, 1 }, name, r, def, AudioParameterFloatAttributes().withLabel (label))); };
+        auto bl = [&g] (const String& id, const String& name, bool def) { g->addChild (std::make_unique<AudioParameterBool> (ParameterID { id, 1 }, name, def)); };
+        bl (ca::in, "Class-A Active", false);
+        g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { ca::mode, version }, "Class-A M/S", StringArray { "Stereo", "M/S" }, 0));
+        bl (ca::link, "Class-A Link", true);
+        bl (ca::clipOn, "Class-A Soft Clip", false);
+        fl (ca::clip, "Class-A Soft Clip Threshold", NormalisableRange<float> (-12.0f, 0.0f, 0.1f), 0.0f, "dB");
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const String n = ch == 0 ? "Class-A L/Mid " : "Class-A R/Side ";
+            auto skew = [] (float lo, float hi, float step, float centre) { NormalisableRange<float> r (lo, hi, step); r.setSkewForCentre (centre); return r; };
+            fl (ca::chan (ch, "thr"),   n + "Threshold", NormalisableRange<float> (-31.0f, 2.0f, 0.1f), -10.0f, "dB");
+            fl (ca::chan (ch, "att"),   n + "Attack",    skew (0.01f, 150.0f, 0.01f, 13.0f), 13.0f, "ms");
+            fl (ca::chan (ch, "rel"),   n + "Release",   skew (60.0f, 1800.0f, 1.0f, 430.0f), 300.0f, "ms");
+            fl (ca::chan (ch, "ratio"), n + "Ratio",     NormalisableRange<float> (0.0f, (float) ppm::kClassARatioTop, 0.01f), 6.0f, "");
+            fl (ca::chan (ch, "gain"),  n + "Gain",      NormalisableRange<float> (0.0f, 12.0f, 0.1f), 0.0f, "dB");
+            fl (ca::chan (ch, "mix"),   n + "Mix",       NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f, "%");
+            bl (ca::chan (ch, "ff"),    n + "Feed Forward", false);
+            bl (ca::chan (ch, "afa"),   n + "Auto Fast Attack", false);
+            bl (ca::chan (ch, "afr"),   n + "Auto Fast Release", false);
+            bl (ca::chan (ch, "warm"),  n + "Warm", false);
+            bl (ca::chan (ch, "scon"),  n + "SC Filter", false);
+            fl (ca::chan (ch, "scg"),   n + "SC Gain (LP..HP)", NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f, "");
+            fl (ca::chan (ch, "scf"),   n + "SC Freq",   skew (30.0f, 3300.0f, 1.0f, 340.0f), 280.0f, "Hz");
+            bl (ca::chan (ch, "eqon"),  n + "Niveau Filter", false);
+            fl (ca::chan (ch, "eqg"),   n + "Niveau Gain", NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f, "");
+            fl (ca::chan (ch, "eqf"),   n + "Niveau Freq", skew (20.0f, 2000.0f, 1.0f, 220.0f), 500.0f, "Hz");
+            bl (ca::chan (ch, "eqx"),   n + "Niveau x10", false);
+        }
+        layout.add (std::move (g));
+    }
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { compOrder, version }, "Comp Order",
                                                         StringArray { "EQ > COMP", "COMP > EQ" }, 0));
     return layout;
@@ -195,6 +238,40 @@ struct CompParamPtrs
         c.compIn = in->load() > 0.5f; c.threshold = i (thr); c.attack = i (att); c.recovery = i (rec);
         c.output = i (out); c.mix = i (mix); c.mode = i (mode); c.scHp = schp->load() > 0.5f;
         return c;
+    }
+};
+
+struct ClassAParamPtrs
+{
+    std::atomic<float>* in; std::atomic<float>* mode; std::atomic<float>* link; std::atomic<float>* clipOn; std::atomic<float>* clip;
+    struct Ch { std::atomic<float>* p[17]; } ch[2];
+    static constexpr const char* names[17] = { "thr", "att", "rel", "ratio", "gain", "mix", "ff", "afa", "afr", "warm",
+                                               "scon", "scg", "scf", "eqon", "eqg", "eqf", "eqx" };
+
+    void init (juce::AudioProcessorValueTreeState& s)
+    {
+        in = s.getRawParameterValue (ca::in); mode = s.getRawParameterValue (ca::mode); link = s.getRawParameterValue (ca::link);
+        clipOn = s.getRawParameterValue (ca::clipOn); clip = s.getRawParameterValue (ca::clip);
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < 17; ++i) ch[c].p[i] = s.getRawParameterValue (ca::chan (c, names[i]));
+    }
+
+    ClassASettings read() const
+    {
+        ClassASettings st;
+        st.in = in->load() > 0.5f; st.mode = (int) std::lround (mode->load()); st.link = link->load() > 0.5f;
+        st.softClip = clipOn->load() > 0.5f; st.clipDb = clip->load();
+        for (int c = 0; c < 2; ++c)
+        {
+            auto v = [&] (int i) { return (double) ch[c].p[i]->load(); };
+            auto b = [&] (int i) { return ch[c].p[i]->load() > 0.5f; };
+            auto& o = st.ch[c];
+            o.thresholdDb = v (0); o.attackMs = v (1); o.releaseMs = v (2); o.ratioPos = v (3); o.gainDb = v (4); o.mix = v (5) / 100.0;
+            o.feedForward = b (6); o.autoFastAttack = b (7); o.autoFastRelease = b (8); o.warm = b (9);
+            o.scOn = b (10); o.scTilt = v (11); o.scFreq = v (12);
+            o.eqOn = b (13); o.eqTilt = v (14); o.eqFreq = v (15); o.eqX10 = b (16);
+        }
+        return st;
     }
 };
 } // namespace ppm::params

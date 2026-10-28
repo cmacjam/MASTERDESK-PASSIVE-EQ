@@ -48,6 +48,7 @@ public:
     bool   isKeyShiftOn() const      { return keyOnParam->load() > 0.5f; }
     double getKeyShiftSemitones() const { return (double) std::lround (keySemisParam->load()) + std::lround (keyCentsParam->load()) / 100.0; }
     bool isLinked() const { return linkParam->load() > 0.5f; }
+    ppm::ClassASettings getClassASettings() const { return classAParams.read(); }
     void copyChannel (int fromCh, int toCh);
     int  getOversamplingFactor() const { return 1 << osLog2; }
 
@@ -60,6 +61,8 @@ public:
         std::atomic<float> inPeak     { 0.0f };             // input peak hold, GUI resets
         std::atomic<float> inLevel[2] { {0.0f}, {0.0f} };   // input peak per channel (after INPUT gain), GUI resets
         std::atomic<float> gr[2]      { {0.0f}, {0.0f} };   // compressor gain reduction, dB
+        std::atomic<float> grA[2]     { {0.0f}, {0.0f} };   // class-A compressor gain reduction (ch1, ch2), dB
+        std::atomic<bool>  clipA      { false };            // class-A soft clip working (GUI resets)
         std::atomic<int>   numChannels { 2 };
     } meters;
 
@@ -186,6 +189,8 @@ private:
     int currentProgram = 0;
     ppm::ChannelEngine engines[2];
     ppm::StereoVariMu comp;
+    ppm::ClassACompressor classA;
+    ppm::params::ClassAParamPtrs classAParams;
     ppm::LoudnessMeter loudnessMeter;
     int    activeOrder = 0;        // order currently running
     double orderGain = 1.0, orderStep = 0.001;   // fade used to swap order without a click

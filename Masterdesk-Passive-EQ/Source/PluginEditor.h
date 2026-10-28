@@ -33,13 +33,17 @@ namespace col
     const juce::Colour aqua       { 0xff4ff5ff };   // display lines / text
     const juce::Colour aquaDim    { 0xff8fd8e8 };
     const juce::Colour meterInk   { 0xfff2f2f2 };   // white scale on the black meter faces
+    const juce::Colour steelGray  { 0xff7c838f };   // the vari-mu compressor's faceplate (gray brushed metal)
+    const juce::Colour ashBlue    { 0xff7d94a7 };   // the M/S CLASS-A compressor's faceplate
+    const juce::Colour ashBlueDark { 0xff566b7c };
 }
 
 // Shared drawing helpers --------------------------------------------------------
 namespace draw
 {
     juce::Image makeBrushedMetal (int w, int h);
-    void plate (juce::Graphics&, juce::Rectangle<float>, const juce::Image& texture, bool screws = true);
+    void plate (juce::Graphics&, juce::Rectangle<float>, const juce::Image& texture, bool screws = true,
+                juce::Colour tint = juce::Colour());           // tint: e.g. ash blue for the class-A unit
     void screw (juce::Graphics&, juce::Point<float> centre, float diameter, float slotAngle);
     void chromeRing (juce::Graphics&, juce::Rectangle<float>, float thickness);
     void jewel (juce::Graphics&, juce::Rectangle<float>, juce::Colour, float brightness);
@@ -77,6 +81,7 @@ public:
     juce::Slider slider;
     std::function<juce::String()> valueText;            // custom readout (e.g. realised dB)
     juce::Colour valueColour = col::ink;
+    juce::Colour captionColour = col::engrave, endLabelColour = col::engraveDim.brighter (0.5f);   // engraved legends
 private:
     juce::String caption, minLabel, maxLabel;
     juce::Label valueBox;
@@ -132,6 +137,7 @@ public:
     void setTarget (float valueDbOrPercent, float lampBrightness);   // VU: dB re 0 VU, Harmonics: % THD
     void tick (float dtSeconds);
     void paint (juce::Graphics&) override;
+    juce::String subtitle;                       // small line under the meter name (empty = default)
 private:
     float valueToAngle (float v) const;
     Kind kind;
@@ -288,6 +294,23 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> eqInAtt;
 };
 
+// Chrome bat-handle toggle switch (hardware style): label above = up, label below = down
+class MetalToggle : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    // upValue: the parameter value (plain) when the handle points up; the other position is the other value
+    MetalToggle (juce::AudioProcessorValueTreeState&, const juce::String& paramId, const juce::String& upLabel,
+                 const juce::String& downLabel, float upValue, float downValue);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    bool isUp() const { return std::abs (value - upValue) < 0.5f; }
+    juce::Colour labelColour = juce::Colours::white;
+private:
+    juce::String upLabel, downLabel;
+    float upValue, downValue, value = 0.0f;
+    juce::ParameterAttachment attachment;
+};
+
 // One channel of the variable-mu compressor --------------------------------------
 class CompStrip : public juce::Component
 {
@@ -301,9 +324,8 @@ private:
     int ch;
     AnalogMeter meter;
     SteppedKnob thresh, attack, recovery, output, mix;
-    ModeSwitch mode;
-    JewelButton scHp { "SC HP", "SC FULL", col::blue }, compIn { "COMP IN", "COMP OUT", col::green };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> scHpAtt, compInAtt;
+    MetalToggle mode, scHp, compIn;
+    juce::Rectangle<int> knobPanel;
 };
 
 // AUTO MASTER + MAXIMIZER plate --------------------------------------------------
@@ -330,6 +352,52 @@ private:
     float amountTimer = 0.0f, gr = 0.0f, grHold = 0.0f, grHoldTimer = 0.0f, pulse = 0.0f;
 };
 
+// One channel of the M/S CLASS-A compressor (ash-blue unit) ------------------------
+class ClassAStrip : public juce::Component
+{
+public:
+    ClassAStrip (juce::AudioProcessorValueTreeState&, int ch);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void setMeter (float grDb, bool active) { meter.setTarget (grDb, active ? 1.0f : 0.0f); }
+    void tickMeter (float dt) { meter.tick (dt); }
+    void setTitle (const juce::String& t, juce::Colour c) { if (t != title || c != titleColour) { title = t; titleColour = c; repaint(); } }
+    void setCompressorEnabled (bool e);                 // LINK: the right compressor controls follow the left
+    void refreshReadouts() { ratio.refresh(); eqFreq.refresh(); }
+private:
+    juce::AudioProcessorValueTreeState& state;
+    int ch;
+    AnalogMeter meter;
+    SteppedKnob thresh, attack, release, ratio, gain, scGain, scFreq, eqGain, eqFreq, mix;
+    JewelButton ff { "FEED FWD", "FEEDBACK", col::amber }, afa { "AUTO FAST ATT", "AUTO FAST ATT", col::amber },
+                afr { "AUTO FAST REL", "AUTO FAST REL", col::amber }, warm { "WARM", "WARM", col::amber },
+                scOn { "SC ON", "SC OFF", col::blue }, eqOn { "EQ ON", "EQ OFF", col::blue }, eqX10 { "x10", "x1", col::blue };
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>> atts;
+    juce::Rectangle<int> filterRow, buttonRow;
+    juce::String title;
+    juce::Colour titleColour = col::engrave;
+};
+
+class ClassAPanel : public juce::Component
+{
+public:
+    explicit ClassAPanel (PassiveMasterEQProcessor&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void update (float dt);
+private:
+    PassiveMasterEQProcessor& proc;
+    ClassAStrip strips[2];
+    ModeSwitch mode;
+    SteppedKnob clip;
+    JewelButton inButton { "ACTIVE", "BYPASS", col::green }, link { "LINK", "UNLINKED", col::yellow },
+                clipOn { "SOFT CLIP", "SOFT CLIP", col::red };
+    JewelLamp clipLed { "CLIP", col::red };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> inAtt, linkAtt, clipAtt;
+    juce::Rectangle<int> centre;
+    int clipHold = 0;
+};
+
 // HELP overlay: a printed "manual card" explaining the panel --------------------
 class HelpOverlay : public juce::Component
 {
@@ -352,7 +420,7 @@ private:
 class Faceplate : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int kW = 1440, kH = 1540;
+    static constexpr int kW = 1440, kH = 1960;
     static constexpr int kHCompact = 594;        // MINI view: meters, displays and footer only
 
     explicit Faceplate (PassiveMasterEQProcessor&);
@@ -391,6 +459,7 @@ private:
     LoudnessPanel loudnessPanel { proc };
     KeyPanel keyPanel { proc, history };
     AutoMasterPanel autoPanel { proc };
+    ClassAPanel classAPanel { proc };
     std::unique_ptr<BandStrip>   bands[2][ppm::kNumBands];
     std::unique_ptr<CenterStrip> centers[2];
     std::unique_ptr<CompStrip>   comps[2];
@@ -406,7 +475,7 @@ private:
     HelpOverlay help;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linkAtt, tubeAtt;
 
-    juce::Rectangle<float> topPlate, curvePlate, analyzerScreen, scopeScreen, rowPlates[2], compPlate, autoPlate, footerPlate, nameplate, presetLabel;
+    juce::Rectangle<float> topPlate, curvePlate, analyzerScreen, scopeScreen, rowPlates[2], compPlate, classAPlate, autoPlate, footerPlate, nameplate, presetLabel;
     bool lastLinked = true, compact = false;
     int clipHold = 0;
     int lastProgram = -1;

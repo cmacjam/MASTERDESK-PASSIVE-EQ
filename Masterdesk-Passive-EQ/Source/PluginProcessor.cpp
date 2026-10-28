@@ -20,6 +20,7 @@ PassiveMasterEQProcessor::PassiveMasterEQProcessor()
     maxOnParam   = apvts.getRawParameterValue (params::maxOn);
     maxGainParam = apvts.getRawParameterValue (params::maxGain);
     maxCeilParam = apvts.getRawParameterValue (params::maxCeiling);
+    classAParams.init (apvts);
     maximizer.prepare (48000.0);
     startTimerHz (10);
 }
@@ -69,6 +70,8 @@ void PassiveMasterEQProcessor::prepareToPlay (double sampleRate, int samplesPerB
     }
     comp.setSettings (getCompSettings (0), getCompSettings (1), isLinked());
     comp.prepare (internalRate);
+    classA.setSettings (classAParams.read());
+    classA.prepare (internalRate);
     activeOrder = getCompOrder();
     lastInputGain = juce::Decibels::decibelsToGain (inputParam->load());
     scope.sampleRate.store (sampleRate);
@@ -174,6 +177,7 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         engines[ch].setSettings (getChannelSettings (ch), tubeOn, drive);
 
     comp.setSettings (getCompSettings (0), getCompSettings (1), isLinked());
+    classA.setSettings (classAParams.read());
     const int wantOrder = getCompOrder();
 
     // Hosts may send more samples than announced in prepareToPlay: process in pieces
@@ -214,6 +218,10 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
             l *= orderGain; r *= orderGain;
         }
 
+        // M/S CLASS-A compressor + soft clip (after the EQ and vari-mu, before the maximizer)
+        if (d[1] != nullptr) classA.process (l, r);
+        else { double rr = l; classA.process (l, rr); }
+
         d[0][i] = (float) l;
         if (d[1] != nullptr) d[1][i] = (float) r;
     }
@@ -250,7 +258,9 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         holdMax (meters.outPeak[ch], buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
         meters.thd[ch].store ((float) engines[ch].takeDistortionRatio());
         meters.gr[ch].store ((float) comp.takeGainReductionDb (ch));
+        meters.grA[ch].store ((float) classA.takeGainReductionDb (ch));
     }
+    if (classA.takeClipActive()) meters.clipA.store (true);
     scope.push (buffer.getReadPointer (0), buffer.getReadPointer (numCh > 1 ? 1 : 0), buffer.getNumSamples());
 
     // loudness of the output
