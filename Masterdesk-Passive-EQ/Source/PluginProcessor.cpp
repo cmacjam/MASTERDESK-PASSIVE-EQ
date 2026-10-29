@@ -21,6 +21,7 @@ PassiveMasterEQProcessor::PassiveMasterEQProcessor()
     maxGainParam = apvts.getRawParameterValue (params::maxGain);
     maxCeilParam = apvts.getRawParameterValue (params::maxCeiling);
     classAParams.init (apvts);
+    pqParams.init (apvts);
     maximizer.prepare (48000.0);
     startTimerHz (10);
 }
@@ -72,6 +73,8 @@ void PassiveMasterEQProcessor::prepareToPlay (double sampleRate, int samplesPerB
     comp.prepare (internalRate);
     classA.setSettings (classAParams.read());
     classA.prepare (internalRate);
+    paraEq.setSettings (pqParams.read (isLinked()));
+    paraEq.prepare (internalRate);
     activeOrder = getCompOrder();
     lastInputGain = juce::Decibels::decibelsToGain (inputParam->load());
     scope.sampleRate.store (sampleRate);
@@ -178,6 +181,7 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
     comp.setSettings (getCompSettings (0), getCompSettings (1), isLinked());
     classA.setSettings (classAParams.read());
+    paraEq.setSettings (pqParams.read (isLinked()));
     const int wantOrder = getCompOrder();
 
     // Hosts may send more samples than announced in prepareToPlay: process in pieces
@@ -192,6 +196,10 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     {
         double l = d[0][i];
         double r = d[1] != nullptr ? (double) d[1][i] : l;
+
+        // parametric mastering EQ: first in the chain, in front of the passive EQ
+        paraEq.process (l, r);
+        if (d[1] == nullptr) r = l;
 
         if (activeOrder == 0)          // EQ > COMP
         {

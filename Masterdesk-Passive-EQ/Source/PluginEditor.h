@@ -33,7 +33,9 @@ namespace col
     const juce::Colour aqua       { 0xff4ff5ff };   // display lines / text
     const juce::Colour aquaDim    { 0xff8fd8e8 };
     const juce::Colour meterInk   { 0xfff2f2f2 };   // white scale on the black meter faces
-    const juce::Colour steelGray  { 0xff7c838f };   // the vari-mu compressor's faceplate (gray brushed metal)
+    const juce::Colour steelGray  { 0xff7c838f };
+    const juce::Colour blackPanel { 0xff232426 };   // the parametric EQ's black anodised faceplate
+    const juce::Colour silkscreen { 0xffbfc1c4 };   // its engraved legends   // the vari-mu compressor's faceplate (gray brushed metal)
     const juce::Colour ashBlue    { 0xff7d94a7 };   // the M/S CLASS-A compressor's faceplate
     const juce::Colour ashBlueDark { 0xff566b7c };
 }
@@ -398,6 +400,126 @@ private:
     int clipHold = 0;
 };
 
+// Parametric mastering EQ (black unit) ----------------------------------------------
+// Knob with a glossy black cap and silver knurled skirt, printed scale around it, red index mark
+class SkirtKnob : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    SkirtKnob (juce::AudioProcessorValueTreeState&, const juce::String& paramId, juce::StringArray scaleLabels, int labelEvery = 1);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void setTooltip (const juce::String& t) { SettableTooltipClient::setTooltip (t); slider.setTooltip (t); }
+    juce::Slider slider;
+    float knobFraction = 0.62f;                  // knob diameter relative to the component
+private:
+    juce::StringArray labels;
+    int every = 1;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+};
+
+// round red PUSH EQ button
+class PushEqButton : public juce::ToggleButton
+{
+public:
+    PushEqButton() { setClickingTogglesState (true); }
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+};
+
+class ParametricPanel : public juce::Component
+{
+public:
+    explicit ParametricPanel (PassiveMasterEQProcessor&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void update();
+private:
+    struct Channel
+    {
+        std::unique_ptr<SkirtKnob> shape[3], freq[3], level[3], hiShelf, loShelf;
+        std::unique_ptr<MetalToggle> loFreq, hiFreq;
+        juce::Rectangle<int> shelfCol, bandCol[3];
+    };
+    PassiveMasterEQProcessor& proc;
+    Channel chans[2];
+    std::unique_ptr<MetalToggle> man[2];
+    PushEqButton pushEq;
+    JewelLamp ledL { "LEFT", col::green }, ledR { "RIGHT", col::green }, ledOn { "", col::green };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> pushAtt;
+    juce::Rectangle<int> centreCol, legendCol, badgeL, badgeR;
+    bool lastLinked = false;
+};
+
+// ---- pop-out units ------------------------------------------------------------------
+// The passive EQ as a self-contained unit (both channel rows)
+class PassiveEqUnit : public juce::Component
+{
+public:
+    explicit PassiveEqUnit (PassiveMasterEQProcessor&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void update();
+    static constexpr int kRowH = 222, kGap = 10;
+private:
+    PassiveMasterEQProcessor& proc;
+    std::unique_ptr<BandStrip> bands[2][ppm::kNumBands];
+    std::unique_ptr<CenterStrip> centers[2];
+    juce::Rectangle<float> rows[2];
+    bool lastLinked = true;
+};
+
+// The vari-mu compressor as a self-contained unit
+class VariMuUnit : public juce::Component
+{
+public:
+    explicit VariMuUnit (PassiveMasterEQProcessor&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void update (float dt);
+private:
+    PassiveMasterEQProcessor& proc;
+    std::unique_ptr<CompStrip> comps[2];
+    ModeSwitch orderSwitch;
+};
+
+// Hosts one unit on its own plate(s) at a fixed design size, scaled to the window
+class UnitHost : public juce::Component, private juce::Timer
+{
+public:
+    UnitHost (std::unique_ptr<juce::Component> unit, int designW, int designH, std::vector<juce::Rectangle<float>> plates,
+              juce::Colour tint, std::function<void (float)> update);
+    ~UnitHost() override;
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    juce::Component& getUnit() { return *unit; }
+    void tick() { timerCallback(); }
+private:
+    void timerCallback() override { if (update) update (1.0f / 30.0f); }
+    std::unique_ptr<juce::Component> unit;
+    int dw, dh;
+    std::vector<juce::Rectangle<float>> plates;
+    juce::Colour tint;
+    std::function<void (float)> update;
+    juce::Image metal;
+};
+
+class UnitWindow : public juce::DocumentWindow
+{
+public:
+    UnitWindow (const juce::String& title, std::unique_ptr<UnitHost> host, juce::LookAndFeel& laf, std::function<void()> onClose);
+    ~UnitWindow() override;
+    void closeButtonPressed() override { if (onClose) onClose(); }
+private:
+    std::function<void()> onClose;
+};
+
+// small chrome "pop out" icon button
+class PopOutButton : public juce::Button
+{
+public:
+    PopOutButton() : juce::Button ("pop out") {}
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+};
+
 // HELP overlay: a printed "manual card" explaining the panel --------------------
 class HelpOverlay : public juce::Component
 {
@@ -420,7 +542,7 @@ private:
 class Faceplate : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int kW = 1440, kH = 1960;
+    static constexpr int kW = 1440, kH = 2380;
     static constexpr int kHCompact = 594;        // MINI view: meters, displays and footer only
 
     explicit Faceplate (PassiveMasterEQProcessor&);
@@ -439,6 +561,11 @@ public:
     void setCompact (bool c);
     bool isCompact() const { return compact; }
     void setFullScreenState (bool fs) { fullButton.setButtonText (fs ? "EXIT FULL" : "FULL SCREEN"); }
+
+    enum Unit { UnitParametric = 0, UnitPassive, UnitVariMu, UnitClassA, UnitAuto, kNumUnits };
+    void openUnit (int unit);                                       // pop a unit out into its own window
+    std::unique_ptr<UnitHost> createUnitHost (int unit);            // (also used by the tests for snapshots)
+    static juce::String unitName (int unit);
 
 private:
     void timerCallback() override;
@@ -460,6 +587,9 @@ private:
     KeyPanel keyPanel { proc, history };
     AutoMasterPanel autoPanel { proc };
     ClassAPanel classAPanel { proc };
+    ParametricPanel paraPanel { proc };
+    PopOutButton popButtons[kNumUnits];
+    std::unique_ptr<UnitWindow> unitWindows[kNumUnits];
     std::unique_ptr<BandStrip>   bands[2][ppm::kNumBands];
     std::unique_ptr<CenterStrip> centers[2];
     std::unique_ptr<CompStrip>   comps[2];
@@ -475,7 +605,7 @@ private:
     HelpOverlay help;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linkAtt, tubeAtt;
 
-    juce::Rectangle<float> topPlate, curvePlate, analyzerScreen, scopeScreen, rowPlates[2], compPlate, classAPlate, autoPlate, footerPlate, nameplate, presetLabel;
+    juce::Rectangle<float> topPlate, curvePlate, analyzerScreen, scopeScreen, rowPlates[2], compPlate, classAPlate, autoPlate, paraPlate, footerPlate, nameplate, presetLabel;
     bool lastLinked = true, compact = false;
     int clipHold = 0;
     int lastProgram = -1;
@@ -538,6 +668,9 @@ public:
 
 private:
     int designH() const { return face.isCompact() ? ui::Faceplate::kHCompact : ui::Faceplate::kH; }
+public:
+    std::unique_ptr<ui::UnitHost> createUnitHost (int unit) { return face.createUnitHost (unit); }   // tests
+private:
     void updateLimits();
     juce::DocumentWindow* standaloneWindow() const;
     PassiveMasterEQProcessor& proc;

@@ -49,6 +49,7 @@ public:
     double getKeyShiftSemitones() const { return (double) std::lround (keySemisParam->load()) + std::lround (keyCentsParam->load()) / 100.0; }
     bool isLinked() const { return linkParam->load() > 0.5f; }
     ppm::ClassASettings getClassASettings() const { return classAParams.read(); }
+    ppm::sontec::Settings getParametricSettings() const { return pqParams.read (isLinked()); }
     void copyChannel (int fromCh, int toCh);
     int  getOversamplingFactor() const { return 1 << osLog2; }
 
@@ -190,6 +191,8 @@ private:
     ppm::ChannelEngine engines[2];
     ppm::StereoVariMu comp;
     ppm::ClassACompressor classA;
+    ppm::sontec::SontecEQ paraEq;
+    ppm::params::PqParamPtrs pqParams;
     ppm::params::ClassAParamPtrs classAParams;
     ppm::LoudnessMeter loudnessMeter;
     int    activeOrder = 0;        // order currently running

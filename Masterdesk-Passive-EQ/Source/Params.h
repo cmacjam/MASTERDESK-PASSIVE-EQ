@@ -8,6 +8,7 @@
 #include "dsp/Model.h"
 #include "dsp/VariMu.h"
 #include "dsp/ClassAComp.h"
+#include "dsp/SontecEQ.h"
 
 namespace ppm::params
 {
@@ -33,6 +34,14 @@ inline const juce::String maxGain   { "max_gain" };     // dB pushed into the li
 inline const juce::String maxCeiling { "max_ceiling" }; // highest peak allowed out, dBFS
 inline const juce::String amGenre   { "am_genre" };     // AUTO MASTER genre
 inline const juce::String amAmount  { "am_amount" };    // AUTO MASTER EQ amount, %
+
+// Parametric mastering EQ (black unit, in front of the passive EQ)
+namespace pq
+{
+    inline const juce::String in { "pq_in" };                                       // PUSH EQ
+    inline juce::String id (int ch, const juce::String& what) { return juce::String ("pq_") + (ch == 0 ? "L_" : "R_") + what; }
+    inline juce::String band (int ch, int b, const char* what) { return id (ch, "b" + juce::String (b + 1) + "_" + what); }
+}
 
 // M/S CLASS-A compressor (ash-blue unit). Channel 1 = Left or Mid, channel 2 = Right or Side.
 namespace ca
@@ -149,6 +158,35 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                                         StringArray { "Pop", "Jazz", "70's", "80's", "90's", "R&B", "Hip Hop" }, 0));
     layout.add (std::make_unique<AudioParameterInt>  (ParameterID { amAmount, version }, "Auto Master Amount", 0, 100, 60,
                                                       AudioParameterIntAttributes().withLabel ("%")));
+    // ---- parametric mastering EQ ----
+    {
+        namespace so = ppm::sontec;
+        auto g = std::make_unique<AudioProcessorParameterGroup> ("pq", "Parametric Mastering EQ", " | ");
+        g->addChild (std::make_unique<AudioParameterBool> (ParameterID { pq::in, version }, "Parametric EQ In", false));
+        StringArray levels, shapes;
+        for (int i = 0; i < so::kNumLevels; ++i) { const double v = so::levelDb (i); levels.add ((v > 0 ? "+" : "") + String (v, std::abs (v - std::round (v)) < 1e-9 ? 0 : 1) + " dB"); }
+        for (double d : so::kShapeDbOct) shapes.add (String ((int) d) + " dB/oct");
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const String n = ch == 0 ? "Parametric L " : "Parametric R ";
+            for (int b = 0; b < so::kBands; ++b)
+            {
+                StringArray fr; for (double f : so::bandFreqs (b)) fr.add (formatHz (f) + " Hz");
+                const String bn = n + so::kBandNames[b] + " ";
+                const int defFreq[so::kBands] = { 13, 12, 12 };
+                g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { pq::band (ch, b, "freq"), version }, bn + "Freq", fr, defFreq[b]));
+                g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { pq::band (ch, b, "shape"), version }, bn + "Shape", shapes, 2));
+                g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { pq::band (ch, b, "level"), version }, bn + "Level", levels, 12));
+            }
+            g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { pq::id (ch, "hs"), version }, n + "Hi Shelf", levels, 12));
+            g->addChild (std::make_unique<AudioParameterBool>   (ParameterID { pq::id (ch, "hsf"), version }, n + "Hi Shelf 12k", false));
+            g->addChild (std::make_unique<AudioParameterChoice> (ParameterID { pq::id (ch, "ls"), version }, n + "Lo Shelf", levels, 12));
+            g->addChild (std::make_unique<AudioParameterBool>   (ParameterID { pq::id (ch, "lsf"), version }, n + "Lo Shelf 100 Hz", true));
+            g->addChild (std::make_unique<AudioParameterBool>   (ParameterID { pq::id (ch, "man"), version }, n + "In (MAN)", true));
+        }
+        layout.add (std::move (g));
+    }
+
     // ---- M/S CLASS-A compressor (controls and ranges follow the hardware's front panel) ----
     {
         auto g = std::make_unique<AudioProcessorParameterGroup> ("classa", "M/S Class-A Compressor", " | ");
@@ -238,6 +276,45 @@ struct CompParamPtrs
         c.compIn = in->load() > 0.5f; c.threshold = i (thr); c.attack = i (att); c.recovery = i (rec);
         c.output = i (out); c.mix = i (mix); c.mode = i (mode); c.scHp = schp->load() > 0.5f;
         return c;
+    }
+};
+
+struct PqParamPtrs
+{
+    std::atomic<float>* in;
+    struct Ch { std::atomic<float>* freq[3]; std::atomic<float>* shape[3]; std::atomic<float>* level[3];
+                std::atomic<float>* hs; std::atomic<float>* hsf; std::atomic<float>* ls; std::atomic<float>* lsf; std::atomic<float>* man; } ch[2];
+    void init (juce::AudioProcessorValueTreeState& s)
+    {
+        in = s.getRawParameterValue (pq::in);
+        for (int c = 0; c < 2; ++c)
+        {
+            for (int b = 0; b < 3; ++b)
+            {
+                ch[c].freq[b] = s.getRawParameterValue (pq::band (c, b, "freq"));
+                ch[c].shape[b] = s.getRawParameterValue (pq::band (c, b, "shape"));
+                ch[c].level[b] = s.getRawParameterValue (pq::band (c, b, "level"));
+            }
+            ch[c].hs = s.getRawParameterValue (pq::id (c, "hs"));  ch[c].hsf = s.getRawParameterValue (pq::id (c, "hsf"));
+            ch[c].ls = s.getRawParameterValue (pq::id (c, "ls"));  ch[c].lsf = s.getRawParameterValue (pq::id (c, "lsf"));
+            ch[c].man = s.getRawParameterValue (pq::id (c, "man"));
+        }
+    }
+    ppm::sontec::Settings read (bool linked) const
+    {
+        ppm::sontec::Settings st;
+        st.in = in->load() > 0.5f;
+        auto i = [] (std::atomic<float>* p) { return (int) std::lround (p->load()); };
+        for (int c = 0; c < 2; ++c)
+        {
+            const int src = (c == 1 && linked) ? 0 : c;               // LINK: right follows left (like the passive EQ)
+            auto& o = st.ch[c]; const auto& p = ch[src];
+            for (int b = 0; b < 3; ++b) o.band[b] = { i (p.freq[b]), i (p.shape[b]), i (p.level[b]) };
+            o.hiShelfLevel = i (p.hs); o.hiShelf12k = p.hsf->load() > 0.5f;
+            o.loShelfLevel = i (p.ls); o.loShelf100 = p.lsf->load() > 0.5f;
+            o.in = ch[c].man->load() > 0.5f;                          // each channel's MAN / OFF stays its own
+        }
+        return st;
     }
 };
 

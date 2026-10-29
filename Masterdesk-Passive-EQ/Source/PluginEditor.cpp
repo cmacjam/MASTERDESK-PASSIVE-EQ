@@ -220,6 +220,46 @@ void MasterdeskLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     // Glossy black fluted knob (Bakelite style), white scale ticks printed on the
     // panel around it, and a cream pointer line from the centre to the rim.
     const auto area = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
+    if (s.getProperties()["skirt"])
+    {   // parametric EQ knob: glossy black cap, silver knurled skirt, white pointer line
+        const float R = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 1.0f;
+        const auto c = area.getCentre();
+        const float a = startAngle + pos * (endAngle - startAngle);
+        auto circ = [&] (float rad) { return juce::Rectangle<float> (rad * 2, rad * 2).withCentre (c); };
+        g.setColour (juce::Colours::black.withAlpha (0.6f));
+        g.fillEllipse (circ (R).translated (1.5f, 3.0f));
+        // skirt
+        juce::ColourGradient sk (juce::Colour (0xfff2f2f2), c.x - R, c.y - R, juce::Colour (0xff5c5c5c), c.x + R * 0.6f, c.y + R, false);
+        sk.addColour (0.45, juce::Colour (0xffb8b8b8));
+        g.setGradientFill (sk); g.fillEllipse (circ (R));
+        // knurling around the skirt edge
+        const int teeth = 56;
+        for (int i = 0; i < teeth; ++i)
+        {
+            const float t = juce::MathConstants<float>::twoPi * (float) i / (float) teeth + a;
+            const juce::Point<float> p0 (c.x + R * 0.80f * std::sin (t), c.y - R * 0.80f * std::cos (t));
+            const juce::Point<float> p1 (c.x + R * 0.98f * std::sin (t), c.y - R * 0.98f * std::cos (t));
+            const float shade = 0.5f + 0.5f * std::cos (t + 0.8f);
+            g.setColour (juce::Colours::black.withAlpha (0.18f + 0.2f * (1.0f - shade)));
+            g.drawLine ({ p0, p1 }, 1.1f);
+        }
+        g.setColour (juce::Colours::black.withAlpha (0.6f)); g.drawEllipse (circ (R), 1.0f);
+        // glossy black cap
+        const float rc = R * 0.72f;
+        g.setColour (juce::Colours::black); g.fillEllipse (circ (rc + 1.0f));
+        juce::ColourGradient cap (juce::Colour (0xff3a3a3c), c.x, c.y - rc, juce::Colour (0xff050505), c.x, c.y + rc, false);
+        g.setGradientFill (cap); g.fillEllipse (circ (rc));
+        juce::ColourGradient gloss (juce::Colours::white.withAlpha (0.35f), c.x - rc * 0.3f, c.y - rc * 0.7f,
+                                    juce::Colours::transparentWhite, c.x, c.y, true);
+        g.setGradientFill (gloss);
+        g.fillEllipse (juce::Rectangle<float> (rc * 1.3f, rc * 0.8f).withCentre ({ c.x - rc * 0.15f, c.y - rc * 0.45f }));
+        // white pointer line
+        const juce::Point<float> pe (c.x + rc * 0.92f * std::sin (a), c.y - rc * 0.92f * std::cos (a));
+        const juce::Point<float> ps (c.x + rc * 0.05f * std::sin (a), c.y - rc * 0.05f * std::cos (a));
+        g.setColour (s.isEnabled() ? juce::Colour (0xfff4f4f4) : juce::Colour (0xff8a8a8a));
+        g.drawLine ({ ps, pe }, juce::jmax (2.0f, R * 0.07f));
+        return;
+    }
     const float R   = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 1.0f;   // tick radius
     const auto  c   = area.getCentre();
     const bool  on  = s.isEnabled();
@@ -1957,7 +1997,7 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     using S = PassiveMasterEQProcessor::AutoState;
     auto b = getLocalBounds().toFloat().reduced (24.0f, 8.0f);
     auto titles = b.removeFromTop (22.0f);
-    draw::engraved (g, "AUTO MASTER", titles.withWidth (560.0f), 14.0f, juce::Justification::centredLeft);
+    draw::engraved (g, "AUTO MASTER", titles.withTrimmedLeft (34.0f).withWidth (526.0f), 14.0f, juce::Justification::centredLeft);
     draw::engraved (g, "GENRE  >  LISTEN  >  DONE", titles.withX (titles.getX() + 150.0f).withWidth (410.0f), 10.0f,
                     juce::Justification::centredRight, col::engraveDim.brighter (0.4f));
     draw::engraved (g, "MAXIMIZER", { maxArea.getX(), titles.getY(), maxArea.getWidth(), 22.0f }, 14.0f, juce::Justification::centred);
@@ -2336,7 +2376,7 @@ void ClassAPanel::paint (juce::Graphics& g)
     auto r = getLocalBounds().toFloat().reduced (22.0f, 8.0f);
     auto head = r.withHeight (26.0f);
     draw::engraved (g, "M/S CLASS-A COMPRESSOR", head, 14.0f, juce::Justification::centred, juce::Colours::white);
-    draw::engraved (g, "FEEDBACK / FEED FWD  -  MID/SIDE  -  SOFT CLIP", head.withWidth (420.0f), 9.5f, juce::Justification::centredLeft,
+    draw::engraved (g, "FEEDBACK / FEED FWD  -  MID/SIDE  -  SOFT CLIP", head.withTrimmedLeft (34.0f).withWidth (420.0f), 9.5f, juce::Justification::centredLeft,
                     juce::Colours::white.withAlpha (0.6f));
     for (float x : { (float) centre.getX() - 10.0f, (float) centre.getRight() + 10.0f })
     {
@@ -2368,6 +2408,439 @@ void ClassAPanel::update (float dt)
 }
 
 // =============================================================================
+//  Parametric mastering EQ (black unit)
+// =============================================================================
+SkirtKnob::SkirtKnob (juce::AudioProcessorValueTreeState& s, const juce::String& paramId, juce::StringArray scaleLabels, int labelEvery)
+    : labels (std::move (scaleLabels)), every (juce::jmax (1, labelEvery))
+{
+    slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    slider.setRotaryParameters (kStartAngle, kEndAngle, true);
+    slider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    slider.setMouseDragSensitivity (180);
+    slider.setPopupDisplayEnabled (true, true, nullptr);
+    slider.getProperties().set ("skirt", true);
+    addAndMakeVisible (slider);
+    attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (s, paramId, slider);
+    if (auto* p = s.getParameter (paramId)) slider.setDoubleClickReturnValue (true, p->convertFrom0to1 (p->getDefaultValue()));
+}
+
+void SkirtKnob::resized()
+{
+    const float d = (float) juce::jmin (getWidth(), getHeight()) * knobFraction;
+    slider.setBounds (getLocalBounds().withSizeKeepingCentre ((int) d, (int) d).translated (0, 3));
+}
+
+void SkirtKnob::paint (juce::Graphics& g)
+{
+    const auto sb = slider.getBounds().toFloat();
+    const auto c = sb.getCentre();
+    const float rk = sb.getWidth() * 0.5f;
+    const int n = juce::jmax (2, labels.size());
+    const auto ink = isEnabled() ? col::silkscreen : col::silkscreen.withAlpha (0.35f);
+    for (int i = 0; i < n; ++i)
+    {
+        const float a = kStartAngle + (kEndAngle - kStartAngle) * (float) i / (float) (n - 1);
+        const bool major = labels[i].isNotEmpty() && i % every == 0;
+        const float r0 = rk + 2.0f, r1 = rk + (major ? 7.0f : 4.5f);
+        g.setColour (ink.withAlpha (major ? 0.9f : 0.55f));
+        g.drawLine ({ { c.x + r0 * std::sin (a), c.y - r0 * std::cos (a) }, { c.x + r1 * std::sin (a), c.y - r1 * std::cos (a) } }, major ? 1.1f : 0.8f);
+        if (major)
+        {
+            const float rl = rk + 15.0f;
+            g.setColour (ink);
+            g.setFont (sans (8.5f, false));
+            g.drawText (labels[i], juce::Rectangle<float> (34.0f, 10.0f).withCentre ({ c.x + rl * std::sin (a), c.y - rl * std::cos (a) }),
+                        juce::Justification::centred, false);
+        }
+    }
+    // red index triangle at 12 o'clock
+    juce::Path tri;
+    const float ty = c.y - rk - 1.0f;
+    tri.addTriangle (c.x - 4.0f, ty - 6.0f, c.x + 4.0f, ty - 6.0f, c.x, ty + 0.5f);
+    g.setColour (isEnabled() ? juce::Colour (0xffe0442a) : juce::Colour (0xff6a3a30));
+    g.fillPath (tri);
+}
+
+void PushEqButton::paintButton (juce::Graphics& g, bool hi, bool down)
+{
+    auto r = getLocalBounds().toFloat();
+    const float d = juce::jmin (r.getWidth(), r.getHeight()) - 2.0f;
+    auto b = juce::Rectangle<float> (d, d).withCentre (r.getCentre());
+    draw::chromeRing (g, b, 2.5f);
+    const bool on = getToggleState();
+    auto dome = b.reduced (d * 0.2f);
+    if (on)
+    {
+        g.setColour (juce::Colour (0xffff3a2a).withAlpha (0.35f));
+        g.fillEllipse (dome.expanded (d * 0.25f));
+    }
+    juce::ColourGradient red (on ? juce::Colour (0xffff8a70) : juce::Colour (0xffa83a30), dome.getX() + dome.getWidth() * 0.3f, dome.getY() + dome.getHeight() * 0.3f,
+                              on ? juce::Colour (0xffc01a10) : juce::Colour (0xff4a1410), dome.getRight(), dome.getBottom(), true);
+    g.setGradientFill (red); g.fillEllipse (dome);
+    g.setColour (juce::Colours::white.withAlpha (down ? 0.1f : (hi ? 0.4f : 0.3f)));
+    g.fillEllipse (dome.reduced (dome.getWidth() * 0.3f).translated (-dome.getWidth() * 0.12f, -dome.getHeight() * 0.15f));
+}
+
+namespace tips
+{
+    static const juce::String pqShape = "SHAPE (dB/oct) - how wide the band is: 5 = wide and gentle, 15 = narrow and focused. The narrower the shape, "
+        "the slightly less peak gain (like the hardware's interacting circuit), which keeps narrow moves smooth.";
+    static const juce::String pqFreq  = "FREQ - the band's centre frequency (stepped). LO 11-570 Hz, MID 125-6800 Hz, HI 3.4-25 kHz.";
+    static const juce::String pqLevel = "LEVEL - boost or cut, +/-9 dB: 0.5 dB steps up to 3 dB, then 1 dB steps.";
+    static const juce::String pqHi    = "HI SHELF - lifts or lowers everything above 8 kHz (or 12 kHz with the switch), +/-9 dB.";
+    static const juce::String pqLo    = "LO SHELF - lifts or lowers everything below 100 Hz (or 50 Hz with the switch), +/-9 dB.";
+    static const juce::String pqMan   = "MAN / OFF - switches this channel of the parametric EQ in (MAN) or out (OFF).";
+    static const juce::String pqPush  = "PUSH EQ - switches the whole parametric EQ in (lit) or out. It sits in front of the passive EQ. Starts switched out.";
+}
+
+static juce::StringArray levelLabels()
+{
+    juce::StringArray l;
+    for (int i = 0; i < ppm::sontec::kNumLevels; ++i)
+    {
+        const double v = ppm::sontec::levelDb (i);
+        const bool show = std::abs (v) < 0.01 || std::abs (std::abs (v) - 3.0) < 0.01 || std::abs (std::abs (v) - 6.0) < 0.01 || std::abs (std::abs (v) - 9.0) < 0.01;
+        l.add (show ? (v > 0 ? "+" : "") + juce::String ((int) v) : juce::String (" "));
+    }
+    return l;
+}
+static juce::String shortHz (double f) { return f >= 1000.0 ? juce::String (f / 1000.0, f >= 10000.0 || std::fmod (f, 1000.0) < 1.0 ? 0 : 1) + "k" : juce::String ((int) f); }
+
+ParametricPanel::ParametricPanel (PassiveMasterEQProcessor& p) : proc (p)
+{
+    namespace so = ppm::sontec;
+    const juce::StringArray shapes { "5", "6", "9", "11", "15" };
+    for (int c = 0; c < 2; ++c)
+    {
+        auto& ch = chans[c];
+        for (int b = 0; b < so::kBands; ++b)
+        {
+            juce::StringArray fl; for (double f : so::bandFreqs (b)) fl.add (shortHz (f));
+            ch.shape[b] = std::make_unique<SkirtKnob> (p.apvts, params::pq::band (c, b, "shape"), shapes);
+            ch.freq[b]  = std::make_unique<SkirtKnob> (p.apvts, params::pq::band (c, b, "freq"), fl, 2);
+            ch.level[b] = std::make_unique<SkirtKnob> (p.apvts, params::pq::band (c, b, "level"), levelLabels());
+            ch.shape[b]->knobFraction = 0.56f; ch.freq[b]->knobFraction = 0.6f; ch.level[b]->knobFraction = 0.58f;
+            ch.shape[b]->setTooltip (tips::pqShape); ch.freq[b]->setTooltip (tips::pqFreq); ch.level[b]->setTooltip (tips::pqLevel);
+            for (auto* k : { ch.shape[b].get(), ch.freq[b].get(), ch.level[b].get() }) addAndMakeVisible (k);
+        }
+        ch.hiShelf = std::make_unique<SkirtKnob> (p.apvts, params::pq::id (c, "hs"), levelLabels());
+        ch.loShelf = std::make_unique<SkirtKnob> (p.apvts, params::pq::id (c, "ls"), levelLabels());
+        ch.hiShelf->knobFraction = ch.loShelf->knobFraction = 0.58f;
+        ch.hiShelf->setTooltip (tips::pqHi); ch.loShelf->setTooltip (tips::pqLo);
+        ch.loFreq = std::make_unique<MetalToggle> (p.apvts, params::pq::id (c, "lsf"), "100 Hz", "50 Hz", 1.0f, 0.0f);
+        ch.hiFreq = std::make_unique<MetalToggle> (p.apvts, params::pq::id (c, "hsf"), "12 kHz", "8 kHz", 1.0f, 0.0f);
+        ch.loFreq->setTooltip (tips::pqLo); ch.hiFreq->setTooltip (tips::pqHi);
+        ch.loFreq->labelColour = ch.hiFreq->labelColour = col::silkscreen;
+        for (auto* k : std::initializer_list<juce::Component*> { ch.hiShelf.get(), ch.loShelf.get(), ch.loFreq.get(), ch.hiFreq.get() }) addAndMakeVisible (k);
+        man[c] = std::make_unique<MetalToggle> (p.apvts, params::pq::id (c, "man"), "MAN", "OFF", 1.0f, 0.0f);
+        man[c]->labelColour = col::silkscreen;
+        man[c]->setTooltip (tips::pqMan);
+        addAndMakeVisible (*man[c]);
+    }
+    pushAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, params::pq::in, pushEq);
+    pushEq.setTooltip (tips::pqPush);
+    ledL.setTooltip ("LEFT - lit while the left channel is being equalised."); ledR.setTooltip ("RIGHT - lit while the right channel is being equalised.");
+    ledOn.setTooltip (tips::pqPush);
+    for (auto* c : std::initializer_list<juce::Component*> { &pushEq, &ledL, &ledR, &ledOn }) addAndMakeVisible (c);
+}
+
+void ParametricPanel::resized()
+{
+    auto r = getLocalBounds().reduced (18, 10);
+    r.removeFromBottom (24);                                         // engraved model line
+    legendCol = r.removeFromRight (74);
+    const int shelfW = 136, centreW = 150;
+    const int bw = (r.getWidth() - shelfW - centreW) / 6;
+    const int H = r.getHeight();
+    const int shapeH = H * 27 / 100, freqH = H * 41 / 100;
+    auto place = [&] (juce::Rectangle<int> col, SkirtKnob& sh, SkirtKnob& fr, SkirtKnob& lv)
+    {
+        sh.setBounds (col.removeFromTop (shapeH).withTrimmedBottom (14));     // band name under the shape knob
+        fr.setBounds (col.removeFromTop (freqH));
+        lv.setBounds (col);
+    };
+    auto shelfLayout = [&] (Channel& ch, juce::Rectangle<int> col, bool withTop)
+    {
+        ch.shelfCol = col;
+        juce::ignoreUnused (withTop);
+        auto c = col; c.removeFromTop (shapeH);
+        auto hiRow = c.removeFromTop (freqH);
+        auto loRow = c;
+        ch.hiShelf->setBounds (hiRow.withTrimmedRight (36).withTrimmedTop (14));
+        ch.loShelf->setBounds (loRow.withTrimmedRight (36));
+        ch.hiFreq->setBounds (hiRow.removeFromRight (44).withSizeKeepingCentre (44, 58).translated (0, 6));
+        ch.loFreq->setBounds (juce::Rectangle<int> (col.getRight() - 44, loRow.getY() - 30, 44, 58));
+    };
+    // left channel
+    shelfLayout (chans[0], r.removeFromLeft (shelfW), true);
+    for (int b = 0; b < 3; ++b) { chans[0].bandCol[b] = r.removeFromLeft (bw); place (chans[0].bandCol[b], *chans[0].shape[b], *chans[0].freq[b], *chans[0].level[b]); }
+    // centre: status lamps, MAN / OFF, PUSH EQ, then the right channel's shelving
+    centreCol = r.removeFromLeft (centreW);
+    {
+        auto top = centreCol.withHeight (shapeH);
+        auto leds = top.removeFromTop (30);
+        ledL.setBounds (leds.removeFromLeft (leds.getWidth() / 2).withSizeKeepingCentre (44, 30));
+        ledR.setBounds (leds.withSizeKeepingCentre (44, 30));
+        auto tg = top.removeFromTop (juce::jmin (52, top.getHeight() - 22));
+        man[0]->setBounds (tg.removeFromLeft (tg.getWidth() / 2).withSizeKeepingCentre (46, tg.getHeight()));
+        man[1]->setBounds (tg.withSizeKeepingCentre (46, tg.getHeight()));
+        pushEq.setBounds (top.withSizeKeepingCentre (26, juce::jmin (26, top.getHeight())));
+        shelfLayout (chans[1], centreCol, false);
+        ledOn.setBounds (juce::Rectangle<int> (centreCol.getCentreX() - 12, getLocalBounds().getBottom() - 34, 24, 24));
+    }
+    for (int b = 0; b < 3; ++b) { chans[1].bandCol[b] = r.removeFromLeft (bw); place (chans[1].bandCol[b], *chans[1].shape[b], *chans[1].freq[b], *chans[1].level[b]); }
+    badgeL = juce::Rectangle<int> (chans[0].bandCol[1].getRight() - 12, chans[0].bandCol[1].getY() + shapeH + freqH - 22, 24, 22);
+    badgeR = juce::Rectangle<int> (chans[1].bandCol[1].getRight() - 12, chans[1].bandCol[1].getY() + shapeH + freqH - 22, 24, 22);
+}
+
+void ParametricPanel::paint (juce::Graphics& g)
+{
+    const auto ink = col::silkscreen;
+    auto engrave = [&] (const juce::String& t, juce::Rectangle<float> r, float h, juce::Justification j = juce::Justification::centred, float alpha = 1.0f)
+    { draw::engraved (g, t, r, h, j, ink.withAlpha (alpha), false); };
+    // engraved double divider lines between the columns (like the hardware)
+    auto divider = [&] (int x)
+    {
+        const float y0 = 16.0f, y1 = (float) getHeight() - 38.0f;
+        g.setColour (juce::Colours::black.withAlpha (0.7f)); g.drawVerticalLine (x, y0, y1); g.drawVerticalLine (x + 4, y0, y1);
+        g.setColour (juce::Colours::white.withAlpha (0.16f)); g.drawVerticalLine (x + 1, y0, y1); g.drawVerticalLine (x + 5, y0, y1);
+    };
+    for (int c = 0; c < 2; ++c)
+    {
+        for (int b = 0; b < 3; ++b) divider (chans[c].bandCol[b].getX() - 3);
+        // band names under the SHAPE knobs
+        for (int b = 0; b < 3; ++b)
+        {
+            const auto sb = chans[c].shape[b]->getBounds().toFloat();
+            engrave (ppm::sontec::kBandNames[b], sb.withY (sb.getBottom() - 2.0f).withHeight (14.0f), 11.0f);
+        }
+        const auto hs = chans[c].hiShelf->getBounds().toFloat(), ls = chans[c].loShelf->getBounds().toFloat();
+        engrave ("SHELVING", hs.withY (hs.getY() - 16.0f).withHeight (14.0f), 10.5f);
+        engrave ("HI", hs.withWidth (24.0f).withHeight (14.0f).translated (-4.0f, 2.0f), 10.0f, juce::Justification::centredLeft);
+        engrave ("LO", ls.withWidth (24.0f).withY (ls.getBottom() - 24.0f).withHeight (14.0f).translated (-4.0f, 0), 10.0f, juce::Justification::centredLeft);
+    }
+    divider (legendCol.getX() - 6);
+    divider (centreCol.getRight() + 1);
+    // L / R badges
+    for (auto [b, t] : { std::pair<juce::Rectangle<int>, const char*> { badgeL, "L" }, { badgeR, "R" } })
+    {
+        g.setColour (ink.withAlpha (0.8f)); g.drawRoundedRectangle (b.toFloat(), 3.0f, 1.2f);
+        engrave (t, b.toFloat(), 13.0f);
+    }
+    // logo badge, top left
+    {
+        auto lb = chans[0].shelfCol.withHeight (chans[0].shape[0]->getHeight()).toFloat().reduced (24.0f, 6.0f);
+        auto box = lb.withSizeKeepingCentre (52.0f, 52.0f);
+        g.setColour (ink.withAlpha (0.85f)); g.drawRoundedRectangle (box, 8.0f, 2.2f);
+        g.setFont (serif (34.0f)); g.setColour (ink); g.drawText ("B", box.translated (0, 1.0f), juce::Justification::centred);
+        engrave ("basemental", box.withY (box.getBottom() + 1.0f).withHeight (13.0f).expanded (20.0f, 0), 10.0f);
+    }
+    // centre labels
+    engrave ("PUSH", pushEq.getBounds().toFloat().withWidth (40.0f).translated (-44.0f, 0), 9.5f, juce::Justification::centredRight);
+    engrave ("EQ.", pushEq.getBounds().toFloat().withWidth (40.0f).translated ((float) pushEq.getWidth() + 4.0f, 0), 9.5f, juce::Justification::centredLeft);
+    // legend column
+    const float lx = (float) legendCol.getX(), lw = (float) legendCol.getWidth();
+    const auto& c0 = chans[1];
+    engrave ("SHAPE", { lx, (float) c0.shape[0]->getBounds().getCentreY() - 10.0f, lw, 12.0f }, 10.5f);
+    engrave ("dB/Oct", { lx, (float) c0.shape[0]->getBounds().getCentreY() + 2.0f, lw, 12.0f }, 9.5f, juce::Justification::centred, 0.85f);
+    engrave ("FREQ", { lx, (float) c0.freq[0]->getBounds().getCentreY() - 10.0f, lw, 12.0f }, 10.5f);
+    engrave ("Hz", { lx, (float) c0.freq[0]->getBounds().getCentreY() + 2.0f, lw, 12.0f }, 9.5f, juce::Justification::centred, 0.85f);
+    engrave ("LEVEL", { lx, (float) c0.level[0]->getBounds().getCentreY() - 10.0f, lw, 12.0f }, 10.5f);
+    engrave ("dB", { lx, (float) c0.level[0]->getBounds().getCentreY() + 2.0f, lw, 12.0f }, 9.5f, juce::Justification::centred, 0.85f);
+    // model line, italic engraving
+    g.setColour (ink.withAlpha (0.9f));
+    g.setFont (juce::FontOptions (16.0f, juce::Font::italic | juce::Font::bold));
+    g.drawText ("PARAMETRIC  MASTERING  EQUALIZER", juce::Rectangle<int> (chans[0].bandCol[0].getX(), getHeight() - 32, 520, 22), juce::Justification::centredLeft);
+}
+
+void ParametricPanel::update()
+{
+    const auto st = proc.getParametricSettings();
+    ledL.setBrightness (st.in && st.ch[0].in ? 1.0f : 0.0f);
+    ledR.setBrightness (st.in && st.ch[1].in ? 1.0f : 0.0f);
+    ledOn.setBrightness (st.in ? 1.0f : 0.15f);
+    const bool linked = proc.isLinked();
+    if (linked != lastLinked)
+    {
+        lastLinked = linked;
+        auto& ch = chans[1];
+        for (int b = 0; b < 3; ++b) for (auto* k : { ch.shape[b].get(), ch.freq[b].get(), ch.level[b].get() }) k->setEnabled (! linked);
+        for (auto* k : std::initializer_list<juce::Component*> { ch.hiShelf.get(), ch.loShelf.get(), ch.loFreq.get(), ch.hiFreq.get() }) k->setEnabled (! linked);
+        repaint();
+    }
+}
+
+// =============================================================================
+//  Pop-out units
+// =============================================================================
+PassiveEqUnit::PassiveEqUnit (PassiveMasterEQProcessor& p) : proc (p)
+{
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        for (int b = 0; b < kNumBands; ++b) { bands[ch][b] = std::make_unique<BandStrip> (p.apvts, ch, b); addAndMakeVisible (*bands[ch][b]); }
+        centers[ch] = std::make_unique<CenterStrip> (p.apvts, ch);
+        addAndMakeVisible (*centers[ch]);
+    }
+    update();
+}
+
+void PassiveEqUnit::resized()
+{
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        rows[ch] = juce::Rectangle<float> (0.0f, (float) (ch * (kRowH + kGap)), (float) getWidth(), (float) kRowH);
+        auto row = rows[ch].reduced (6.0f, 6.0f).toNearestInt();
+        row.removeFromLeft (34);
+        row.removeFromRight (8);
+        centers[ch]->setBounds (row.removeFromRight (206));
+        const int bw = row.getWidth() / kNumBands;
+        for (int b = 0; b < kNumBands; ++b) bands[ch][b]->setBounds (row.removeFromLeft (bw));
+    }
+}
+
+void PassiveEqUnit::paint (juce::Graphics& g)
+{
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        auto r = rows[ch].withWidth (34.0f).withTrimmedTop (24).withTrimmedBottom (24);
+        juce::Graphics::ScopedSaveState ss (g);
+        g.addTransform (juce::AffineTransform::rotation (-kPiF * 0.5f, r.getCentreX(), r.getCentreY()));
+        const auto c = ch == 0 ? col::amber : (proc.isLinked() ? col::engraveDim : col::blue);
+        draw::engraved (g, ch == 0 ? "LEFT CHANNEL" : (proc.isLinked() ? "RIGHT  (LINKED)" : "RIGHT CHANNEL"),
+                        juce::Rectangle<float> (180, 20).withCentre (r.getCentre()), 12.0f, juce::Justification::centred, c);
+    }
+}
+
+void PassiveEqUnit::update()
+{
+    const bool linked = proc.isLinked();
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const auto st = proc.getOwnChannelSettings (ch);
+        for (int b = 0; b < kNumBands; ++b) bands[ch][b]->updateReadout (st.band[b]);
+    }
+    for (int b = 0; b < kNumBands; ++b) bands[1][b]->setEnabled (! linked);
+    centers[1]->setEnabled (! linked);
+    if (linked != lastLinked) { lastLinked = linked; repaint(); }
+}
+
+VariMuUnit::VariMuUnit (PassiveMasterEQProcessor& p)
+    : proc (p), orderSwitch (p.apvts, ppm::params::compOrder, { "EQ > COMP", "COMP > EQ" }, { col::amber, col::amber })
+{
+    for (int ch = 0; ch < 2; ++ch) { comps[ch] = std::make_unique<CompStrip> (p.apvts, ch); addAndMakeVisible (*comps[ch]); }
+    orderSwitch.setTooltip (tips::order);
+    addAndMakeVisible (orderSwitch);
+}
+
+void VariMuUnit::resized()
+{
+    auto c = getLocalBounds().reduced (26, 10);
+    auto head = c.removeFromTop (26);
+    orderSwitch.setBounds (head.removeFromRight (190).withSizeKeepingCentre (190, 26));
+    c.removeFromTop (8);
+    const int half = (c.getWidth() - 30) / 2;
+    comps[0]->setBounds (c.removeFromLeft (half));
+    c.removeFromLeft (30);
+    comps[1]->setBounds (c);
+}
+
+void VariMuUnit::paint (juce::Graphics& g)
+{
+    auto head = getLocalBounds().toFloat().reduced (30.0f, 10.0f).withHeight (22.0f);
+    draw::engraved (g, "STEREO VARIABLE MU  LIMITER COMPRESSOR", head, 15.0f, juce::Justification::centred, juce::Colours::white);
+    draw::engraved (g, "ORDER", head.withX ((float) orderSwitch.getX() - 60.0f).withWidth (52.0f), 11.0f, juce::Justification::centredRight, juce::Colours::white);
+    const float x = (float) getWidth() * 0.5f;
+    g.setColour (juce::Colours::black.withAlpha (0.8f));
+    g.drawVerticalLine ((int) x, 40.0f, (float) getHeight() - 14.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.08f));
+    g.drawVerticalLine ((int) x + 1, 40.0f, (float) getHeight() - 14.0f);
+}
+
+void VariMuUnit::update (float dt)
+{
+    auto& m = proc.meters;
+    const int nCh = m.numChannels.load();
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const int src = (ch == 1 && nCh < 2) ? 0 : ch;
+        comps[ch]->setMeter (m.gr[src].load(), proc.getCompSettings (ch).compIn);
+        comps[ch]->tickMeter (dt);
+    }
+    comps[1]->setEnabled (! proc.isLinked());
+}
+
+UnitHost::UnitHost (std::unique_ptr<juce::Component> u, int designW, int designH, std::vector<juce::Rectangle<float>> p,
+                    juce::Colour t, std::function<void (float)> upd)
+    : unit (std::move (u)), dw (designW), dh (designH), plates (std::move (p)), tint (t), update (std::move (upd))
+{
+    metal = draw::makeBrushedMetal (dw + 28, dh + 28);
+    addAndMakeVisible (*unit);
+    unit->setBounds (0, 0, dw, dh);
+    setSize (dw + 28, dh + 28);
+    if (update) update (0.0f);
+    startTimerHz (30);
+}
+
+UnitHost::~UnitHost() { stopTimer(); setLookAndFeel (nullptr); }
+
+void UnitHost::resized()
+{
+    const float W = (float) (dw + 28), H = (float) (dh + 28);
+    const float sc = juce::jmin ((float) getWidth() / W, (float) getHeight() / H);
+    const float ox = ((float) getWidth() - W * sc) * 0.5f, oy = ((float) getHeight() - H * sc) * 0.5f;
+    unit->setTransform (juce::AffineTransform::translation (14.0f, 14.0f).scaled (sc).translated (ox, oy));
+}
+
+void UnitHost::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colour (0xff0b0b0c));
+    const float W = (float) (dw + 28), H = (float) (dh + 28);
+    const float sc = juce::jmin ((float) getWidth() / W, (float) getHeight() / H);
+    const float ox = ((float) getWidth() - W * sc) * 0.5f, oy = ((float) getHeight() - H * sc) * 0.5f;
+    juce::Graphics::ScopedSaveState ss (g);
+    g.addTransform (juce::AffineTransform::scale (sc).translated (ox, oy));
+    g.drawImageAt (metal, 0, 0);
+    for (auto r : plates) draw::plate (g, r.translated (14.0f, 14.0f), metal, true, tint);
+}
+
+UnitWindow::UnitWindow (const juce::String& title, std::unique_ptr<UnitHost> host, juce::LookAndFeel& laf, std::function<void()> close)
+    : juce::DocumentWindow (title, juce::Colour (0xff0b0b0c), juce::DocumentWindow::closeButton | juce::DocumentWindow::minimiseButton),
+      onClose (std::move (close))
+{
+    setUsingNativeTitleBar (true);
+    host->setLookAndFeel (&laf);
+    const int W = host->getWidth(), H = host->getHeight();
+    float sc = 0.85f;
+    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        sc = juce::jmin (1.0f, (float) d->userArea.getWidth() * 0.9f / (float) W, (float) d->userArea.getHeight() * 0.8f / (float) H);
+    setContentOwned (host.release(), false);
+    setResizable (true, true);
+    setResizeLimits ((int) (W * 0.3f), (int) (H * 0.3f), W * 3, H * 3);
+    getConstrainer()->setFixedAspectRatio ((double) W / (double) H);
+    centreWithSize ((int) (W * sc), (int) (H * sc));
+    setAlwaysOnTop (true);                    // stays above the DAW's windows
+    setVisible (true);
+}
+
+UnitWindow::~UnitWindow() { clearContentComponent(); }
+
+void PopOutButton::paintButton (juce::Graphics& g, bool hi, bool down)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f);
+    juce::ColourGradient face (juce::Colour (down ? 0xff1c1c1c : (hi ? 0xff505050 : 0xff363636)), r.getX(), r.getY(),
+                               juce::Colour (0xff121212), r.getX(), r.getBottom(), false);
+    g.setGradientFill (face); g.fillRoundedRectangle (r, 3.0f);
+    draw::chromeRing (g, r, 1.2f);
+    // icon: a window with an arrow leaving it (pop out)
+    auto ic = r.reduced (r.getHeight() * 0.25f);
+    const auto c = hi ? col::amber : col::engrave;
+    g.setColour (c);
+    g.drawRect (ic.withTrimmedTop (ic.getHeight() * 0.25f).withTrimmedRight (ic.getWidth() * 0.25f), 1.2f);
+    const juce::Point<float> a (ic.getCentreX(), ic.getCentreY()), b (ic.getRight(), ic.getY());
+    g.drawArrow ({ a, b }, 1.3f, 4.5f, 4.5f);
+}
+
+// =============================================================================
 //  HelpOverlay
 // =============================================================================
 HelpOverlay::HelpOverlay() { setInterceptsMouseClicks (true, false); }
@@ -2375,7 +2848,7 @@ HelpOverlay::HelpOverlay() { setInterceptsMouseClicks (true, false); }
 void HelpOverlay::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colours::black.withAlpha (0.72f));
-    auto card = getLocalBounds().toFloat().reduced (40.0f, 30.0f).withSizeKeepingCentre ((float) getWidth() - 80.0f, 1100.0f);
+    auto card = getLocalBounds().toFloat().reduced (40.0f, 30.0f).withSizeKeepingCentre ((float) getWidth() - 80.0f, 1200.0f);
     juce::ColourGradient paper (col::cream, card.getX(), card.getY(), col::creamDark, card.getX(), card.getBottom(), false);
     g.setGradientFill (paper);
     g.fillRoundedRectangle (card, 8.0f);
@@ -2414,6 +2887,9 @@ void HelpOverlay::paint (juce::Graphics& g)
           "FREQUENCY picks the spot.  GAIN sets how much (0 = nothing; the cream window shows the real dB).  "
           "BANDWIDTH: WIDE = broad and gentle, NARROW = focused.  BOOST / OUT / CUT sets the direction.  "
           "BELL makes a hill or dip; SHELF lifts or lowers everything below (LOW, LOW MID) or above (HIGH MID, HIGH)." },
+        { "4b  PARAMETRIC MASTERING EQUALIZER (black panel)",
+          "First in the chain, before the passive EQ.  Per channel: SHELVING (HI 8/12 kHz, LO 100/50 Hz) and LO / MID / HI bands with SHAPE "
+          "(5-15 dB/oct, wide to narrow), FREQ and LEVEL (+/-9 dB).  MAN / OFF per channel, red PUSH EQ switches it in.  Hover a knob to see its value." },
         { "5  WHY IT SOUNDS 'PASSIVE'",
           "Like the hardware, the bands work in parallel inside one passive network. Two bands boosting the same spot don't stack fully, "
           "a boost and cut in the same place cancel, and gain depends on bandwidth: a wide bell tops out near 6 dB, a narrow one at 11 dB. "
@@ -2424,7 +2900,7 @@ void HelpOverlay::paint (juce::Graphics& g)
           "EQ IN / OUT bypasses the EQ for a quick before/after." },
         { "7  STEREO & WINDOW",
           "LINK keeps both sides identical; unlink to treat left and right separately. L > R / R > L copy one side to the other.  "
-          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed. MINI shows just the meters; "
+          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  POP OUT: the small icon in each unit's top-left corner opens that unit in its own window (still connected). MINI shows just the meters; "
           "FULL PANEL brings everything back. FULL SCREEN fills the screen (press EXIT FULL to go back)." },
         { "8  VARI-MU COMPRESSOR (bottom panel)",
           "A tube 'variable-mu' compressor: very soft knee, and the ratio rises the harder you push (about 1.5:1 up to 4:1), "
@@ -2458,7 +2934,7 @@ void HelpOverlay::paint (juce::Graphics& g)
     auto colB = r;
     for (int i = 0; i < (int) std::size (sections); ++i)
     {
-        auto& col = i < 7 ? colA : colB;
+        auto& col = i < 8 ? colA : colB;
         juce::AttributedString s;
         s.append (juce::String (sections[i].title) + "\n", serif (19.0f), col::ink);
         s.append (sections[i].body, sans (15.0f, false), juce::Colour (0xff3a332a));
@@ -2539,7 +3015,7 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
       drive (p.apvts, ppm::params::tubeDrive, "DRIVE", "-6", "+18"),
       inputKnob (p.apvts, ppm::params::inputGain, "INPUT", "-24", "+24")
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &vuL, &vuR, &harm, &tube1, &tube2, &lampSignal, &lampLink, &lampClip, &lampTube, &analyzer, &vectorscope, &loudnessPanel, &keyPanel, &autoPanel, &classAPanel })
+    for (auto* c : std::initializer_list<juce::Component*> { &vuL, &vuR, &harm, &tube1, &tube2, &lampSignal, &lampLink, &lampClip, &lampTube, &analyzer, &vectorscope, &loudnessPanel, &keyPanel, &autoPanel, &classAPanel, &paraPanel })
         addAndMakeVisible (c);
 
     for (int ch = 0; ch < 2; ++ch)
@@ -2615,11 +3091,77 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     miniButton.onClick = [this] { if (onToggleCompact) onToggleCompact(); };
     for (auto* c : std::initializer_list<juce::Component*> { &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
         addAndMakeVisible (c);
+    for (int u = 0; u < kNumUnits; ++u)
+    {
+        popButtons[u].setTooltip ("POP OUT - open the " + unitName (u).fromFirstOccurrenceOf ("MasterDesk - ", false, false)
+                                  + " in its own window. It stays connected: every knob moves in both places.");
+        popButtons[u].onClick = [this, u] { openUnit (u); };
+        addAndMakeVisible (popButtons[u]);
+    }
     addChildComponent (help);
 
     setSize (kW, kH);
     timerCallback();
     startTimerHz (30);
+}
+
+juce::String Faceplate::unitName (int u)
+{
+    static const char* n[kNumUnits] = { "Parametric Mastering Equalizer", "Passive EQ", "Stereo Variable Mu Limiter Compressor",
+                                        "M/S Class-A Compressor", "Auto Master + Maximizer" };
+    return juce::String ("MasterDesk - ") + n[juce::jlimit (0, kNumUnits - 1, u)];
+}
+
+std::unique_ptr<UnitHost> Faceplate::createUnitHost (int u)
+{
+    constexpr int W = kW - 28;
+    switch (u)
+    {
+        case UnitParametric:
+        {
+            auto unit = std::make_unique<ParametricPanel> (proc); auto* raw = unit.get();
+            return std::make_unique<UnitHost> (std::move (unit), W, 410, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 410 } },
+                                               col::blackPanel, [raw] (float) { raw->update(); });
+        }
+        case UnitPassive:
+        {
+            auto unit = std::make_unique<PassiveEqUnit> (proc); auto* raw = unit.get();
+            const int R = PassiveEqUnit::kRowH, G = PassiveEqUnit::kGap;
+            return std::make_unique<UnitHost> (std::move (unit), W, 2 * R + G,
+                                               std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, (float) R }, { 0, (float) (R + G), (float) W, (float) R } },
+                                               juce::Colour(), [raw] (float) { raw->update(); });
+        }
+        case UnitVariMu:
+        {
+            auto unit = std::make_unique<VariMuUnit> (proc); auto* raw = unit.get();
+            return std::make_unique<UnitHost> (std::move (unit), W, 292, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 292 } },
+                                               col::steelGray, [raw] (float dt) { raw->update (dt); });
+        }
+        case UnitClassA:
+        {
+            auto unit = std::make_unique<ClassAPanel> (proc); auto* raw = unit.get();
+            return std::make_unique<UnitHost> (std::move (unit), W, 380, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 380 } },
+                                               col::ashBlue, [raw] (float dt) { raw->update (dt); });
+        }
+        default:
+        {
+            auto unit = std::make_unique<AutoMasterPanel> (proc); auto* raw = unit.get();
+            return std::make_unique<UnitHost> (std::move (unit), W, 200, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 200 } },
+                                               juce::Colour(), [raw] (float dt) { raw->update (dt); });
+        }
+    }
+}
+
+void Faceplate::openUnit (int u)
+{
+    if (! juce::isPositiveAndBelow (u, (int) kNumUnits)) return;
+    if (unitWindows[u] != nullptr) { unitWindows[u]->setMinimised (false); unitWindows[u]->toFront (true); return; }
+    juce::Component::SafePointer<Faceplate> safe (this);
+    unitWindows[u] = std::make_unique<UnitWindow> (unitName (u), createUnitHost (u), getLookAndFeel(), [safe, u]
+    {
+        // close after the click has finished (the window can't delete itself inside its own callback)
+        juce::MessageManager::callAsync ([safe, u] { if (safe != nullptr) safe->unitWindows[u].reset(); });
+    });
 }
 
 void Faceplate::setScaleChoice (float scale)
@@ -2654,7 +3196,11 @@ void Faceplate::timerCallback()
     vectorscope.update (dt);
     loudnessPanel.update();
     keyPanel.update (dt);
-    if (! compact) { autoPanel.update (dt); classAPanel.update (dt); }
+    if (! compact)
+    {
+        if (unitWindows[UnitAuto] == nullptr) autoPanel.update (dt);      // (the pop-out copy runs it while open)
+        classAPanel.update (dt); paraPanel.update();
+    }
     auto& m = proc.meters;
     const bool linked = proc.isLinked();
     const bool tubeOn = proc.apvts.getRawParameterValue (ppm::params::tubeOn)->load() > 0.5f;
@@ -2742,6 +3288,7 @@ void Faceplate::paint (juce::Graphics& g)
     draw::plate (g, compPlate, metal, true, col::steelGray);
     draw::plate (g, autoPlate, metal);
     draw::plate (g, classAPlate, metal, true, col::ashBlue);
+    draw::plate (g, paraPlate, metal, true, col::blackPanel);
     {
         auto head = compPlate.reduced (30.0f, 10.0f).withHeight (22.0f);
         draw::engraved (g, "STEREO VARIABLE MU  LIMITER COMPRESSOR", head, 15.0f, juce::Justification::centred, juce::Colours::white);
@@ -2889,7 +3436,9 @@ void Faceplate::resized()
     orderSwitch.setVisible (! compact);
     autoPanel.setVisible (! compact);
     classAPanel.setVisible (! compact);
+    paraPanel.setVisible (! compact);
     linkButton.setVisible (! compact); copyLR.setVisible (! compact); copyRL.setVisible (! compact);
+    for (auto& b : popButtons) b.setVisible (! compact);
     if (compact) { help.setBounds (getLocalBounds()); return; }
 
     // ---------------- AUTO MASTER + MAXIMIZER (above the footer) --------------------
@@ -2916,6 +3465,11 @@ void Faceplate::resized()
     }
     r.removeFromBottom (10.0f);
 
+    // ---------------- parametric mastering EQ (in front of the passive EQ) -----------
+    paraPlate = r.removeFromTop (410.0f);
+    paraPanel.setBounds (paraPlate.toNearestInt());
+    r.removeFromTop (10.0f);
+
     // ---------------- two channel rows ------------------------------------------
     const float rowH = (r.getHeight() - 10.0f) / 2.0f;
     for (int ch = 0; ch < 2; ++ch)
@@ -2930,7 +3484,13 @@ void Faceplate::resized()
         for (int b = 0; b < kNumBands; ++b) bands[ch][b]->setBounds (row.removeFromLeft (bw));
     }
 
+    // pop-out icons in each unit's top-left corner (next to the screw)
+    const juce::Rectangle<float> unitPlates[kNumUnits] = { paraPlate, rowPlates[0], compPlate, classAPlate, autoPlate };
+    for (int u = 0; u < kNumUnits; ++u)
+        popButtons[u].setBounds ((int) unitPlates[u].getX() + 24, (int) unitPlates[u].getY() + 4, 26, 20);
+
     help.setBounds (getLocalBounds());
+    help.toFront (false);
 }
 
 // =============================================================================

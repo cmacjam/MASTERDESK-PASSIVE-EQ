@@ -175,6 +175,15 @@ int main()
                 ed->setSize (1900, 1000);                        // a wide window
                 playMusic (proc, *e, sr, 60);
                 snap (*ed, "editor_wide.png");
+                // pop-out units: build each one offscreen and snapshot it
+                for (int u = 0; u < ui::Faceplate::kNumUnits; ++u)
+                {
+                    auto host = e->createUnitHost (u);
+                    host->setLookAndFeel (&ed->getLookAndFeel());
+                    host->setSize (host->getWidth() * 7 / 10, host->getHeight() * 7 / 10);
+                    host->tick();
+                    snap (*host, "unit_" + std::to_string (u) + ".png");
+                }
                 e->toggleCompact();                             // MINI view
                 playMusic (proc, *e, sr, 30);
                 snap (*ed, "editor_mini.png");
@@ -443,6 +452,38 @@ int main()
         }
         std::printf ("  order switching EQ>COMP / COMP>EQ while playing: %s\n", finite ? "ok" : "PROBLEM");
         if (! finite) ++failures;
+    }
+
+    // ---- parametric mastering EQ inside the plugin ------------------------------
+    {
+        std::printf ("parametric mastering EQ (44.1 kHz, passive EQ flat, tube and comp off):\n");
+        PassiveMasterEQProcessor proc;
+        auto& s = proc.apvts;
+        namespace pq = ppm::params::pq;
+        setParam (s, ppm::params::tubeOn, 0.0f);
+        setParam (s, "L_c_in", 0.0f); setParam (s, "R_c_in", 0.0f);
+        setParam (s, pq::in, 1.0f);
+        setParam (s, pq::band (0, 0, "freq"), 13.0f); setParam (s, pq::band (0, 0, "level"), 22.0f);   // LO 100 Hz +7
+        setParam (s, pq::band (0, 1, "freq"), 14.0f); setParam (s, pq::band (0, 1, "shape"), 4.0f);
+        setParam (s, pq::band (0, 1, "level"), 4.0f);                                                   // MID 1.4 kHz narrow -5
+        setParam (s, pq::band (0, 2, "freq"), 21.0f); setParam (s, pq::band (0, 2, "level"), 20.0f);   // HI 23 kHz +5
+        setParam (s, pq::id (0, "hs"), 15.0f);                                                          // hi shelf +1.5
+        proc.setPlayConfigDetails (2, 2, 44100.0, 512);
+        proc.prepareToPlay (44100.0, 512);
+        const auto cs = proc.getParametricSettings().ch[0];
+        double worst = 0;
+        for (double f : { 40.0, 100.0, 400.0, 1400.0, 5000.0, 12000.0, 18000.0 })
+        {
+            const double got = measureDb (proc, 44100.0, f), want = ppm::sontec::channelResponseDb (cs, f);
+            worst = std::max (worst, std::abs (got - want));
+            std::printf ("    %6.0f Hz  plugin %+6.2f dB   model %+6.2f dB\n", f, got, want);
+        }
+        std::printf ("  worst |diff| = %.2f dB (linked: right follows left)\n", worst);
+        if (worst > 0.15) ++failures;
+        setParam (s, pq::in, 0.0f);
+        const double off = measureDb (proc, 44100.0, 100.0);
+        std::printf ("  PUSH EQ off: %+.3f dB at 100 Hz\n", off);
+        if (std::abs (off) > 0.01) ++failures;
     }
 
     // ---- M/S CLASS-A compressor inside the plugin --------------------------------
