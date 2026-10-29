@@ -2905,7 +2905,7 @@ void HelpOverlay::paint (juce::Graphics& g)
           "EQ IN / OUT bypasses the EQ for a quick before/after." },
         { "7  STEREO & WINDOW",
           "LINK keeps both sides identical; unlink to treat left and right separately. L > R / R > L copy one side to the other.  "
-          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  POP OUT: the POP OUT button in each unit's top-left corner opens that unit in its own window (still connected). MINI shows just the meters; SCROLL makes the panel fill the window's width at a bigger size with a scroll bar on the right (mouse wheel or drag the bar; the window can be any height); "
+          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  POP OUT: the POP OUT button in each unit's top-left corner opens that unit in its own window (still connected). MINI shows just the meters; SCROLL makes the panel fill the window's width at a bigger size; hover near the top or bottom edge to glide up or down (or use the mouse wheel; the window can be any height); "
           "FULL PANEL brings everything back. FULL SCREEN fills the screen (press EXIT FULL to go back)." },
         { "8  VARI-MU COMPRESSOR (bottom panel)",
           "A tube 'variable-mu' compressor: very soft knee, and the ratio rises the harder you push (about 1.5:1 up to 4:1), "
@@ -3094,8 +3094,8 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     miniButton.setTooltip ("MINI - shrink to a compact metering view (VU, harmonics, spectrum, vectorscope, loudness). Press FULL PANEL to bring the EQ and compressor back.");
     fullButton.onClick = [this] { if (onToggleFullScreen) onToggleFullScreen(); };
     miniButton.onClick = [this] { if (onToggleCompact) onToggleCompact(); };
-    scrollButton.setTooltip ("SCROLL - the panel fills the window's width at a bigger, easier-to-read size, with a scroll bar on the right. "
-                             "Scroll with the mouse wheel (over the panel, not a knob) or drag the bar; make the window any height. Press again for the normal fit-to-window view.");
+    scrollButton.setTooltip ("SCROLL - the panel fills the window's width at a bigger, easier-to-read size. Hover the mouse near the top or bottom edge "
+                             "to glide up or down (faster closer to the edge), or use the mouse wheel; make the window any height. Press again for the normal fit-to-window view.");
     scrollButton.onClick = [this] { if (onToggleScroll) onToggleScroll(); };
     addAndMakeVisible (scrollButton);
     for (auto* c : std::initializer_list<juce::Component*> { &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
@@ -3605,11 +3605,8 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
         else             setSize (juce::roundToInt (Faceplate::kW * sc), juce::roundToInt (designH() * sc));
     };
     face.onToggleScroll     = [this] { toggleScroll(); };
-    vbar.setAutoHide (false);
-    vbar.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xffb4b8be));      // brushed-chrome thumb
-    vbar.setColour (juce::ScrollBar::trackColourId, juce::Colour (0xff161618));
-    vbar.addListener (this);
-    addChildComponent (vbar);
+    addChildComponent (hints);
+    startTimerHz (60);                                  // hover scrolling
     face.onToggleFullScreen = [this] { toggleFullScreen(); };
     face.onToggleCompact    = [this] { toggleCompact(); };
 
@@ -3697,18 +3694,15 @@ void PassiveMasterEQEditor::resized()
     float scale;
     if (scrolling())
     {
-        // SCROLL: the standard-width panel fills the window's width; the scroll bar on the right moves it up and down
+        // SCROLL: the standard-width panel fills the window's width; hover near the top / bottom edge (or the wheel) moves it up and down
         const int sb = kScrollBarW;
         scale = juce::jmax (0.05f, (float) (getWidth() - sb) / (float) Faceplate::kW);
         if (face.getWidth() != Faceplate::kW || face.getHeight() != designH()) face.setBounds (0, 0, Faceplate::kW, designH());
         const double visH = (double) getHeight() / scale;
         const double maxPos = juce::jmax (0.0, (double) designH() - visH);
         scrollPos = juce::jlimit (0.0, maxPos, scrollPos);
-        vbar.setBounds (getWidth() - sb, 0, sb, getHeight());
-        vbar.setRangeLimits (0.0, (double) designH(), juce::dontSendNotification);
-        vbar.setCurrentRange (scrollPos, juce::jmin (visH, (double) designH()), juce::dontSendNotification);
-        vbar.setSingleStepSize (60.0);
-        vbar.setVisible (true);
+        hints.setBounds (getLocalBounds());
+        hints.setVisible (maxPos > 0.0);
         const float offY = maxPos > 0.0 ? (float) (-scrollPos * scale) : ((float) getHeight() - (float) designH() * scale) * 0.5f;
         face.setTransform (juce::AffineTransform::scale (scale).translated (0.0f, offY));
         const int gw = juce::jlimit (8, 14, juce::roundToInt (12.0f * scale + 2.0f));
@@ -3717,7 +3711,7 @@ void PassiveMasterEQEditor::resized()
     }
     else
     {
-        vbar.setVisible (false);
+        hints.setVisible (false);
         // one uniform zoom for the whole panel; width beyond the standard shape makes the panel itself wider
         scale = juce::jmin ((float) getWidth() / (float) Faceplate::kW, (float) getHeight() / (float) designH());
         const int panelW = juce::jlimit (Faceplate::kW, (int) (Faceplate::kW * kMaxWide), (int) std::floor ((float) getWidth() / scale));
@@ -3729,7 +3723,7 @@ void PassiveMasterEQEditor::resized()
         leftGrip.setBounds (0, 0, gw, getHeight());
         rightGrip.setBounds (getWidth() - gw, 0, gw, getHeight());
     }
-    leftGrip.toFront (false); rightGrip.toFront (false); vbar.toFront (false);
+    hints.toFront (false); leftGrip.toFront (false); rightGrip.toFront (false);
     if (sizeRestored && ! pluginFullScreen && (standaloneWindow() == nullptr || ! standaloneWindow()->isFullScreen()))
     {
         proc.apvts.state.setProperty ("uiScale", scale, nullptr);
@@ -3751,6 +3745,62 @@ void PassiveMasterEQEditor::mouseWheelMove (const juce::MouseEvent& e, const juc
     if (! scrolling() || scrollMax() <= 0.0) { AudioProcessorEditor::mouseWheelMove (e, w); return; }
     scrollPos -= (double) w.deltaY * 600.0;           // one wheel notch ~ 60 panel pixels
     resized();
+}
+
+// Hover scrolling: rest the mouse near the top or bottom edge and the panel glides that way
+// (faster the closer you get to the edge). Not while a mouse button is held (e.g. turning a knob).
+void PassiveMasterEQEditor::hoverScroll (float mouseY, double seconds)
+{
+    const double maxPos = scrollMax();
+    const float zone = (float) ui::ScrollHints::kZone, h = (float) getHeight();
+    float hotUp = 0.0f, hotDown = 0.0f;
+    if (maxPos > 0.0 && mouseY >= 0.0f && mouseY <= h)
+    {
+        if (mouseY < zone && scrollPos > 0.5)            hotUp   = 1.0f - mouseY / zone;
+        if (mouseY > h - zone && scrollPos < maxPos - 0.5) hotDown = 1.0f - (h - mouseY) / zone;
+        const float hot = hotUp > 0.0f ? -hotUp : hotDown;
+        if (hot != 0.0f)
+        {
+            const double scale = (double) (getWidth() - kScrollBarW) / (double) Faceplate::kW;
+            const double pxPerSec = 80.0 + 700.0 * (double) (hot * hot);      // window pixels per second
+            scrollPos += (hot < 0.0f ? -1.0 : 1.0) * pxPerSec * seconds / scale;
+            resized();
+        }
+    }
+    hints.set (scrollPos > 0.5, scrollPos < maxPos - 0.5, hotUp, hotDown);
+}
+
+void PassiveMasterEQEditor::timerCallback()
+{
+    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    const double dt = juce::jlimit (0.0, 0.05, now - lastTick);
+    lastTick = now;
+    if (! scrolling() || ! isShowing()) return;
+    const auto p = getMouseXYRelative();
+    const bool over = getLocalBounds().contains (p) && isMouseOver (true)
+                      && ! juce::ModifierKeys::currentModifiers.isAnyMouseButtonDown();
+    hoverScroll (over ? (float) p.y : -1.0f, dt);
+}
+
+void ui::ScrollHints::paint (juce::Graphics& g)
+{
+    const auto b = getLocalBounds().toFloat();
+    auto edge = [&] (bool top, float hot)
+    {
+        const float zh = (float) kZone;
+        auto r = top ? b.withHeight (zh) : b.withTop (b.getBottom() - zh);
+        const float a = 0.30f + 0.45f * hot;
+        juce::ColourGradient fade (juce::Colours::black.withAlpha (a), 0.0f, top ? r.getY() : r.getBottom(),
+                                   juce::Colours::transparentBlack, 0.0f, top ? r.getBottom() : r.getY(), false);
+        g.setGradientFill (fade); g.fillRect (r);
+        // chevron in the middle of the edge
+        const float cx = b.getCentreX(), cy = top ? r.getY() + 13.0f : r.getBottom() - 13.0f, w = 16.0f, d = top ? -6.0f : 6.0f;
+        juce::Path chev; chev.startNewSubPath (cx - w, cy - d); chev.lineTo (cx, cy + d); chev.lineTo (cx + w, cy - d);
+        g.setColour (juce::Colour (0xffd8dce2).withAlpha (0.35f + 0.6f * hot));
+        g.strokePath (chev, juce::PathStrokeType (2.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    };
+    if (up)   edge (true, hu);
+    if (down) edge (false, hd);
 }
 
 void PassiveMasterEQEditor::toggleScroll()

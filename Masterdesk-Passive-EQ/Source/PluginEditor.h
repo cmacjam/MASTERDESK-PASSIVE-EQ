@@ -642,7 +642,27 @@ public:
 };
 } // namespace ui
 
-class PassiveMasterEQEditor : public juce::AudioProcessorEditor, private juce::ScrollBar::Listener
+namespace ui
+{
+// Faint fade + arrow at the top / bottom edge while the panel can scroll that way (hover there to scroll)
+class ScrollHints : public juce::Component
+{
+public:
+    ScrollHints() { setInterceptsMouseClicks (false, false); }
+    void set (bool canUp, bool canDown, float hotUp, float hotDown)
+    {
+        if (canUp == up && canDown == down && std::abs (hotUp - hu) < 0.01f && std::abs (hotDown - hd) < 0.01f) return;
+        up = canUp; down = canDown; hu = hotUp; hd = hotDown; repaint();
+    }
+    void paint (juce::Graphics&) override;
+    static constexpr int kZone = 44;                   // hover this close to the top / bottom edge to scroll
+private:
+    bool up = false, down = false;
+    float hu = 0.0f, hd = 0.0f;
+};
+} // namespace ui
+
+class PassiveMasterEQEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
     explicit PassiveMasterEQEditor (PassiveMasterEQProcessor&);
@@ -670,9 +690,9 @@ public:
     double scrollMax() const;                                   // how far the panel can scroll (panel pixels)
     void scrollTo (double pos) { scrollPos = pos; resized(); } // tests
     double scrollPosition() const { return scrollPos; }
-    bool scrollBarShown() const { return vbar.isVisible(); }
+    void hoverScrollStep (int mouseY, double seconds) { hoverScroll ((float) mouseY, seconds); }   // tests
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
-    static constexpr int kScrollBarW = 18;
+    static constexpr int kScrollBarW = 0;                     // no scroll bar: hover at the top / bottom edge (or use the wheel)
     void testEdgeDrag (int deltaX, int deltaY, bool rightEdge) { edgeDrag (0, 0, rightEdge, true); edgeDrag (deltaX, deltaY, rightEdge, false); }   // tests
 
 private:
@@ -691,12 +711,14 @@ private:
     void edgeDrag (int deltaX, int deltaY, bool rightEdge, bool start);
     ui::WidthRangeConstrainer shapeConstrainer;
     bool sizeRestored = false, standaloneSetupDone = false, pluginFullScreen = false;
-    // SCROLL mode: the panel fills the window's width and scrolls up/down (scroll bar on the right)
-    juce::ScrollBar vbar { true };
+    // SCROLL mode: the panel fills the window's width and scrolls up/down (hover at the top / bottom edge, or the wheel)
+    ui::ScrollHints hints;
+    double lastTick = 0.0;
+    void timerCallback() override;
+    void hoverScroll (float mouseY, double seconds);
     bool scrollMode = false;
     double scrollPos = 0.0;                                     // top of the visible part, in panel pixels
     bool scrolling() const { return scrollMode && ! face.isCompact(); }
-    void scrollBarMoved (juce::ScrollBar*, double newRangeStart) override { scrollPos = newRangeStart; resized(); }
     juce::Rectangle<int> sizeBeforeFull;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PassiveMasterEQEditor)

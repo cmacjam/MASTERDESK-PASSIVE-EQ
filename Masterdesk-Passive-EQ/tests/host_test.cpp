@@ -218,28 +218,35 @@ int main()
                     || std::abs (w2 - std::min (w1 + 200, maxW)) > 2 || h2 != h0
                     || std::abs (h3 - std::min (h2 + 60, maxH)) > 2 || w3 < w2
                     || (double) w4 / h4 < aspect - 0.01 || h4 > maxH + 1) ++failures;
-                // SCROLL mode: the panel fills the width, a scroll bar on the right moves it up and down
+                // SCROLL mode: the panel fills the width; hovering near the top / bottom edge glides it up / down (no scroll bar)
                 {
                     e->toggleScroll();
                     ed->setSize (840, 520);
-                    const bool shown = e->scrollBarShown();
                     const double maxPos = e->scrollMax();
+                    e->hoverScrollStep (260, 1.0);                        // mouse in the middle: nothing moves
+                    const double still = e->scrollPosition();
                     snap (*ed, "editor_scroll_top.png");
-                    e->scrollTo (1.0e9);                                  // all the way down
+                    e->hoverScrollStep (520 - 6, 0.5);                    // near the bottom edge for half a second
+                    const double down1 = e->scrollPosition();
+                    for (int i = 0; i < 400; ++i) e->hoverScrollStep (520 - 2, 1.0 / 60.0);   // keep hovering: reaches the end
                     const double bottom = e->scrollPosition();
                     snap (*ed, "editor_scroll_bottom.png");
-                    e->scrollTo (-50.0);                                  // past the top: stops at 0
+                    e->hoverScrollStep (40, 0.5);                         // just inside the top zone: slow
+                    const double slowUp = bottom - e->scrollPosition();
+                    e->hoverScrollStep (2, 0.5);                          // right at the top edge: fast
+                    const double fastUp = bottom - slowUp - e->scrollPosition();
+                    for (int i = 0; i < 400; ++i) e->hoverScrollStep (1, 1.0 / 60.0);
                     const double top = e->scrollPosition();
                     const int sw = ed->getWidth(), sh = ed->getHeight();
                     e->toggleScroll();                                    // back to the normal fit-to-window view
-                    const bool hidden = ! e->scrollBarShown();
                     const int nw = ed->getWidth(), nh = ed->getHeight();
-                    std::printf ("  scroll: %dx%d, bar %s, range 0..%.0f of %d panel px, bottom %.0f, top %.0f; off -> %dx%d, bar %s\n",
-                                 sw, sh, shown ? "shown" : "MISSING", maxPos, PassiveMasterEQEditor::designHeight(), bottom, top,
-                                 nw, nh, hidden ? "hidden" : "STILL SHOWN");
-                    // at 840 wide the zoom is (840-18)/1440 = 0.571, so 520 px shows 911 of the 2380 panel px
-                    if (! shown || std::abs (maxPos - (PassiveMasterEQEditor::designHeight() - 520.0 * 1440.0 / 822.0)) > 2.0
-                        || std::abs (bottom - maxPos) > 0.01 || top != 0.0 || ! hidden || (double) nw / nh < aspect - 0.01) ++failures;
+                    std::printf ("  hover scroll: %dx%d, range 0..%.0f of %d panel px; middle %.0f; bottom edge 0.5 s -> %.0f, held -> %.0f; "
+                                 "top zone slow %.0f / edge fast %.0f px per 0.5 s; held -> %.0f; off -> %dx%d\n",
+                                 sw, sh, maxPos, PassiveMasterEQEditor::designHeight(), still, down1, bottom, slowUp, fastUp, top, nw, nh);
+                    // at 840 wide the zoom is 840/1440 = 0.583, so 520 px shows 891 of the 2380 panel px
+                    if (std::abs (maxPos - (PassiveMasterEQEditor::designHeight() - 520.0 * 1440.0 / 840.0)) > 2.0 || still != 0.0
+                        || down1 <= 100.0 || std::abs (bottom - maxPos) > 0.01 || slowUp <= 0.0 || fastUp < 3.0 * slowUp
+                        || top != 0.0 || (double) nw / nh < aspect - 0.01) ++failures;
                 }
                 // (help snapshot taken above)
             }
