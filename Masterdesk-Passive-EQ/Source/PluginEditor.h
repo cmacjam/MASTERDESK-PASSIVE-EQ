@@ -557,10 +557,11 @@ public:
     void showHelp() { help.setVisible (true); help.toFront (false); }
     void setScaleChoice (float scale);
     std::function<void (float)> onScaleRequested;                  // set by the editor
-    std::function<void()> onToggleFullScreen, onToggleCompact;      // set by the editor
+    std::function<void()> onToggleFullScreen, onToggleCompact, onToggleScroll;      // set by the editor
     void setCompact (bool c);
     bool isCompact() const { return compact; }
     void setFullScreenState (bool fs) { fullButton.setButtonText (fs ? "EXIT FULL" : "FULL SCREEN"); }
+    void setScrollState (bool on) { scrollButton.setToggleState (on, juce::dontSendNotification); scrollButton.setButtonText (on ? "SCROLL ON" : "SCROLL"); }
 
     enum Unit { UnitParametric = 0, UnitPassive, UnitVariMu, UnitClassA, UnitAuto, kNumUnits };
     void openUnit (int unit);                                       // pop a unit out into its own window
@@ -601,7 +602,7 @@ private:
     juce::ComboBox presetBox, sizeBox;
     SteppedKnob drive, inputKnob;
     InputMeter inputMeter;
-    juce::TextButton fullButton { "FULL SCREEN" }, miniButton { "MINI" };
+    juce::TextButton fullButton { "FULL SCREEN" }, miniButton { "MINI" }, scrollButton { "SCROLL" };
     HelpOverlay help;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linkAtt, tubeAtt;
 
@@ -641,7 +642,7 @@ public:
 };
 } // namespace ui
 
-class PassiveMasterEQEditor : public juce::AudioProcessorEditor
+class PassiveMasterEQEditor : public juce::AudioProcessorEditor, private juce::ScrollBar::Listener
 {
 public:
     explicit PassiveMasterEQEditor (PassiveMasterEQProcessor&);
@@ -664,6 +665,14 @@ public:
     void parentHierarchyChanged() override;
     void toggleFullScreen();
     void toggleCompact();
+    void toggleScroll();
+    bool isScrollMode() const { return scrollMode; }
+    double scrollMax() const;                                   // how far the panel can scroll (panel pixels)
+    void scrollTo (double pos) { scrollPos = pos; resized(); } // tests
+    double scrollPosition() const { return scrollPos; }
+    bool scrollBarShown() const { return vbar.isVisible(); }
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    static constexpr int kScrollBarW = 18;
     void testEdgeDrag (int deltaX, int deltaY, bool rightEdge) { edgeDrag (0, 0, rightEdge, true); edgeDrag (deltaX, deltaY, rightEdge, false); }   // tests
 
 private:
@@ -682,6 +691,12 @@ private:
     void edgeDrag (int deltaX, int deltaY, bool rightEdge, bool start);
     ui::WidthRangeConstrainer shapeConstrainer;
     bool sizeRestored = false, standaloneSetupDone = false, pluginFullScreen = false;
+    // SCROLL mode: the panel fills the window's width and scrolls up/down (scroll bar on the right)
+    juce::ScrollBar vbar { true };
+    bool scrollMode = false;
+    double scrollPos = 0.0;                                     // top of the visible part, in panel pixels
+    bool scrolling() const { return scrollMode && ! face.isCompact(); }
+    void scrollBarMoved (juce::ScrollBar*, double newRangeStart) override { scrollPos = newRangeStart; resized(); }
     juce::Rectangle<int> sizeBeforeFull;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PassiveMasterEQEditor)

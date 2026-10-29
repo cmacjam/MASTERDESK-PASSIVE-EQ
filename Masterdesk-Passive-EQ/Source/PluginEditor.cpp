@@ -1997,7 +1997,7 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     using S = PassiveMasterEQProcessor::AutoState;
     auto b = getLocalBounds().toFloat().reduced (24.0f, 8.0f);
     auto titles = b.removeFromTop (22.0f);
-    draw::engraved (g, "AUTO MASTER", titles.withTrimmedLeft (34.0f).withWidth (526.0f), 14.0f, juce::Justification::centredLeft);
+    draw::engraved (g, "AUTO MASTER", titles.withTrimmedLeft (100.0f).withWidth (460.0f), 14.0f, juce::Justification::centredLeft);
     draw::engraved (g, "GENRE  >  LISTEN  >  DONE", titles.withX (titles.getX() + 150.0f).withWidth (410.0f), 10.0f,
                     juce::Justification::centredRight, col::engraveDim.brighter (0.4f));
     draw::engraved (g, "MAXIMIZER", { maxArea.getX(), titles.getY(), maxArea.getWidth(), 22.0f }, 14.0f, juce::Justification::centred);
@@ -2376,7 +2376,7 @@ void ClassAPanel::paint (juce::Graphics& g)
     auto r = getLocalBounds().toFloat().reduced (22.0f, 8.0f);
     auto head = r.withHeight (26.0f);
     draw::engraved (g, "M/S CLASS-A COMPRESSOR", head, 14.0f, juce::Justification::centred, juce::Colours::white);
-    draw::engraved (g, "FEEDBACK / FEED FWD  -  MID/SIDE  -  SOFT CLIP", head.withTrimmedLeft (34.0f).withWidth (420.0f), 9.5f, juce::Justification::centredLeft,
+    draw::engraved (g, "FEEDBACK / FEED FWD  -  MID/SIDE  -  SOFT CLIP", head.withTrimmedLeft (106.0f).withWidth (420.0f), 9.5f, juce::Justification::centredLeft,
                     juce::Colours::white.withAlpha (0.6f));
     for (float x : { (float) centre.getX() - 10.0f, (float) centre.getRight() + 10.0f })
     {
@@ -2829,15 +2829,20 @@ void PopOutButton::paintButton (juce::Graphics& g, bool hi, bool down)
     auto r = getLocalBounds().toFloat().reduced (1.0f);
     juce::ColourGradient face (juce::Colour (down ? 0xff1c1c1c : (hi ? 0xff505050 : 0xff363636)), r.getX(), r.getY(),
                                juce::Colour (0xff121212), r.getX(), r.getBottom(), false);
-    g.setGradientFill (face); g.fillRoundedRectangle (r, 3.0f);
+    g.setGradientFill (face); g.fillRoundedRectangle (r, 4.0f);
     draw::chromeRing (g, r, 1.2f);
-    // icon: a window with an arrow leaving it (pop out)
-    auto ic = r.reduced (r.getHeight() * 0.25f);
     const auto c = hi ? col::amber : col::engrave;
     g.setColour (c);
-    g.drawRect (ic.withTrimmedTop (ic.getHeight() * 0.25f).withTrimmedRight (ic.getWidth() * 0.25f), 1.2f);
+    // icon: a window with an arrow leaving it (pop out)
+    auto inner = r.reduced (6.0f, 5.0f);
+    auto ic = inner.removeFromLeft (inner.getHeight() * 1.15f);
+    g.drawRect (ic.withTrimmedTop (ic.getHeight() * 0.25f).withTrimmedRight (ic.getWidth() * 0.25f), 1.4f);
     const juce::Point<float> a (ic.getCentreX(), ic.getCentreY()), b (ic.getRight(), ic.getY());
-    g.drawArrow ({ a, b }, 1.3f, 4.5f, 4.5f);
+    g.drawArrow ({ a, b }, 1.5f, 5.5f, 5.5f);
+    // label
+    inner.removeFromLeft (5.0f);
+    g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+    g.drawFittedText ("POP OUT", inner.toNearestInt(), juce::Justification::centredLeft, 1);
 }
 
 // =============================================================================
@@ -2900,7 +2905,7 @@ void HelpOverlay::paint (juce::Graphics& g)
           "EQ IN / OUT bypasses the EQ for a quick before/after." },
         { "7  STEREO & WINDOW",
           "LINK keeps both sides identical; unlink to treat left and right separately. L > R / R > L copy one side to the other.  "
-          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  POP OUT: the small icon in each unit's top-left corner opens that unit in its own window (still connected). MINI shows just the meters; "
+          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  POP OUT: the POP OUT button in each unit's top-left corner opens that unit in its own window (still connected). MINI shows just the meters; SCROLL makes the panel fill the window's width at a bigger size with a scroll bar on the right (mouse wheel or drag the bar; the window can be any height); "
           "FULL PANEL brings everything back. FULL SCREEN fills the screen (press EXIT FULL to go back)." },
         { "8  VARI-MU COMPRESSOR (bottom panel)",
           "A tube 'variable-mu' compressor: very soft knee, and the ratio rises the harder you push (about 1.5:1 up to 4:1), "
@@ -3089,6 +3094,10 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     miniButton.setTooltip ("MINI - shrink to a compact metering view (VU, harmonics, spectrum, vectorscope, loudness). Press FULL PANEL to bring the EQ and compressor back.");
     fullButton.onClick = [this] { if (onToggleFullScreen) onToggleFullScreen(); };
     miniButton.onClick = [this] { if (onToggleCompact) onToggleCompact(); };
+    scrollButton.setTooltip ("SCROLL - the panel fills the window's width at a bigger, easier-to-read size, with a scroll bar on the right. "
+                             "Scroll with the mouse wheel (over the panel, not a knob) or drag the bar; make the window any height. Press again for the normal fit-to-window view.");
+    scrollButton.onClick = [this] { if (onToggleScroll) onToggleScroll(); };
+    addAndMakeVisible (scrollButton);
     for (auto* c : std::initializer_list<juce::Component*> { &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
         addAndMakeVisible (c);
     for (int u = 0; u < kNumUnits; ++u)
@@ -3415,10 +3424,11 @@ void Faceplate::resized()
         copyLR.setBounds (bar.removeFromLeft (76));      bar.removeFromLeft (8);
         copyRL.setBounds (bar.removeFromLeft (76));      bar.removeFromLeft (18);
         helpButton.setBounds (bar.removeFromLeft (92));  bar.removeFromLeft (8);
-        miniButton.setBounds (bar.removeFromLeft (84));  bar.removeFromLeft (8);
-        fullButton.setBounds (bar.removeFromLeft (124));
-        nameplate  = f.removeFromRight (310.0f).withSizeKeepingCentre (310.0f, 48.0f);
-        auto mid = f.withTrimmedLeft ((float) (fullButton.getRight() - f.getX() + 14)).withTrimmedRight (16.0f).toNearestInt();
+        miniButton.setBounds (bar.removeFromLeft (70));  bar.removeFromLeft (8);
+        fullButton.setBounds (bar.removeFromLeft (114)); bar.removeFromLeft (8);
+        scrollButton.setBounds (bar.removeFromLeft (98));
+        nameplate  = f.removeFromRight (270.0f).withSizeKeepingCentre (270.0f, 48.0f);
+        auto mid = f.withTrimmedLeft ((float) (scrollButton.getRight() - f.getX() + 14)).withTrimmedRight (16.0f).toNearestInt();
         sizeBox.setBounds (mid.removeFromRight (84).withSizeKeepingCentre (84, 30));
         mid.removeFromRight (44);
         presetLabel = mid.removeFromLeft (52).toFloat();
@@ -3487,7 +3497,7 @@ void Faceplate::resized()
     // pop-out icons in each unit's top-left corner (next to the screw)
     const juce::Rectangle<float> unitPlates[kNumUnits] = { paraPlate, rowPlates[0], compPlate, classAPlate, autoPlate };
     for (int u = 0; u < kNumUnits; ++u)
-        popButtons[u].setBounds ((int) unitPlates[u].getX() + 24, (int) unitPlates[u].getY() + 4, 26, 20);
+        popButtons[u].setBounds ((int) unitPlates[u].getX() + 24, (int) unitPlates[u].getY() + 3, 92, 24);
 
     help.setBounds (getLocalBounds());
     help.toFront (false);
@@ -3578,6 +3588,8 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
         screenMax = juce::jmin ((float) d->userArea.getHeight() * 0.95f / (float) Faceplate::kH, (float) d->userArea.getWidth() / (float) Faceplate::kW);
     const float scale = juce::jlimit (0.3f, juce::jmax (0.3f, juce::jmin (1.6f, screenMax)), (float) proc.apvts.state.getProperty ("uiScale", fit));
     face.setCompact ((bool) proc.apvts.state.getProperty ("uiCompact", false));
+    scrollMode = (bool) proc.apvts.state.getProperty ("uiScroll", false);
+    face.setScrollState (scrollMode);
 
     setLookAndFeel (&laf);
     addAndMakeVisible (face);
@@ -3587,7 +3599,17 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
     setConstrainer (&shapeConstrainer);
     updateLimits();
 
-    face.onScaleRequested   = [this] (float sc) { setSize (juce::roundToInt (Faceplate::kW * sc), juce::roundToInt (designH() * sc)); };
+    face.onScaleRequested   = [this] (float sc)
+    {
+        if (scrolling()) setSize (juce::roundToInt (Faceplate::kW * sc) + kScrollBarW, getHeight());     // zoom = width; keep the height
+        else             setSize (juce::roundToInt (Faceplate::kW * sc), juce::roundToInt (designH() * sc));
+    };
+    face.onToggleScroll     = [this] { toggleScroll(); };
+    vbar.setAutoHide (false);
+    vbar.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xffb4b8be));      // brushed-chrome thumb
+    vbar.setColour (juce::ScrollBar::trackColourId, juce::Colour (0xff161618));
+    vbar.addListener (this);
+    addChildComponent (vbar);
     face.onToggleFullScreen = [this] { toggleFullScreen(); };
     face.onToggleCompact    = [this] { toggleCompact(); };
 
@@ -3654,6 +3676,13 @@ void PassiveMasterEQEditor::updateLimits()
                                     juce::roundToInt (Faceplate::kW * kMaxWide * 3.0), juce::roundToInt (designH() * 3.0));
     const bool standalone = proc.wrapperType == juce::AudioProcessor::wrapperType_Standalone;
     const double ratio = (double) Faceplate::kW / (double) designH();
+    if (scrolling())
+    {   // SCROLL: any height (the panel scrolls), the width sets the zoom
+        shapeConstrainer.setSizeLimits (juce::roundToInt (Faceplate::kW * 0.3) + kScrollBarW, 240,
+                                        juce::roundToInt (Faceplate::kW * 3.0) + kScrollBarW, juce::roundToInt (designH() * 3.0));
+        shapeConstrainer.minRatio = shapeConstrainer.maxRatio = 0.0;
+        return;
+    }
     shapeConstrainer.minRatio = standalone ? 0.0 : ratio;
     shapeConstrainer.maxRatio = standalone ? 0.0 : ratio * kMaxWide;
 }
@@ -3665,17 +3694,42 @@ void PassiveMasterEQEditor::paint (juce::Graphics& g)
 
 void PassiveMasterEQEditor::resized()
 {
-    // one uniform zoom for the whole panel; width beyond the standard shape makes the panel itself wider
-    const float scale = juce::jmin ((float) getWidth() / (float) Faceplate::kW, (float) getHeight() / (float) designH());
-    const int panelW = juce::jlimit (Faceplate::kW, (int) (Faceplate::kW * kMaxWide), (int) std::floor ((float) getWidth() / scale));
-    if (face.getWidth() != panelW || face.getHeight() != designH()) face.setBounds (0, 0, panelW, designH());
-    const float offX = ((float) getWidth()  - (float) panelW * scale) * 0.5f;
-    const float offY = ((float) getHeight() - (float) designH() * scale) * 0.5f;
-    face.setTransform (juce::AffineTransform::scale (scale).translated (offX, offY));
-    const int gw = juce::jlimit (8, 14, juce::roundToInt (12.0f * scale + 2.0f));
-    leftGrip.setBounds (0, 0, gw, getHeight());
-    rightGrip.setBounds (getWidth() - gw, 0, gw, getHeight());
-    leftGrip.toFront (false); rightGrip.toFront (false);
+    float scale;
+    if (scrolling())
+    {
+        // SCROLL: the standard-width panel fills the window's width; the scroll bar on the right moves it up and down
+        const int sb = kScrollBarW;
+        scale = juce::jmax (0.05f, (float) (getWidth() - sb) / (float) Faceplate::kW);
+        if (face.getWidth() != Faceplate::kW || face.getHeight() != designH()) face.setBounds (0, 0, Faceplate::kW, designH());
+        const double visH = (double) getHeight() / scale;
+        const double maxPos = juce::jmax (0.0, (double) designH() - visH);
+        scrollPos = juce::jlimit (0.0, maxPos, scrollPos);
+        vbar.setBounds (getWidth() - sb, 0, sb, getHeight());
+        vbar.setRangeLimits (0.0, (double) designH(), juce::dontSendNotification);
+        vbar.setCurrentRange (scrollPos, juce::jmin (visH, (double) designH()), juce::dontSendNotification);
+        vbar.setSingleStepSize (60.0);
+        vbar.setVisible (true);
+        const float offY = maxPos > 0.0 ? (float) (-scrollPos * scale) : ((float) getHeight() - (float) designH() * scale) * 0.5f;
+        face.setTransform (juce::AffineTransform::scale (scale).translated (0.0f, offY));
+        const int gw = juce::jlimit (8, 14, juce::roundToInt (12.0f * scale + 2.0f));
+        leftGrip.setBounds (0, 0, gw, getHeight());
+        rightGrip.setBounds (getWidth() - sb - gw, 0, gw, getHeight());
+    }
+    else
+    {
+        vbar.setVisible (false);
+        // one uniform zoom for the whole panel; width beyond the standard shape makes the panel itself wider
+        scale = juce::jmin ((float) getWidth() / (float) Faceplate::kW, (float) getHeight() / (float) designH());
+        const int panelW = juce::jlimit (Faceplate::kW, (int) (Faceplate::kW * kMaxWide), (int) std::floor ((float) getWidth() / scale));
+        if (face.getWidth() != panelW || face.getHeight() != designH()) face.setBounds (0, 0, panelW, designH());
+        const float offX = ((float) getWidth()  - (float) panelW * scale) * 0.5f;
+        const float offY = ((float) getHeight() - (float) designH() * scale) * 0.5f;
+        face.setTransform (juce::AffineTransform::scale (scale).translated (offX, offY));
+        const int gw = juce::jlimit (8, 14, juce::roundToInt (12.0f * scale + 2.0f));
+        leftGrip.setBounds (0, 0, gw, getHeight());
+        rightGrip.setBounds (getWidth() - gw, 0, gw, getHeight());
+    }
+    leftGrip.toFront (false); rightGrip.toFront (false); vbar.toFront (false);
     if (sizeRestored && ! pluginFullScreen && (standaloneWindow() == nullptr || ! standaloneWindow()->isFullScreen()))
     {
         proc.apvts.state.setProperty ("uiScale", scale, nullptr);
@@ -3683,6 +3737,49 @@ void PassiveMasterEQEditor::resized()
         proc.apvts.state.setProperty ("uiH", getHeight(), nullptr);
     }
     face.setScaleChoice (scale);
+}
+
+double PassiveMasterEQEditor::scrollMax() const
+{
+    if (! scrolling()) return 0.0;
+    const double scale = (double) (getWidth() - kScrollBarW) / (double) Faceplate::kW;
+    return juce::jmax (0.0, (double) designH() - (double) getHeight() / scale);
+}
+
+void PassiveMasterEQEditor::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
+{
+    if (! scrolling() || scrollMax() <= 0.0) { AudioProcessorEditor::mouseWheelMove (e, w); return; }
+    scrollPos -= (double) w.deltaY * 600.0;           // one wheel notch ~ 60 panel pixels
+    resized();
+}
+
+void PassiveMasterEQEditor::toggleScroll()
+{
+    const int w = getWidth(), h = getHeight();
+    if (! scrollMode)
+    {   // keep the window; the panel now fills its width (start at the top)
+        scrollMode = true;
+        scrollPos = 0.0;
+        updateLimits();
+        setSize (juce::jmax (w, juce::roundToInt (Faceplate::kW * 0.3) + kScrollBarW), juce::jmax (h, 240));
+    }
+    else
+    {   // back to fit-to-window: keep the zoom the scroll view had where the window allows it
+        scrollMode = false;
+        updateLimits();
+        const double ratio = (double) Faceplate::kW / (double) designH();
+        const bool standalone = proc.wrapperType == juce::AudioProcessor::wrapperType_Standalone;
+        int nw = w, nh = h;
+        if (! standalone)
+        {
+            nh = juce::jmax (juce::roundToInt (designH() * 0.3), juce::jmin (h, (int) std::floor (w / ratio)));   // never narrower than the panel's shape
+            nw = juce::jlimit ((int) std::ceil (nh * ratio), (int) std::floor (nh * ratio * kMaxWide), w);
+        }
+        setSize (nw, nh);
+    }
+    proc.apvts.state.setProperty ("uiScroll", scrollMode, nullptr);
+    face.setScrollState (scrollMode);
+    resized();
 }
 
 juce::DocumentWindow* PassiveMasterEQEditor::standaloneWindow() const
@@ -3737,10 +3834,20 @@ void PassiveMasterEQEditor::toggleFullScreen()
 
 void PassiveMasterEQEditor::toggleCompact()
 {
-    const float scale = juce::jmin ((float) getWidth() / (float) Faceplate::kW, (float) getHeight() / (float) designH());
+    const float scale = scrolling() ? (float) (getWidth() - kScrollBarW) / (float) Faceplate::kW
+                                    : juce::jmin ((float) getWidth() / (float) Faceplate::kW, (float) getHeight() / (float) designH());
     face.setCompact (! face.isCompact());
     proc.apvts.state.setProperty ("uiCompact", face.isCompact(), nullptr);
     updateLimits();
+    if (scrollMode)
+    {   // MINI isn't scrolled (it's short); FULL PANEL comes back in the scroll view
+        int h = face.isCompact() ? juce::roundToInt (designH() * scale) : juce::roundToInt (getWidth() * 0.9);
+        if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds()))
+            h = juce::jmin (h, d->userArea.getHeight() - 80);
+        setSize (getWidth(), juce::jmax (240, h));
+        resized();
+        return;
+    }
     setSize (juce::jmax (getWidth(), juce::roundToInt (Faceplate::kW * scale)), juce::roundToInt (designH() * scale));     // same zoom and width, new height
     resized();
 }

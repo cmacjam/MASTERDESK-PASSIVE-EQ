@@ -218,6 +218,29 @@ int main()
                     || std::abs (w2 - std::min (w1 + 200, maxW)) > 2 || h2 != h0
                     || std::abs (h3 - std::min (h2 + 60, maxH)) > 2 || w3 < w2
                     || (double) w4 / h4 < aspect - 0.01 || h4 > maxH + 1) ++failures;
+                // SCROLL mode: the panel fills the width, a scroll bar on the right moves it up and down
+                {
+                    e->toggleScroll();
+                    ed->setSize (840, 520);
+                    const bool shown = e->scrollBarShown();
+                    const double maxPos = e->scrollMax();
+                    snap (*ed, "editor_scroll_top.png");
+                    e->scrollTo (1.0e9);                                  // all the way down
+                    const double bottom = e->scrollPosition();
+                    snap (*ed, "editor_scroll_bottom.png");
+                    e->scrollTo (-50.0);                                  // past the top: stops at 0
+                    const double top = e->scrollPosition();
+                    const int sw = ed->getWidth(), sh = ed->getHeight();
+                    e->toggleScroll();                                    // back to the normal fit-to-window view
+                    const bool hidden = ! e->scrollBarShown();
+                    const int nw = ed->getWidth(), nh = ed->getHeight();
+                    std::printf ("  scroll: %dx%d, bar %s, range 0..%.0f of %d panel px, bottom %.0f, top %.0f; off -> %dx%d, bar %s\n",
+                                 sw, sh, shown ? "shown" : "MISSING", maxPos, PassiveMasterEQEditor::designHeight(), bottom, top,
+                                 nw, nh, hidden ? "hidden" : "STILL SHOWN");
+                    // at 840 wide the zoom is (840-18)/1440 = 0.571, so 520 px shows 911 of the 2380 panel px
+                    if (! shown || std::abs (maxPos - (PassiveMasterEQEditor::designHeight() - 520.0 * 1440.0 / 822.0)) > 2.0
+                        || std::abs (bottom - maxPos) > 0.01 || top != 0.0 || ! hidden || (double) nw / nh < aspect - 0.01) ++failures;
+                }
                 // (help snapshot taken above)
             }
         }
