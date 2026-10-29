@@ -194,9 +194,14 @@ int main()
                 int maxW = 100000, maxH = 100000;
                 if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (ed->getScreenBounds()))
                     { maxW = d->userArea.getWidth(); maxH = d->userArea.getHeight() - 80; }
-                // start well inside the screen (CI machines have small virtual screens; the smallest size is 30 %)
-                const int startW = std::max ((int) (PassiveMasterEQEditor::designWidth() * 0.32),
-                                             std::min (600, (int) ((maxH - 120) * aspect)));
+                // CI machines have small virtual screens (often shorter than the plug-in's smallest size, 30 %):
+                // the editor never goes below that size, so the room it really has is the larger of the two
+                const int minW = (int) std::ceil (PassiveMasterEQEditor::designWidth() * 0.30);
+                const int minH = (int) std::lround (minW / aspect);
+                maxH = std::max (maxH, minH);
+                maxW = std::max (maxW, minW);
+                // start inside that room
+                const int startW = std::max (minW, std::min (600, (int) ((maxH - 120) * aspect)));
                 ed->setSize (startW, (int) std::lround (startW / aspect));
                 const int w0 = ed->getWidth(), h0 = ed->getHeight();
                 e->testEdgeDrag (300, 0, true);                       // pull the right side out
