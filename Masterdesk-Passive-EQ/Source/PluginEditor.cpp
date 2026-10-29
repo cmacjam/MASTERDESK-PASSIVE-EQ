@@ -2472,7 +2472,7 @@ void HelpOverlay::paint (juce::Graphics& g)
 // =============================================================================
 //  Editor
 // =============================================================================
-static constexpr float kScales[] = { 0.6f, 0.7f, 0.85f, 1.0f };
+static constexpr float kScales[] = { 0.4f, 0.5f, 0.6f, 0.7f, 0.85f, 1.0f };
 
 // =============================================================================
 //  InputMeter
@@ -3012,7 +3012,11 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
             if (Faceplate::kH * sc <= area.getHeight() * 0.92f && Faceplate::kW * sc <= area.getWidth() * 0.95f)
                 fit = sc;
     }
-    const float scale = juce::jlimit (0.45f, 1.6f, (float) proc.apvts.state.getProperty ("uiScale", fit));
+    // a remembered zoom never opens bigger than this screen allows
+    float screenMax = 1.6f;
+    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        screenMax = juce::jmin ((float) d->userArea.getHeight() * 0.95f / (float) Faceplate::kH, (float) d->userArea.getWidth() / (float) Faceplate::kW);
+    const float scale = juce::jlimit (0.3f, juce::jmax (0.3f, juce::jmin (1.6f, screenMax)), (float) proc.apvts.state.getProperty ("uiScale", fit));
     face.setCompact ((bool) proc.apvts.state.getProperty ("uiCompact", false));
 
     setLookAndFeel (&laf);
@@ -3035,7 +3039,16 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
 
     // remembered window size (may be wider than the standard shape), else the standard shape at `scale`
     const int savedW = (int) proc.apvts.state.getProperty ("uiW", 0), savedH = (int) proc.apvts.state.getProperty ("uiH", 0);
-    if (savedW > 200 && savedH > 150) setSize (savedW, savedH);
+    if (savedW > 200 && savedH > 150)
+    {
+        int w = savedW, h = savedH;                     // shrink to fit if it was saved on a bigger screen
+        if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        {
+            const double k = juce::jmin (1.0, (double) d->userArea.getWidth() / w, (double) d->userArea.getHeight() * 0.95 / h);
+            w = (int) (w * k); h = (int) (h * k);
+        }
+        setSize (w, h);
+    }
     else setSize (juce::roundToInt (Faceplate::kW * scale), juce::roundToInt (designH() * scale));
     sizeRestored = true;
 }
@@ -3077,7 +3090,7 @@ void PassiveMasterEQEditor::updateLimits()
     // Nothing is ever squashed: the height sets the zoom, and extra width (up to kMaxWide x) spreads the panel out.
     // In a DAW the window can't be narrower than the panel's own shape; in the standalone app it can be any shape
     // (the panel is then centred).
-    shapeConstrainer.setSizeLimits (juce::roundToInt (Faceplate::kW * 0.45), juce::roundToInt (designH() * 0.45),
+    shapeConstrainer.setSizeLimits (juce::roundToInt (Faceplate::kW * 0.3), juce::roundToInt (designH() * 0.3),
                                     juce::roundToInt (Faceplate::kW * kMaxWide * 3.0), juce::roundToInt (designH() * 3.0));
     const bool standalone = proc.wrapperType == juce::AudioProcessor::wrapperType_Standalone;
     const double ratio = (double) Faceplate::kW / (double) designH();

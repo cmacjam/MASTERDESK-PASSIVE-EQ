@@ -185,7 +185,10 @@ int main()
                 int maxW = 100000, maxH = 100000;
                 if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (ed->getScreenBounds()))
                     { maxW = d->userArea.getWidth(); maxH = d->userArea.getHeight() - 80; }
-                ed->setSize (760, (int) std::lround (760 / aspect));      // (the smallest size is 45 %: 648 x 693)
+                // start well inside the screen (CI machines have small virtual screens; the smallest size is 30 %)
+                const int startW = std::max ((int) (PassiveMasterEQEditor::designWidth() * 0.32),
+                                             std::min (600, (int) ((maxH - 120) * aspect)));
+                ed->setSize (startW, (int) std::lround (startW / aspect));
                 const int w0 = ed->getWidth(), h0 = ed->getHeight();
                 e->testEdgeDrag (300, 0, true);                       // pull the right side out
                 const int w1 = ed->getWidth(), h1 = ed->getHeight(), p1 = e->panelWidth();
@@ -200,7 +203,7 @@ int main()
                 if (std::abs (w1 - std::min (w0 + 300, maxW)) > 2 || h1 != h0 || p1 <= PassiveMasterEQEditor::designWidth()
                     || std::abs (w2 - std::min (w1 + 200, maxW)) > 2 || h2 != h0
                     || std::abs (h3 - std::min (h2 + 60, maxH)) > 2 || w3 < w2
-                    || (double) w4 / h4 < aspect - 0.01) ++failures;
+                    || (double) w4 / h4 < aspect - 0.01 || h4 > maxH + 1) ++failures;
                 // (help snapshot taken above)
             }
         }
