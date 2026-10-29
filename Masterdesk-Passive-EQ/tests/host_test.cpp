@@ -248,6 +248,36 @@ int main()
                         || down1 <= 100.0 || std::abs (bottom - maxPos) > 0.01 || slowUp <= 0.0 || fastUp < 3.0 * slowUp
                         || top != 0.0 || (double) nw / nh < aspect - 0.01) ++failures;
                 }
+                // CLICK & ZOOM: zoom in at a point (it stays under the mouse), look around, zoom back out
+                {
+                    ed->setSize (600, 992);
+                    const juce::Point<float> at (450.0f, 300.0f);
+                    const auto before = e->visiblePanelArea();
+                    const auto pBefore = ed->getLocalPoint (ed.get(), at);
+                    const juce::Point<float> panelAt (before.getX() + at.x / 600.0f * before.getWidth(), before.getY() + at.y / 992.0f * before.getHeight());
+                    e->toggleZoomAt (at);
+                    const auto in = e->visiblePanelArea();
+                    const juce::Point<float> panelAfter (in.getX() + at.x / 600.0f * in.getWidth(), in.getY() + at.y / 992.0f * in.getHeight());
+                    snap (*ed, "editor_zoom.png");
+                    const float z = e->zoomFactor();
+                    e->hoverPanStep (2, 500, 0.5);                        // left edge: look left
+                    const float leftMove = in.getX() - e->visiblePanelArea().getX();
+                    e->hoverPanStep (300, 990, 0.5);                      // bottom edge: look down
+                    const float downMove = e->visiblePanelArea().getY() - in.getY();
+                    for (int i = 0; i < 600; ++i) e->hoverPanStep (2, 2, 1.0 / 60.0);   // top-left corner: stops at the panel's edge
+                    const auto corner = e->visiblePanelArea();
+                    e->toggleZoomAt (at);                                 // double-click again: back out
+                    const auto out = e->visiblePanelArea();
+                    std::printf ("  click & zoom: %.1fx, view %.0fx%.0f -> %.0fx%.0f panel px, point under mouse (%.0f,%.0f) -> (%.0f,%.0f); "
+                                 "hover left %.0f, down %.0f; corner (%.0f,%.0f); out %.1fx, view %.0fx%.0f\n",
+                                 z, before.getWidth(), before.getHeight(), in.getWidth(), in.getHeight(), panelAt.x, panelAt.y, panelAfter.x, panelAfter.y,
+                                 leftMove, downMove, corner.getX(), corner.getY(), e->zoomFactor(), out.getWidth(), out.getHeight());
+                    juce::ignoreUnused (pBefore);
+                    if (std::abs (z - 2.0f) > 0.01f || std::abs (in.getWidth() * 2.0f - before.getWidth()) > 2.0f
+                        || panelAt.getDistanceFrom (panelAfter) > 2.0f || leftMove <= 10.0f || downMove <= 10.0f
+                        || corner.getX() > 0.5f || corner.getY() > 0.5f || e->zoomFactor() != 1.0f
+                        || std::abs (out.getWidth() - before.getWidth()) > 2.0f) ++failures;
+                }
                 // (help snapshot taken above)
             }
         }

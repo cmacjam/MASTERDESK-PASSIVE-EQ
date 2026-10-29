@@ -649,16 +649,20 @@ class ScrollHints : public juce::Component
 {
 public:
     ScrollHints() { setInterceptsMouseClicks (false, false); }
-    void set (bool canUp, bool canDown, float hotUp, float hotDown)
+    // can[i] / hot[i]: 0 up, 1 down, 2 left, 3 right
+    void set (const bool* canDir, const float* hotDir, float zoomNow)
     {
-        if (canUp == up && canDown == down && std::abs (hotUp - hu) < 0.01f && std::abs (hotDown - hd) < 0.01f) return;
-        up = canUp; down = canDown; hu = hotUp; hd = hotDown; repaint();
+        bool same = std::abs (zoomNow - zoom) < 0.001f;
+        for (int i = 0; i < 4; ++i) same = same && can[i] == canDir[i] && std::abs (hot[i] - hotDir[i]) < 0.01f;
+        if (same) return;
+        for (int i = 0; i < 4; ++i) { can[i] = canDir[i]; hot[i] = hotDir[i]; }
+        zoom = zoomNow; repaint();
     }
     void paint (juce::Graphics&) override;
-    static constexpr int kZone = 44;                   // hover this close to the top / bottom edge to scroll
+    static constexpr int kZone = 44;                   // hover this close to an edge to scroll / pan
 private:
-    bool up = false, down = false;
-    float hu = 0.0f, hd = 0.0f;
+    bool can[4] {};
+    float hot[4] {}, zoom = 1.0f;
 };
 } // namespace ui
 
@@ -690,7 +694,15 @@ public:
     double scrollMax() const;                                   // how far the panel can scroll (panel pixels)
     void scrollTo (double pos) { scrollPos = pos; resized(); } // tests
     double scrollPosition() const { return scrollPos; }
-    void hoverScrollStep (int mouseY, double seconds) { hoverScroll ((float) mouseY, seconds); }   // tests
+    void hoverScrollStep (int mouseY, double seconds) { hoverScroll ((float) getWidth() * 0.5f, (float) mouseY, seconds); }   // tests
+    void hoverPanStep (int mouseX, int mouseY, double seconds) { hoverScroll ((float) mouseX, (float) mouseY, seconds); }       // tests
+    // click & zoom: double-click an empty spot to zoom in there (2x); double-click again to zoom back out.
+    // Ctrl/Cmd + mouse wheel zooms smoothly (1x - 4x). While zoomed: hover an edge, drag an empty spot or use the wheel to look around.
+    void zoomAt (juce::Point<float> where, float newZoom);
+    void toggleZoomAt (juce::Point<float> where) { zoomAt (where, zoom > 1.5f ? 1.0f : 2.0f); }
+    float zoomFactor() const { return zoom; }
+    juce::Rectangle<float> visiblePanelArea() const;           // the part of the panel in view (panel pixels)
+    static constexpr float kMaxZoom = 4.0f;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     static constexpr int kScrollBarW = 0;                     // no scroll bar: hover at the top / bottom edge (or use the wheel)
     void testEdgeDrag (int deltaX, int deltaY, bool rightEdge) { edgeDrag (0, 0, rightEdge, true); edgeDrag (deltaX, deltaY, rightEdge, false); }   // tests
@@ -715,7 +727,23 @@ private:
     ui::ScrollHints hints;
     double lastTick = 0.0;
     void timerCallback() override;
-    void hoverScroll (float mouseY, double seconds);
+    void hoverScroll (float mouseX, float mouseY, double seconds);
+    // zoom state: factor on top of the normal fit, and the panel point at the window's top-left (panel pixels)
+    float zoom = 1.0f;
+    double zx = 0.0, zy = 0.0;
+    float baseScale() const;
+    juce::Point<float> panelPointAt (juce::Point<float> editorPos) const { return face.getLocalPoint (this, editorPos); }
+    bool isEmptySpot (juce::Component* c) const;
+    struct ZoomMouse : public juce::MouseListener      // watches clicks on the whole panel (not the wheel)
+    {
+        explicit ZoomMouse (PassiveMasterEQEditor& e) : ed (e) {}
+        void mouseDoubleClick (const juce::MouseEvent&) override;
+        void mouseDown (const juce::MouseEvent&) override;
+        void mouseDrag (const juce::MouseEvent&) override;
+        PassiveMasterEQEditor& ed;
+        bool panning = false;
+        juce::Point<float> last;
+    } zoomMouse { *this };
     bool scrollMode = false;
     double scrollPos = 0.0;                                     // top of the visible part, in panel pixels
     bool scrolling() const { return scrollMode && ! face.isCompact(); }

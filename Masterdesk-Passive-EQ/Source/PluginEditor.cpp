@@ -2905,7 +2905,7 @@ void HelpOverlay::paint (juce::Graphics& g)
           "EQ IN / OUT bypasses the EQ for a quick before/after." },
         { "7  STEREO & WINDOW",
           "LINK keeps both sides identical; unlink to treat left and right separately. L > R / R > L copy one side to the other.  "
-          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  POP OUT: the POP OUT button in each unit's top-left corner opens that unit in its own window (still connected). MINI shows just the meters; SCROLL makes the panel fill the window's width at a bigger size; hover near the top or bottom edge to glide up or down (or use the mouse wheel; the window can be any height); "
+          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  POP OUT: the POP OUT button in each unit's top-left corner opens that unit in its own window (still connected). CLICK & ZOOM: double-click any empty spot (not a knob) to zoom in 2x right there; double-click again to zoom out. Ctrl/Cmd + mouse wheel zooms smoothly up to 4x. While zoomed, hover an edge, drag an empty spot or use the wheel to look around. MINI shows just the meters; SCROLL makes the panel fill the window's width at a bigger size; hover near the top or bottom edge to glide up or down (or use the mouse wheel; the window can be any height); "
           "FULL PANEL brings everything back. FULL SCREEN fills the screen (press EXIT FULL to go back)." },
         { "8  VARI-MU COMPRESSOR (bottom panel)",
           "A tube 'variable-mu' compressor: very soft knee, and the ratio rises the harder you push (about 1.5:1 up to 4:1), "
@@ -3606,7 +3606,8 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
     };
     face.onToggleScroll     = [this] { toggleScroll(); };
     addChildComponent (hints);
-    startTimerHz (60);                                  // hover scrolling
+    startTimerHz (60);                                  // hover scrolling / panning
+    face.addMouseListener (&zoomMouse, true);           // click & zoom
     face.onToggleFullScreen = [this] { toggleFullScreen(); };
     face.onToggleCompact    = [this] { toggleCompact(); };
 
@@ -3723,6 +3724,16 @@ void PassiveMasterEQEditor::resized()
         leftGrip.setBounds (0, 0, gw, getHeight());
         rightGrip.setBounds (getWidth() - gw, 0, gw, getHeight());
     }
+    if (zoom > 1.001f)
+    {   // CLICK & ZOOM: magnify on top of the normal view; keep the view inside the panel
+        const double sz = (double) scale * zoom;
+        const double visW = getWidth() / sz, visH = getHeight() / sz, pw = face.getWidth(), ph = face.getHeight();
+        zx = pw > visW ? juce::jlimit (0.0, pw - visW, zx) : -(visW - pw) * 0.5;
+        zy = ph > visH ? juce::jlimit (0.0, ph - visH, zy) : -(visH - ph) * 0.5;
+        face.setTransform (juce::AffineTransform::translation ((float) -zx, (float) -zy).scaled ((float) sz));
+        hints.setBounds (getLocalBounds());
+        hints.setVisible (true);
+    }
     hints.toFront (false); leftGrip.toFront (false); rightGrip.toFront (false);
     if (sizeRestored && ! pluginFullScreen && (standaloneWindow() == nullptr || ! standaloneWindow()->isFullScreen()))
     {
@@ -3740,34 +3751,141 @@ double PassiveMasterEQEditor::scrollMax() const
     return juce::jmax (0.0, (double) designH() - (double) getHeight() / scale);
 }
 
+
+float PassiveMasterEQEditor::baseScale() const
+{
+    if (scrolling()) return juce::jmax (0.05f, (float) (getWidth() - kScrollBarW) / (float) Faceplate::kW);
+    return juce::jmin ((float) getWidth() / (float) Faceplate::kW, (float) getHeight() / (float) designH());
+}
+
+juce::Rectangle<float> PassiveMasterEQEditor::visiblePanelArea() const
+{
+    const auto a = face.getLocalPoint (this, juce::Point<float> (0.0f, 0.0f));
+    const auto b = face.getLocalPoint (this, juce::Point<float> ((float) getWidth(), (float) getHeight()));
+    return juce::Rectangle<float> (a, b).getIntersection (face.getLocalBounds().toFloat());
+}
+
+// Zoom so that the panel point under `where` (editor pixels) stays under it
+void PassiveMasterEQEditor::zoomAt (juce::Point<float> where, float newZoom)
+{
+    newZoom = juce::jlimit (1.0f, kMaxZoom, newZoom);
+    const auto p = panelPointAt (where);
+    const float wasZoom = zoom;
+    zoom = newZoom < 1.02f ? 1.0f : newZoom;
+    if (zoom > 1.0f)
+    {
+        const double sz = (double) baseScale() * zoom;
+        zx = p.x - where.x / sz;
+        zy = p.y - where.y / sz;
+    }
+    else if (wasZoom > 1.0f && scrolling())
+    {   // back out in the scroll view: keep the same part of the panel in the middle
+        const double s0 = baseScale();
+        scrollPos = p.y - where.y / s0;
+    }
+    resized();
+    bool can[4] {}; float hot[4] {};
+    hints.set (can, hot, zoom);
+}
+
+// a spot with no control on it (so double-click there zooms instead of resetting a knob)
+bool PassiveMasterEQEditor::isEmptySpot (juce::Component* c) const
+{
+    for (auto* k = c; k != nullptr && k != this; k = k->getParentComponent())
+        if (dynamic_cast<juce::Slider*> (k) || dynamic_cast<juce::Button*> (k) || dynamic_cast<juce::ComboBox*> (k)
+            || dynamic_cast<juce::TextEditor*> (k) || dynamic_cast<ui::ModeSwitch*> (k) || dynamic_cast<ui::MetalToggle*> (k)
+            || dynamic_cast<ui::EdgeGrip*> (k) || dynamic_cast<ui::HelpOverlay*> (k))
+            return false;
+    return true;
+}
+
+void PassiveMasterEQEditor::ZoomMouse::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (! ed.isEmptySpot (e.originalComponent)) return;
+    ed.toggleZoomAt (e.getEventRelativeTo (&ed).position);
+}
+
+void PassiveMasterEQEditor::ZoomMouse::mouseDown (const juce::MouseEvent& e)
+{
+    panning = ed.zoom > 1.0f && ed.isEmptySpot (e.originalComponent);
+    last = e.getEventRelativeTo (&ed).position;
+}
+
+void PassiveMasterEQEditor::ZoomMouse::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! panning) return;                              // drag an empty spot to move the zoomed view around
+    const auto now = e.getEventRelativeTo (&ed).position;
+    const double sz = (double) ed.baseScale() * ed.zoom;
+    ed.zx -= (now.x - last.x) / sz;
+    ed.zy -= (now.y - last.y) / sz;
+    last = now;
+    ed.resized();
+}
+
 void PassiveMasterEQEditor::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
+    const auto pos = e.getEventRelativeTo (this).position;
+    if (e.mods.isCommandDown() || e.mods.isCtrlDown())  // Ctrl / Cmd + wheel: zoom at the mouse
+    {
+        zoomAt (pos, zoom * std::pow (2.0f, w.deltaY * 2.0f));
+        return;
+    }
+    if (zoom > 1.0f)
+    {   // zoomed: the wheel looks around (sideways too on a trackpad)
+        const double sz = (double) baseScale() * zoom;
+        zy -= (double) w.deltaY * 400.0 / sz;
+        zx -= (double) w.deltaX * 400.0 / sz;
+        resized();
+        return;
+    }
     if (! scrolling() || scrollMax() <= 0.0) { AudioProcessorEditor::mouseWheelMove (e, w); return; }
     scrollPos -= (double) w.deltaY * 600.0;           // one wheel notch ~ 60 panel pixels
     resized();
 }
 
-// Hover scrolling: rest the mouse near the top or bottom edge and the panel glides that way
-// (faster the closer you get to the edge). Not while a mouse button is held (e.g. turning a knob).
-void PassiveMasterEQEditor::hoverScroll (float mouseY, double seconds)
+// Hover scrolling: rest the mouse near an edge and the panel glides that way (faster the closer you get to the edge).
+// SCROLL view: top / bottom. Zoomed: all four edges. Not while a mouse button is held (e.g. turning a knob).
+void PassiveMasterEQEditor::hoverScroll (float mouseX, float mouseY, double seconds)
 {
-    const double maxPos = scrollMax();
-    const float zone = (float) ui::ScrollHints::kZone, h = (float) getHeight();
-    float hotUp = 0.0f, hotDown = 0.0f;
-    if (maxPos > 0.0 && mouseY >= 0.0f && mouseY <= h)
+    const float zone = (float) ui::ScrollHints::kZone, w = (float) getWidth(), h = (float) getHeight();
+    bool can[4] {}; float hot[4] {};
+    const bool inside = mouseX >= 0.0f && mouseX <= w && mouseY >= 0.0f && mouseY <= h;
+    if (zoom > 1.0f)
     {
-        if (mouseY < zone && scrollPos > 0.5)            hotUp   = 1.0f - mouseY / zone;
-        if (mouseY > h - zone && scrollPos < maxPos - 0.5) hotDown = 1.0f - (h - mouseY) / zone;
-        const float hot = hotUp > 0.0f ? -hotUp : hotDown;
-        if (hot != 0.0f)
+        const auto v = visiblePanelArea();
+        can[0] = v.getY() > 0.5f;                      can[1] = v.getBottom() < (float) face.getHeight() - 0.5f;
+        can[2] = v.getX() > 0.5f;                      can[3] = v.getRight()  < (float) face.getWidth()  - 0.5f;
+        if (inside)
         {
-            const double scale = (double) (getWidth() - kScrollBarW) / (double) Faceplate::kW;
-            const double pxPerSec = 80.0 + 700.0 * (double) (hot * hot);      // window pixels per second
-            scrollPos += (hot < 0.0f ? -1.0 : 1.0) * pxPerSec * seconds / scale;
+            if (can[0] && mouseY < zone)      hot[0] = 1.0f - mouseY / zone;
+            if (can[1] && mouseY > h - zone)  hot[1] = 1.0f - (h - mouseY) / zone;
+            if (can[2] && mouseX < zone)      hot[2] = 1.0f - mouseX / zone;
+            if (can[3] && mouseX > w - zone)  hot[3] = 1.0f - (w - mouseX) / zone;
+        }
+        const double sz = (double) baseScale() * zoom;
+        auto speed = [] (float k) { return 80.0 + 700.0 * (double) (k * k); };   // window pixels per second
+        const double dy = (hot[1] > 0.0f ? speed (hot[1]) : 0.0) - (hot[0] > 0.0f ? speed (hot[0]) : 0.0);
+        const double dx = (hot[3] > 0.0f ? speed (hot[3]) : 0.0) - (hot[2] > 0.0f ? speed (hot[2]) : 0.0);
+        if (dx != 0.0 || dy != 0.0) { zx += dx * seconds / sz; zy += dy * seconds / sz; resized(); }
+        hints.set (can, hot, zoom);
+        return;
+    }
+    const double maxPos = scrollMax();
+    if (maxPos > 0.0 && inside)
+    {
+        if (mouseY < zone && scrollPos > 0.5)              hot[0] = 1.0f - mouseY / zone;
+        if (mouseY > h - zone && scrollPos < maxPos - 0.5) hot[1] = 1.0f - (h - mouseY) / zone;
+        const float k = hot[0] > 0.0f ? -hot[0] : hot[1];
+        if (k != 0.0f)
+        {
+            const double scale = baseScale();
+            const double pxPerSec = 80.0 + 700.0 * (double) (k * k);      // window pixels per second
+            scrollPos += (k < 0.0f ? -1.0 : 1.0) * pxPerSec * seconds / scale;
             resized();
         }
     }
-    hints.set (scrollPos > 0.5, scrollPos < maxPos - 0.5, hotUp, hotDown);
+    can[0] = scrollPos > 0.5; can[1] = scrollPos < maxPos - 0.5;
+    hints.set (can, hot, zoom);
 }
 
 void PassiveMasterEQEditor::timerCallback()
@@ -3775,32 +3893,59 @@ void PassiveMasterEQEditor::timerCallback()
     const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
     const double dt = juce::jlimit (0.0, 0.05, now - lastTick);
     lastTick = now;
-    if (! scrolling() || ! isShowing()) return;
+    if ((! scrolling() && zoom <= 1.0f) || ! isShowing()) return;
     const auto p = getMouseXYRelative();
     const bool over = getLocalBounds().contains (p) && isMouseOver (true)
                       && ! juce::ModifierKeys::currentModifiers.isAnyMouseButtonDown();
-    hoverScroll (over ? (float) p.y : -1.0f, dt);
+    hoverScroll (over ? (float) p.x : -1.0f, over ? (float) p.y : -1.0f, dt);
 }
 
 void ui::ScrollHints::paint (juce::Graphics& g)
 {
     const auto b = getLocalBounds().toFloat();
-    auto edge = [&] (bool top, float hot)
+    const float zh = (float) kZone;
+    auto edge = [&] (int dir, float k)
     {
-        const float zh = (float) kZone;
-        auto r = top ? b.withHeight (zh) : b.withTop (b.getBottom() - zh);
-        const float a = 0.30f + 0.45f * hot;
-        juce::ColourGradient fade (juce::Colours::black.withAlpha (a), 0.0f, top ? r.getY() : r.getBottom(),
-                                   juce::Colours::transparentBlack, 0.0f, top ? r.getBottom() : r.getY(), false);
+        juce::Rectangle<float> r;
+        juce::Point<float> from, to;
+        switch (dir)
+        {
+            case 0:  r = b.withHeight (zh);                    from = r.getTopLeft();    to = r.getBottomLeft(); break;
+            case 1:  r = b.withTop (b.getBottom() - zh);       from = r.getBottomLeft(); to = r.getTopLeft();    break;
+            case 2:  r = b.withWidth (zh);                     from = r.getTopLeft();    to = r.getTopRight();   break;
+            default: r = b.withLeft (b.getRight() - zh);       from = r.getTopRight();   to = r.getTopLeft();    break;
+        }
+        const float a = 0.30f + 0.45f * k;
+        juce::ColourGradient fade (juce::Colours::black.withAlpha (a), from, juce::Colours::transparentBlack, to, false);
         g.setGradientFill (fade); g.fillRect (r);
-        // chevron in the middle of the edge
-        const float cx = b.getCentreX(), cy = top ? r.getY() + 13.0f : r.getBottom() - 13.0f, w = 16.0f, d = top ? -6.0f : 6.0f;
-        juce::Path chev; chev.startNewSubPath (cx - w, cy - d); chev.lineTo (cx, cy + d); chev.lineTo (cx + w, cy - d);
-        g.setColour (juce::Colour (0xffd8dce2).withAlpha (0.35f + 0.6f * hot));
+        // chevron in the middle of the edge, pointing out
+        juce::Path chev;
+        const float w = 16.0f, d = 6.0f;
+        if (dir < 2)
+        {
+            const float cx = b.getCentreX(), cy = dir == 0 ? r.getY() + 13.0f : r.getBottom() - 13.0f, s = dir == 0 ? -d : d;
+            chev.startNewSubPath (cx - w, cy - s); chev.lineTo (cx, cy + s); chev.lineTo (cx + w, cy - s);
+        }
+        else
+        {
+            const float cy = b.getCentreY(), cx = dir == 2 ? r.getX() + 13.0f : r.getRight() - 13.0f, s = dir == 2 ? -d : d;
+            chev.startNewSubPath (cx - s, cy - w); chev.lineTo (cx + s, cy); chev.lineTo (cx - s, cy + w);
+        }
+        g.setColour (juce::Colour (0xffd8dce2).withAlpha (0.35f + 0.6f * k));
         g.strokePath (chev, juce::PathStrokeType (2.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     };
-    if (up)   edge (true, hu);
-    if (down) edge (false, hd);
+    for (int i = 0; i < 4; ++i) if (can[i]) edge (i, hot[i]);
+
+    if (zoom > 1.001f)
+    {   // badge: how far in, and how to get out
+        const juce::String txt = "ZOOM " + juce::String (zoom, 1) + "x  -  double-click an empty spot to zoom out";
+        const juce::Font f (juce::FontOptions (13.0f, juce::Font::bold));
+        const float tw = juce::GlyphArrangement::getStringWidth (f, txt) + 28.0f;
+        auto pill = juce::Rectangle<float> (tw, 26.0f).withCentre ({ b.getCentreX(), b.getY() + 36.0f });
+        g.setColour (juce::Colours::black.withAlpha (0.72f)); g.fillRoundedRectangle (pill, 13.0f);
+        g.setColour (juce::Colour (0xff9fe8ff).withAlpha (0.9f)); g.drawRoundedRectangle (pill, 13.0f, 1.2f);
+        g.setFont (f); g.drawText (txt, pill, juce::Justification::centred);
+    }
 }
 
 void PassiveMasterEQEditor::toggleScroll()
