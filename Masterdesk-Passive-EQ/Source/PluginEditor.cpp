@@ -3062,16 +3062,31 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     helpButton.setTooltip ("Open the guide that explains every part of the panel.");
 
     // presets
-    for (int i = 0; i < proc.getNumPrograms(); ++i) presetBox.addItem (proc.getProgramName (i), i + 1);
+    {   // factory presets first, then the engineer presets in one sub-menu per category
+        auto* root = presetBox.getRootMenu();
+        juce::StringArray cats;
+        for (int i = 0; i < proc.getNumPrograms(); ++i)
+            if (proc.getProgramCategory (i) == "Factory") root->addItem (i + 1, proc.getProgramName (i));
+            else cats.addIfNotAlreadyThere (proc.getProgramCategory (i));
+        root->addSeparator();
+        root->addSectionHeader ("ENGINEER PRESETS (settings as listed)");
+        for (const auto& cat : cats)
+        {
+            juce::PopupMenu sub;
+            for (int i = 0; i < proc.getNumPrograms(); ++i)
+                if (proc.getProgramCategory (i) == cat) sub.addItem (i + 1, proc.getProgramName (i));
+            root->addSubMenu (cat, sub);
+        }
+    }
     presetBox.setTextWhenNothingSelected ("- choose a preset -");
     presetBox.onChange = [this]
     {
-        const int idx = presetBox.getSelectedItemIndex();
+        const int idx = presetBox.getSelectedId() - 1;
         if (idx >= 0 && idx != proc.getCurrentProgram()) { proc.setCurrentProgram (idx); proc.updateHostDisplay(); }
         lastProgram = idx;
+        updatePresetTip();
     };
-    presetBox.setTooltip ("PRESETS - mastering starting points. Pick one, then adjust to taste. "
-                          "Your own settings are saved with your DAW session.");
+    updatePresetTip();
 
     // window size
     for (int i = 0; i < (int) std::size (kScales); ++i) sizeBox.addItem (juce::String (juce::roundToInt (kScales[i] * 100)) + " %", i + 1);
@@ -3273,8 +3288,18 @@ void Faceplate::timerCallback()
     if (proc.getCurrentProgram() != lastProgram)
     {
         lastProgram = proc.getCurrentProgram();
-        presetBox.setSelectedItemIndex (lastProgram, juce::dontSendNotification);
+        presetBox.setSelectedId (lastProgram + 1, juce::dontSendNotification);
+        updatePresetTip();
     }
+}
+
+void Faceplate::updatePresetTip()
+{
+    const int idx = presetBox.getSelectedId() - 1;
+    const auto notes = idx >= 0 ? proc.getProgramNotes (idx) : juce::String();
+    presetBox.setTooltip (notes.isNotEmpty() ? proc.getProgramName (idx) + "\n\n" + notes
+                                             : "PRESETS - mastering starting points, plus engineer presets by category. Pick one, then adjust to taste. "
+                                               "Your own settings are saved with your DAW session.");
 }
 
 void Faceplate::paint (juce::Graphics& g)

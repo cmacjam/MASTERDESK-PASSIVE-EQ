@@ -560,6 +560,7 @@ public:
     std::function<void()> onToggleFullScreen, onToggleCompact, onToggleScroll;      // set by the editor
     void setCompact (bool c);
     bool isCompact() const { return compact; }
+    void updatePresetTip();
     void setFullScreenState (bool fs) { fullButton.setButtonText (fs ? "EXIT FULL" : "FULL SCREEN"); }
     void setScrollState (bool on) { scrollButton.setToggleState (on, juce::dontSendNotification); scrollButton.setButtonText (on ? "SCROLL ON" : "SCROLL"); }
 

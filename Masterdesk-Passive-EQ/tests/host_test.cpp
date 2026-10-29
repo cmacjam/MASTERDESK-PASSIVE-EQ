@@ -293,6 +293,7 @@ int main()
             proc.setCurrentProgram (i);
             const auto cs = proc.getCompSettings (0);
             setParam (proc.apvts, "L_c_in", 0.0f); setParam (proc.apvts, "R_c_in", 0.0f);   // EQ-only check
+            setParam (proc.apvts, ppm::params::pq::in, 0.0f); setParam (proc.apvts, ppm::params::ca::in, 0.0f);   // passive EQ alone
             const auto c = proc.getChannelSettings (0);
             double lo = 1e9, hi = -1e9;
             for (double f = 20; f <= 20000; f *= 1.05) { const double d = ppm::channelResponseDb (c, f); lo = std::min (lo, d); hi = std::max (hi, d); }
@@ -301,6 +302,44 @@ int main()
             std::printf ("EQ %+6.1f .. %+5.1f dB  (vs model @1k %+.2f)\n",
                          lo, hi, at1k);
             if (std::abs (at1k) > 0.6 || hi > 14.0) ++failures;     // at1k includes tube colour on presets with drive
+        }
+        // engineer presets: every EQ preset measured through the plug-in matches the units' models
+        // (parametric + passive), and the compressor settings land on the Class-A / Vari-Mu
+        {
+            int nEng = 0, nEq = 0; double worstAll = 0;
+            const auto& list = ppm::presets::all();
+            for (int i = 0; i < proc.getNumPrograms(); ++i)
+            {
+                const auto& pr = list[(size_t) i];
+                if (! pr.full) continue;
+                ++nEng;
+                proc.setCurrentProgram (i);
+                const auto ca = proc.getClassASettings();
+                const auto cs = proc.getCompSettings (0);
+                if (ca.in != pr.ca.in || cs.compIn != pr.comp.compIn
+                    || (pr.ca.in && (std::abs (ca.ch[0].ratioPos - pr.ca.ch[0].ratioPos) > 0.011 || std::abs (ca.ch[0].thresholdDb - pr.ca.ch[0].thresholdDb) > 0.06
+                                     || std::abs (ca.ch[0].attackMs - pr.ca.ch[0].attackMs) > 0.011 + 0.01 * pr.ca.ch[0].attackMs
+                                     || ca.ch[0].feedForward != pr.ca.ch[0].feedForward || std::abs (ca.ch[0].mix - pr.ca.ch[0].mix) > 0.006)))
+                { std::printf ("  ENGINEER PRESET %s: compressor settings did not land\n", pr.name.c_str()); ++failures; }
+                const bool hasEq = pr.pq.in || std::any_of (std::begin (pr.ch.band), std::end (pr.ch.band), [] (const ppm::BandSettings& b) { return b.gainStep > 0; }) || pr.ch.hp || pr.ch.lp;
+                if (! hasEq) continue;
+                ++nEq;
+                // EQ only: compressors and tubes out
+                setParam (proc.apvts, "L_c_in", 0.0f); setParam (proc.apvts, "R_c_in", 0.0f);
+                setParam (proc.apvts, ppm::params::ca::in, 0.0f); setParam (proc.apvts, ppm::params::tubeOn, 0.0f);
+                const auto pqs = proc.getParametricSettings();
+                const auto pas = proc.getChannelSettings (0);
+                double worst = 0;
+                for (double f : { 40.0, 100.0, 250.0, 700.0, 1500.0, 3500.0, 8000.0, 14000.0 })
+                {
+                    const double model = (pqs.in ? ppm::sontec::channelResponseDb (pqs.ch[0], f) : 0.0) + ppm::channelResponseDb (pas, f);
+                    worst = std::max (worst, std::abs (measureDb (proc, 48000.0, f) - model));
+                }
+                worstAll = std::max (worstAll, worst);
+                if (worst > 0.35) { std::printf ("  ENGINEER PRESET %s: plug-in %.2f dB off its model\n", pr.name.c_str(), worst); ++failures; }
+            }
+            std::printf ("  engineer presets: %d (%d with EQ), plug-in vs model worst %.2f dB, compressor settings land: checked\n", nEng, nEq, worstAll);
+            if (nEng < 60) ++failures;
         }
         // state round-trip keeps the program and parameters
         proc.setCurrentProgram (3);

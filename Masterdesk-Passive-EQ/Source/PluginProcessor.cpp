@@ -297,7 +297,7 @@ void PassiveMasterEQProcessor::copyChannel (int fromCh, int toCh)
 const juce::String PassiveMasterEQProcessor::getProgramName (int index)
 {
     const auto& list = presets::all();
-    return juce::isPositiveAndBelow (index, (int) list.size()) ? juce::String (list[(size_t) index].name) : juce::String();
+    return juce::isPositiveAndBelow (index, (int) list.size()) ? juce::String::fromUTF8 (list[(size_t) index].name.c_str()) : juce::String();
 }
 
 void PassiveMasterEQProcessor::setCurrentProgram (int index)
@@ -308,6 +308,7 @@ void PassiveMasterEQProcessor::setCurrentProgram (int index)
     const auto& pr = list[(size_t) index];
 
     applySettings (pr.ch, pr.comp, pr.order, pr.tubeOn, pr.driveDb);
+    if (pr.full) { applyParametric (pr.pq); applyClassA (pr.ca); }    // engineer presets set every unit
     setParamPlain (params::maxOn, 0.0f);          // presets are EQ + compressor only: maximizer off
     setParamPlain (params::maxGain, 0.0f);
 }
@@ -354,6 +355,46 @@ void PassiveMasterEQProcessor::applySettings (const ChannelSettings& chs, const 
     set (params::link, 1.0f);
     set (params::tubeOn, tubeOn ? 1.0f : 0.0f);
     set (params::tubeDrive, driveDb);
+}
+
+void PassiveMasterEQProcessor::applyParametric (const ppm::sontec::Settings& st)
+{
+    setParamPlain (params::pq::in, st.in ? 1.0f : 0.0f);
+    for (int c = 0; c < 2; ++c)
+    {
+        const auto& ch = st.ch[c];
+        for (int b = 0; b < 3; ++b)
+        {
+            setParamPlain (params::pq::band (c, b, "freq"),  (float) ch.band[b].freqIdx);
+            setParamPlain (params::pq::band (c, b, "shape"), (float) ch.band[b].shape);
+            setParamPlain (params::pq::band (c, b, "level"), (float) ch.band[b].level);
+        }
+        setParamPlain (params::pq::id (c, "hs"),  (float) ch.hiShelfLevel);
+        setParamPlain (params::pq::id (c, "hsf"), ch.hiShelf12k ? 1.0f : 0.0f);
+        setParamPlain (params::pq::id (c, "ls"),  (float) ch.loShelfLevel);
+        setParamPlain (params::pq::id (c, "lsf"), ch.loShelf100 ? 1.0f : 0.0f);
+        setParamPlain (params::pq::id (c, "man"), ch.in ? 1.0f : 0.0f);
+    }
+}
+
+void PassiveMasterEQProcessor::applyClassA (const ppm::ClassASettings& st)
+{
+    namespace ca = params::ca;
+    setParamPlain (ca::in, st.in ? 1.0f : 0.0f);
+    setParamPlain (ca::mode, (float) st.mode);
+    setParamPlain (ca::link, st.link ? 1.0f : 0.0f);
+    setParamPlain (ca::clipOn, st.softClip ? 1.0f : 0.0f);
+    setParamPlain (ca::clip, (float) st.clipDb);
+    for (int c = 0; c < 2; ++c)
+    {
+        const auto& ch = st.ch[c];
+        auto set = [&] (const char* what, double v) { setParamPlain (ca::chan (c, what), (float) v); };
+        set ("thr", ch.thresholdDb); set ("att", ch.attackMs); set ("rel", ch.releaseMs); set ("ratio", ch.ratioPos);
+        set ("gain", ch.gainDb); set ("mix", ch.mix * 100.0);
+        set ("ff", ch.feedForward ? 1 : 0); set ("afa", ch.autoFastAttack ? 1 : 0); set ("afr", ch.autoFastRelease ? 1 : 0); set ("warm", ch.warm ? 1 : 0);
+        set ("scon", ch.scOn ? 1 : 0); set ("scg", ch.scTilt); set ("scf", ch.scFreq);
+        set ("eqon", ch.eqOn ? 1 : 0); set ("eqg", ch.eqTilt); set ("eqf", ch.eqFreq); set ("eqx", ch.eqX10 ? 1 : 0);
+    }
 }
 
 void PassiveMasterEQProcessor::getStateInformation (juce::MemoryBlock& dest)

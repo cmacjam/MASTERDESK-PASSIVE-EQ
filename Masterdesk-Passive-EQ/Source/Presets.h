@@ -13,18 +13,28 @@
 #pragma once
 #include "dsp/Model.h"
 #include "dsp/VariMu.h"
+#include "dsp/SontecEQ.h"
+#include "dsp/ClassAComp.h"
+#include <algorithm>
+#include <string>
 #include <vector>
 
 namespace ppm::presets
 {
 struct Preset
 {
-    const char* name;
+    std::string name;
     ChannelSettings ch;
     bool  tubeOn  = true;
     float driveDb = 0.0f;
     CompSettings comp {};      // default: compressor in, threshold 0 dB (transparent)
     int   order   = 0;         // 0 = EQ > COMP, 1 = COMP > EQ
+    // engineer presets set every unit (parametric EQ and Class-A too); factory presets leave those alone
+    std::string category = "Factory";
+    std::string notes;
+    bool full = false;
+    sontec::Settings pq {};
+    ClassASettings   ca {};
 };
 
 //            in    thr  att  rec  out  mix  mode      scHp
@@ -50,9 +60,17 @@ inline ChannelSettings channel (BandSettings low, BandSettings lowMid, BandSetti
     return c;
 }
 
+} // namespace ppm::presets
+#include "EngineerPresets.h"
+namespace ppm::presets
+{
+inline const char* const kEngineerCategories[] = { "Vocals", "Drums", "Bass", "Guitars & Keys", "Mix & Master Bus" };
+
 inline const std::vector<Preset>& all()
 {
-    static const std::vector<Preset> list = {
+    static const std::vector<Preset> list = []
+    {
+    std::vector<Preset> list = {
         { "Init (Flat)",
           channel (flat(), flat(), flat(), flat()) },
 
@@ -145,6 +163,13 @@ inline const std::vector<Preset>& all()
           channel (flat(), band (1, 3, 0), flat(), band (10, 3, 0, Boost, true), 2),
           true, 6.0f },
     };
+    // then the engineer presets, grouped by category (each group keeps the list's order)
+    auto eng = engineerPresets();
+    for (const char* cat : kEngineerCategories)
+        for (const auto& p : eng)
+            if (p.category == cat) list.push_back (p);
+    return list;
+    }();
     return list;
 }
 } // namespace ppm::presets

@@ -31,6 +31,16 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.1; }
 
+    juce::String getProgramNotes (int index) const
+    {
+        const auto& list = ppm::presets::all();
+        return juce::isPositiveAndBelow (index, (int) list.size()) ? juce::String::fromUTF8 (list[(size_t) index].notes.c_str()) : juce::String();
+    }
+    juce::String getProgramCategory (int index) const
+    {
+        const auto& list = ppm::presets::all();
+        return juce::isPositiveAndBelow (index, (int) list.size()) ? juce::String::fromUTF8 (list[(size_t) index].category.c_str()) : juce::String();
+    }
     int getNumPrograms() override { return (int) ppm::presets::all().size(); }
     int getCurrentProgram() override { return currentProgram; }
     void setCurrentProgram (int index) override;
@@ -145,6 +155,8 @@ private:
     void timerCallback() override { autoMasterTick(); }
     void applySettings (const ppm::ChannelSettings&, const ppm::CompSettings&, int order, bool tubeOn, float driveDb);
     void setParamPlain (const juce::String& id, float plain);
+    void applyParametric (const ppm::sontec::Settings&);
+    void applyClassA (const ppm::ClassASettings&);
     AutoPlan solvePlan (int genre, double amount) const;
     std::vector<float> capL, capR;
     int capLen = 0;
