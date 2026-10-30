@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "")
 
-project(PassiveMasterEQ VERSION 1.8.1 LANGUAGES C CXX)
+project(PassiveMasterEQ VERSION 1.9.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,6 +31,14 @@ endif()
 option(PPM_COPY_AFTER_BUILD "Install the plugin into the system plugin folders after building" OFF)
 option(PPM_HEADLESS_LINUX   "CI only: build on Linux without Xrandr/Xinerama/Xcursor/ALSA dev headers" OFF)
 
+# Pro Tools (AAX) is built on macOS and Windows with the AAX SDK that ships inside JUCE 8.
+# The SDK is Avid's: free under its click-through licence (developer.avid.com/aax) or GPL v3.
+# Retail Pro Tools only loads AAX plug-ins signed with PACE's wraptool - see README "Pro Tools".
+set(PPM_FORMATS VST3 AU Standalone)
+if(APPLE OR WIN32)
+    list(APPEND PPM_FORMATS AAX)
+endif()
+
 juce_add_plugin(PassiveMasterEQ
     PRODUCT_NAME              "MasterDesk Mastering Suite"
     COMPANY_NAME              "Basemental"
@@ -39,7 +47,7 @@ juce_add_plugin(PassiveMasterEQ
     PLUGIN_MANUFACTURER_CODE  Bsmt                     # 4 chars, >=1 uppercase: identifies you to hosts
     PLUGIN_CODE               Mdeq                     # 4 chars, unique per plugin; never change after release
     VERSION                   ${PROJECT_VERSION}
-    FORMATS                   VST3 AU Standalone       # AU is built on macOS only
+    FORMATS                   ${PPM_FORMATS}           # AU: macOS only; AAX (Pro Tools): macOS + Windows
     IS_SYNTH                  FALSE
     NEEDS_MIDI_INPUT          FALSE
     NEEDS_MIDI_OUTPUT         FALSE
@@ -47,6 +55,8 @@ juce_add_plugin(PassiveMasterEQ
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     AU_MAIN_TYPE              kAudioUnitType_Effect
     VST3_CATEGORIES           Fx EQ
+    AAX_CATEGORY              EQ Dynamics
+    DISABLE_AAX_MULTI_MONO    TRUE                     # a stereo mastering unit: stereo instance only
     COPY_PLUGIN_AFTER_BUILD   ${PPM_COPY_AFTER_BUILD})
 
 target_sources(PassiveMasterEQ PRIVATE

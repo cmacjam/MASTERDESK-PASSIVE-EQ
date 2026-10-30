@@ -1,4 +1,4 @@
-; Inno Setup script: Basemental MasterDesk Mastering Suite (VST3 + standalone), Windows x64
+; Inno Setup script: Basemental MasterDesk Mastering Suite (VST3 + Pro Tools AAX + standalone), Windows x64
 ; Compile:  iscc /DAppVersion=1.0.0 /DArtefacts=..\..\build\PassiveMasterEQ_artefacts\Release /DOutDir=..\..\dist installer.iss
 
 #ifndef AppVersion
@@ -12,6 +12,9 @@
 #endif
 #define AppName "MasterDesk Mastering Suite"
 #define OldName "Masterdesk Passive EQ"
+#if DirExists(Artefacts + "\AAX\" + AppName + ".aaxplugin")
+  #define HaveAAX
+#endif
 
 [Setup]
 AppId={{6B8E3C1A-4F2D-4B7E-9A51-3C9D2E7F0B14}
@@ -32,15 +35,25 @@ WizardStyle=modern
 UninstallDisplayName=Basemental {#AppName}
 
 [Types]
+#ifdef HaveAAX
+Name: "full";   Description: "VST3 plug-in, Pro Tools (AAX) plug-in and standalone app"
+#else
 Name: "full";   Description: "VST3 plug-in and standalone app"
+#endif
 Name: "custom"; Description: "Choose components"; Flags: iscustom
 
 [Components]
 Name: "vst3"; Description: "VST3 plug-in (Cubase, Ableton Live, Studio One, Reaper, FL Studio, Bitwig...)"; Types: full custom
+#ifdef HaveAAX
+Name: "aax";  Description: "Pro Tools (AAX) plug-in"; Types: full custom
+#endif
 Name: "app";  Description: "Standalone app (runs without a DAW)"; Types: full
 
 [Files]
 Source: "{#Artefacts}\VST3\{#AppName}.vst3\*"; DestDir: "{commoncf64}\VST3\{#AppName}.vst3"; Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs
+#ifdef HaveAAX
+Source: "{#Artefacts}\AAX\{#AppName}.aaxplugin\*"; DestDir: "{commoncf64}\Avid\Audio\Plug-Ins\{#AppName}.aaxplugin"; Components: aax; Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
 Source: "{#Artefacts}\Standalone\{#AppName}.exe"; DestDir: "{app}"; Components: app; Flags: ignoreversion
 
 [InstallDelete]
@@ -53,4 +66,4 @@ Type: files; Name: "{autoprograms}\{#OldName}.lnk"
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppName}.exe"; Components: app
 
 [Messages]
-FinishedLabel=Setup has installed [name] on your computer.%n%nRescan plug-ins in your DAW, then insert MasterDesk Mastering Suite (by Basemental) on your master bus. Press HELP ? inside the plug-in for a guide to every control.
+FinishedLabel=Setup has installed [name] on your computer.%n%nRescan plug-ins in your DAW (Pro Tools finds the AAX version on its next launch), then insert MasterDesk Mastering Suite (by Basemental) on your master bus. Press HELP ? inside the plug-in for a guide to every control.

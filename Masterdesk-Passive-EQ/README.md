@@ -173,6 +173,28 @@ Edit or add presets in `Source/Presets.h`.
 
 ---
 
+## Pro Tools (AAX)
+
+The Mac and Windows builds also make the **Pro Tools (AAX)** plug-in, using the AAX SDK that ships inside JUCE 8 (no extra download). The installers have a **Pro Tools (AAX)** option that puts it in Pro Tools' plug-in folder:
+
+- macOS: `/Library/Application Support/Avid/Audio/Plug-Ins`
+- Windows: `C:\Program Files\Common Files\Avid\Audio\Plug-Ins`
+
+In Pro Tools it is listed under **EQ** and **Dynamics** (stereo only).
+
+**Signing (needed for normal Pro Tools).** Retail Pro Tools only loads AAX plug-ins signed with PACE's *wraptool*. An unsigned build loads in **Pro Tools Developer** (free from your Avid developer account), which is fine for testing. To sign:
+
+1. Ask Avid for an AAX developer account (developer.avid.com/aax, or email devauth@avid.com). Avid then gets PACE to enrol you; code signing is free for Avid developers.
+2. From PACE, install the **Eden tools** (wraptool) and get your **wrap configuration GUID**. Link an **iLok** to your PACE account.
+3. Install the plug-in with the Pro Tools (AAX) option, then run, with your iLok plugged in:
+   - Mac: `installer/aax/sign_aax_mac.sh <PACE account> <GUID> "Developer ID Application: Your Name (TEAMID)"`
+   - Windows (Administrator prompt): `installer\aax\sign_aax_windows.bat <PACE account> <GUID> certificate.p12 <password>`
+4. Start Pro Tools.
+
+To ship a signed AAX to other people, sign the `.aaxplugin` from the build (same command with the bundle's path) before packaging it, and on the Mac notarize after signing. The scripts use wraptool's standard options; check them against the guide that comes with PACE's tools.
+
+**Licence.** The AAX SDK is Avid's, under its own licence (accepted with your Avid developer account) or GPL v3. If you don't have Avid's licence, an AAX build you give to others falls under the GPL v3.
+
 ## Engineer presets
 
 Every EQ and compressor has a **PRESETS** button next to POP OUT (also in its pop-out window). It lists that unit's presets (factory first, then the engineer presets by category) and changes only that unit: the EQ button sets both EQs (engineer EQ presets use the Parametric and Passive EQ together), the Vari-Mu and Class-A buttons set only their compressor. The footer's PRESET menu still loads a whole preset (all units at once). There is a sub-menu per category with 62 presets built from the engineer preset lists supplied for the plug-in (EQ frequencies and gains, compressor ratio / attack / release / gain reduction). **These are the settings as given in those lists. They have not been verified with, or endorsed by, the engineers named**, and each preset's notes say so. Hover the preset menu after choosing one to read its notes.
