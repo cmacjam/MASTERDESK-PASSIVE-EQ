@@ -341,6 +341,27 @@ int main()
             std::printf ("  engineer presets: %d (%d with EQ), plug-in vs model worst %.2f dB, compressor settings land: checked\n", nEng, nEq, worstAll);
             if (nEng < 60) ++failures;
         }
+        // PRESETS buttons on the units: each lists its own presets and changes only its own unit
+        {
+            using namespace ppm::presets;
+            const auto eq = unitPresets (UnitKind::Eq), vm = unitPresets (UnitKind::VariMu), ca = unitPresets (UnitKind::ClassA);
+            const auto& list = all();
+            auto find = [&] (const char* name) { for (int i = 0; i < (int) list.size(); ++i) if (list[(size_t) i].name == name) return i; return -1; };
+            proc.setCurrentProgram (0);
+            const int cla = find ("Chris Lord-Alge - Lead Vocals (1176 Fast Stage)"), bou = find ("Eric Boulanger - Surgical Mastering EQ"),
+                      schmitt = find ("Al Schmitt - Silky Tube Vocal Leveler");
+            proc.applyEqPreset (bou);                                    // EQ menu: both EQs, compressors untouched
+            const bool eqOk = proc.getParametricSettings().in && ! proc.getClassASettings().in && proc.getChannelSettings (0).hp == list[(size_t) bou].ch.hp;
+            proc.applyClassAPreset (cla);                                // Class-A menu: EQs stay as they were
+            const auto cas = proc.getClassASettings();
+            const bool caOk = cas.in && std::abs (cas.ch[0].ratioPos - list[(size_t) cla].ca.ch[0].ratioPos) < 0.011 && proc.getParametricSettings().in;
+            proc.applyVariMuPreset (schmitt);                            // Vari-Mu menu
+            const auto vms = proc.getCompSettings (0);
+            const bool vmOk = vms.compIn && vms.threshold == list[(size_t) schmitt].comp.threshold && proc.getClassASettings().in && proc.getParametricSettings().in;
+            std::printf ("  unit PRESETS buttons: EQ %d, Vari-Mu %d, Class-A %d presets; EQ only %s, Class-A only %s, Vari-Mu only %s\n",
+                         (int) eq.size(), (int) vm.size(), (int) ca.size(), eqOk ? "ok" : "WRONG", caOk ? "ok" : "WRONG", vmOk ? "ok" : "WRONG");
+            if (eq.size() < 40 || vm.size() < 8 || ca.size() < 25 || ! eqOk || ! caOk || ! vmOk) ++failures;
+        }
         // state round-trip keeps the program and parameters
         proc.setCurrentProgram (3);
         juce::MemoryBlock mb; proc.getStateInformation (mb);

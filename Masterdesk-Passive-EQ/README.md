@@ -175,7 +175,7 @@ Edit or add presets in `Source/Presets.h`.
 
 ## Engineer presets
 
-The preset menu has a sub-menu per category with 62 presets built from the engineer preset lists supplied for the plug-in (EQ frequencies and gains, compressor ratio / attack / release / gain reduction). **These are the settings as given in those lists. They have not been verified with, or endorsed by, the engineers named**, and each preset's notes say so. Hover the preset menu after choosing one to read its notes.
+Every EQ and compressor has a **PRESETS** button next to POP OUT (also in its pop-out window). It lists that unit's presets (factory first, then the engineer presets by category) and changes only that unit: the EQ button sets both EQs (engineer EQ presets use the Parametric and Passive EQ together), the Vari-Mu and Class-A buttons set only their compressor. The footer's PRESET menu still loads a whole preset (all units at once). There is a sub-menu per category with 62 presets built from the engineer preset lists supplied for the plug-in (EQ frequencies and gains, compressor ratio / attack / release / gain reduction). **These are the settings as given in those lists. They have not been verified with, or endorsed by, the engineers named**, and each preset's notes say so. Hover the preset menu after choosing one to read its notes.
 
 Each list entry is placed on this plug-in's own controls by `tools/make_engineer_presets.cpp`, which fits every move using the units' analog models and writes `Source/EngineerPresets.h`:
 

@@ -41,6 +41,10 @@ public:
         const auto& list = ppm::presets::all();
         return juce::isPositiveAndBelow (index, (int) list.size()) ? juce::String::fromUTF8 (list[(size_t) index].category.c_str()) : juce::String();
     }
+    // one unit only (the PRESETS button on each EQ / compressor)
+    void applyEqPreset (int index);          // passive EQ (+ parametric EQ for engineer presets)
+    void applyVariMuPreset (int index);
+    void applyClassAPreset (int index);
     int getNumPrograms() override { return (int) ppm::presets::all().size(); }
     int getCurrentProgram() override { return currentProgram; }
     void setCurrentProgram (int index) override;

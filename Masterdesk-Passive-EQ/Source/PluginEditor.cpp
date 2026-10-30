@@ -2376,7 +2376,7 @@ void ClassAPanel::paint (juce::Graphics& g)
     auto r = getLocalBounds().toFloat().reduced (22.0f, 8.0f);
     auto head = r.withHeight (26.0f);
     draw::engraved (g, "M/S CLASS-A COMPRESSOR", head, 14.0f, juce::Justification::centred, juce::Colours::white);
-    draw::engraved (g, "FEEDBACK / FEED FWD  -  MID/SIDE  -  SOFT CLIP", head.withTrimmedLeft (106.0f).withWidth (420.0f), 9.5f, juce::Justification::centredLeft,
+    draw::engraved (g, "FEEDBACK / FEED FWD  -  MID/SIDE  -  SOFT CLIP", head.withTrimmedLeft (214.0f).withWidth (420.0f), 9.5f, juce::Justification::centredLeft,
                     juce::Colours::white.withAlpha (0.6f));
     for (float x : { (float) centre.getX() - 10.0f, (float) centre.getRight() + 10.0f })
     {
@@ -2789,6 +2789,12 @@ void UnitHost::resized()
     const float sc = juce::jmin ((float) getWidth() / W, (float) getHeight() / H);
     const float ox = ((float) getWidth() - W * sc) * 0.5f, oy = ((float) getHeight() - H * sc) * 0.5f;
     unit->setTransform (juce::AffineTransform::translation (14.0f, 14.0f).scaled (sc).translated (ox, oy));
+    if (presetButton != nullptr)
+    {   // top-left of the unit's plate, where the faceplate has its POP OUT / PRESETS buttons
+        presetButton->setBounds (24, 3, UnitPresetButton::kW, UnitPresetButton::kH);
+        presetButton->setTransform (juce::AffineTransform::translation (14.0f, 14.0f).scaled (sc).translated (ox, oy));
+        presetButton->toFront (false);
+    }
 }
 
 void UnitHost::paint (juce::Graphics& g)
@@ -2823,6 +2829,45 @@ UnitWindow::UnitWindow (const juce::String& title, std::unique_ptr<UnitHost> hos
 }
 
 UnitWindow::~UnitWindow() { clearContentComponent(); }
+
+UnitPresetButton::UnitPresetButton (PassiveMasterEQProcessor& p, int k) : juce::TextButton ("PRESETS"), proc (p), kind (k)
+{
+    setTooltip (kind == Eq     ? "EQ PRESETS - curves for the Parametric and Passive EQs. Engineer presets set both EQs together; compressors are left alone."
+              : kind == VariMu ? "VARI-MU PRESETS - settings for this compressor only; the EQs are left alone."
+                               : "CLASS-A PRESETS - settings for this compressor only; the EQs are left alone.");
+}
+
+void UnitPresetButton::clicked()
+{
+    using namespace ppm::presets;
+    const auto ids = unitPresets (kind == Eq ? UnitKind::Eq : kind == VariMu ? UnitKind::VariMu : UnitKind::ClassA);
+    const auto& list = all();
+    juce::PopupMenu menu;
+    bool anyFactory = false;
+    for (int i : ids)
+        if (! list[(size_t) i].full) { menu.addItem (i + 1, proc.getProgramName (i)); anyFactory = true; }
+    if (anyFactory) menu.addSeparator();
+    menu.addSectionHeader ("ENGINEER PRESETS (settings as listed)");
+    for (const char* cat : kEngineerCategories)
+    {
+        juce::PopupMenu sub;
+        for (int i : ids)
+            if (list[(size_t) i].full && list[(size_t) i].category == cat) sub.addItem (i + 1, proc.getProgramName (i));
+        if (sub.getNumItems() > 0) menu.addSubMenu (cat, sub);
+    }
+    juce::Component::SafePointer<UnitPresetButton> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                        [safe] (int result) { if (safe != nullptr && result > 0) safe->applied (result - 1); });
+}
+
+void UnitPresetButton::applied (int index)
+{
+    if (kind == Eq)          proc.applyEqPreset (index);
+    else if (kind == VariMu) proc.applyVariMuPreset (index);
+    else                     proc.applyClassAPreset (index);
+    const auto notes = proc.getProgramNotes (index);
+    setTooltip (proc.getProgramName (index) + (notes.isNotEmpty() ? "\n\n" + notes : juce::String()));
+}
 
 void PopOutButton::paintButton (juce::Graphics& g, bool hi, bool down)
 {
@@ -2905,7 +2950,7 @@ void HelpOverlay::paint (juce::Graphics& g)
           "EQ IN / OUT bypasses the EQ for a quick before/after." },
         { "7  STEREO & WINDOW",
           "LINK keeps both sides identical; unlink to treat left and right separately. L > R / R > L copy one side to the other.  "
-          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  POP OUT: the POP OUT button in each unit's top-left corner opens that unit in its own window (still connected). CLICK & ZOOM: double-click any empty spot (not a knob) to zoom in 2x right there; double-click again to zoom out. Ctrl/Cmd + mouse wheel zooms smoothly up to 4x. While zoomed, hover an edge, drag an empty spot or use the wheel to look around. MINI shows just the meters; SCROLL makes the panel fill the window's width at a bigger size; hover near the top or bottom edge to glide up or down (or use the mouse wheel; the window can be any height); "
+          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  PRESETS (next to POP OUT on each EQ and compressor) opens that unit's presets, factory and engineer, and changes only that unit. POP OUT: the POP OUT button in each unit's top-left corner opens that unit in its own window (still connected). CLICK & ZOOM: double-click any empty spot (not a knob) to zoom in 2x right there; double-click again to zoom out. Ctrl/Cmd + mouse wheel zooms smoothly up to 4x. While zoomed, hover an edge, drag an empty spot or use the wheel to look around. MINI shows just the meters; SCROLL makes the panel fill the window's width at a bigger size; hover near the top or bottom edge to glide up or down (or use the mouse wheel; the window can be any height); "
           "FULL PANEL brings everything back. FULL SCREEN fills the screen (press EXIT FULL to go back)." },
         { "8  VARI-MU COMPRESSOR (bottom panel)",
           "A tube 'variable-mu' compressor: very soft knee, and the ratio rises the harder you push (about 1.5:1 up to 4:1), "
@@ -3120,6 +3165,12 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
         popButtons[u].setTooltip ("POP OUT - open the " + unitName (u).fromFirstOccurrenceOf ("MasterDesk - ", false, false)
                                   + " in its own window. It stays connected: every knob moves in both places.");
         popButtons[u].onClick = [this, u] { openUnit (u); };
+        if (u != UnitAuto)
+        {
+            presetButtons[u] = std::make_unique<UnitPresetButton> (proc, u == UnitVariMu ? UnitPresetButton::VariMu
+                                                                       : u == UnitClassA ? UnitPresetButton::ClassA : UnitPresetButton::Eq);
+            addAndMakeVisible (*presetButtons[u]);
+        }
         addAndMakeVisible (popButtons[u]);
     }
     addChildComponent (help);
@@ -3144,28 +3195,36 @@ std::unique_ptr<UnitHost> Faceplate::createUnitHost (int u)
         case UnitParametric:
         {
             auto unit = std::make_unique<ParametricPanel> (proc); auto* raw = unit.get();
-            return std::make_unique<UnitHost> (std::move (unit), W, 410, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 410 } },
+            auto host = std::make_unique<UnitHost> (std::move (unit), W, 410, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 410 } },
                                                col::blackPanel, [raw] (float) { raw->update(); });
+            host->addPresetButton (std::make_unique<UnitPresetButton> (proc, UnitPresetButton::Eq));
+            return host;
         }
         case UnitPassive:
         {
             auto unit = std::make_unique<PassiveEqUnit> (proc); auto* raw = unit.get();
             const int R = PassiveEqUnit::kRowH, G = PassiveEqUnit::kGap;
-            return std::make_unique<UnitHost> (std::move (unit), W, 2 * R + G,
+            auto host = std::make_unique<UnitHost> (std::move (unit), W, 2 * R + G,
                                                std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, (float) R }, { 0, (float) (R + G), (float) W, (float) R } },
                                                juce::Colour(), [raw] (float) { raw->update(); });
+            host->addPresetButton (std::make_unique<UnitPresetButton> (proc, UnitPresetButton::Eq));
+            return host;
         }
         case UnitVariMu:
         {
             auto unit = std::make_unique<VariMuUnit> (proc); auto* raw = unit.get();
-            return std::make_unique<UnitHost> (std::move (unit), W, 292, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 292 } },
+            auto host = std::make_unique<UnitHost> (std::move (unit), W, 292, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 292 } },
                                                col::steelGray, [raw] (float dt) { raw->update (dt); });
+            host->addPresetButton (std::make_unique<UnitPresetButton> (proc, UnitPresetButton::VariMu));
+            return host;
         }
         case UnitClassA:
         {
             auto unit = std::make_unique<ClassAPanel> (proc); auto* raw = unit.get();
-            return std::make_unique<UnitHost> (std::move (unit), W, 380, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 380 } },
+            auto host = std::make_unique<UnitHost> (std::move (unit), W, 380, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 380 } },
                                                col::ashBlue, [raw] (float dt) { raw->update (dt); });
+            host->addPresetButton (std::make_unique<UnitPresetButton> (proc, UnitPresetButton::ClassA));
+            return host;
         }
         default:
         {
@@ -3474,6 +3533,7 @@ void Faceplate::resized()
     paraPanel.setVisible (! compact);
     linkButton.setVisible (! compact); copyLR.setVisible (! compact); copyRL.setVisible (! compact);
     for (auto& b : popButtons) b.setVisible (! compact);
+    for (auto& b : presetButtons) if (b != nullptr) b->setVisible (! compact);
     if (compact) { help.setBounds (getLocalBounds()); return; }
 
     // ---------------- AUTO MASTER + MAXIMIZER (above the footer) --------------------
@@ -3522,7 +3582,11 @@ void Faceplate::resized()
     // pop-out icons in each unit's top-left corner (next to the screw)
     const juce::Rectangle<float> unitPlates[kNumUnits] = { paraPlate, rowPlates[0], compPlate, classAPlate, autoPlate };
     for (int u = 0; u < kNumUnits; ++u)
+    {
         popButtons[u].setBounds ((int) unitPlates[u].getX() + 24, (int) unitPlates[u].getY() + 3, 92, 24);
+        if (presetButtons[u] != nullptr)
+            presetButtons[u]->setBounds ((int) unitPlates[u].getX() + 124, (int) unitPlates[u].getY() + 3, UnitPresetButton::kW, UnitPresetButton::kH);
+    }
 
     help.setBounds (getLocalBounds());
     help.toFront (false);

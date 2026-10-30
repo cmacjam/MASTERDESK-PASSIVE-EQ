@@ -482,6 +482,20 @@ private:
 };
 
 // Hosts one unit on its own plate(s) at a fixed design size, scaled to the window
+// PRESETS button on each EQ / compressor: a menu of the presets for that unit (changes that unit only)
+class UnitPresetButton : public juce::TextButton
+{
+public:
+    enum Kind { Eq = 0, VariMu, ClassA };
+    UnitPresetButton (PassiveMasterEQProcessor& p, int kind);
+    void clicked() override;
+    static constexpr int kW = 104, kH = 24;
+private:
+    void applied (int index);
+    PassiveMasterEQProcessor& proc;
+    int kind;
+};
+
 class UnitHost : public juce::Component, private juce::Timer
 {
 public:
@@ -492,6 +506,7 @@ public:
     void resized() override;
     juce::Component& getUnit() { return *unit; }
     void tick() { timerCallback(); }
+    void addPresetButton (std::unique_ptr<UnitPresetButton> b) { presetButton = std::move (b); addAndMakeVisible (*presetButton); resized(); }
 private:
     void timerCallback() override { if (update) update (1.0f / 30.0f); }
     std::unique_ptr<juce::Component> unit;
@@ -500,6 +515,7 @@ private:
     juce::Colour tint;
     std::function<void (float)> update;
     juce::Image metal;
+    std::unique_ptr<UnitPresetButton> presetButton;
 };
 
 class UnitWindow : public juce::DocumentWindow
@@ -591,6 +607,7 @@ private:
     ClassAPanel classAPanel { proc };
     ParametricPanel paraPanel { proc };
     PopOutButton popButtons[kNumUnits];
+    std::unique_ptr<UnitPresetButton> presetButtons[kNumUnits];     // none on the Auto Master
     std::unique_ptr<UnitWindow> unitWindows[kNumUnits];
     std::unique_ptr<BandStrip>   bands[2][ppm::kNumBands];
     std::unique_ptr<CenterStrip> centers[2];

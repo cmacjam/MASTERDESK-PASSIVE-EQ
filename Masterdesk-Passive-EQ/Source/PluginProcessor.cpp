@@ -357,6 +357,57 @@ void PassiveMasterEQProcessor::applySettings (const ChannelSettings& chs, const 
     set (params::tubeDrive, driveDb);
 }
 
+void PassiveMasterEQProcessor::applyEqPreset (int index)
+{
+    const auto& list = presets::all();
+    if (! juce::isPositiveAndBelow (index, (int) list.size())) return;
+    const auto& pr = list[(size_t) index];
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        for (int b = 0; b < kNumBands; ++b)
+        {
+            const auto& bs = pr.ch.band[b];
+            setParamPlain (params::bandId (ch, b, "freq"),  (float) bs.freqIndex);
+            setParamPlain (params::bandId (ch, b, "gain"),  (float) bs.gainStep);
+            setParamPlain (params::bandId (ch, b, "bw"),    (float) bs.bwStep);
+            setParamPlain (params::bandId (ch, b, "mode"),  (float) bs.mode);
+            setParamPlain (params::bandId (ch, b, "shelf"), bs.shelf ? 1.0f : 0.0f);
+        }
+        setParamPlain (params::chanId (ch, "hp"),    (float) pr.ch.hp);
+        setParamPlain (params::chanId (ch, "lp"),    (float) pr.ch.lp);
+        setParamPlain (params::chanId (ch, "trim"),  (float) pr.ch.trim);
+        setParamPlain (params::chanId (ch, "eq_in"), 1.0f);
+    }
+    setParamPlain (params::link, 1.0f);
+    if (pr.full) applyParametric (pr.pq);        // engineer EQ presets use both EQs together
+}
+
+void PassiveMasterEQProcessor::applyVariMuPreset (int index)
+{
+    const auto& list = presets::all();
+    if (! juce::isPositiveAndBelow (index, (int) list.size())) return;
+    const auto& c = list[(size_t) index].comp;
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        setParamPlain (params::chanId (ch, "c_in"),       c.compIn ? 1.0f : 0.0f);
+        setParamPlain (params::chanId (ch, "c_thresh"),   (float) c.threshold);
+        setParamPlain (params::chanId (ch, "c_attack"),   (float) c.attack);
+        setParamPlain (params::chanId (ch, "c_recovery"), (float) c.recovery);
+        setParamPlain (params::chanId (ch, "c_output"),   (float) c.output);
+        setParamPlain (params::chanId (ch, "c_mix"),      (float) c.mix);
+        setParamPlain (params::chanId (ch, "c_mode"),     (float) c.mode);
+        setParamPlain (params::chanId (ch, "c_schp"),     c.scHp ? 1.0f : 0.0f);
+    }
+    setParamPlain (params::link, 1.0f);
+}
+
+void PassiveMasterEQProcessor::applyClassAPreset (int index)
+{
+    const auto& list = presets::all();
+    if (! juce::isPositiveAndBelow (index, (int) list.size())) return;
+    applyClassA (list[(size_t) index].ca);
+}
+
 void PassiveMasterEQProcessor::applyParametric (const ppm::sontec::Settings& st)
 {
     setParamPlain (params::pq::in, st.in ? 1.0f : 0.0f);

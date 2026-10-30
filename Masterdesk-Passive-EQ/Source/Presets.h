@@ -172,4 +172,27 @@ inline const std::vector<Preset>& all()
     }();
     return list;
 }
+
+// ---- per-unit preset lists (indices into all()) ------------------------------------------
+inline bool presetHasEq (const Preset& p)
+{
+    if (p.full && p.pq.in) return true;
+    for (const auto& b : p.ch.band) if (b.gainStep > 0 && b.mode != Out) return true;
+    return p.ch.hp != 0 || p.ch.lp != 0 || p.name == "Init (Flat)";
+}
+enum class UnitKind { Eq, VariMu, ClassA };
+inline std::vector<int> unitPresets (UnitKind k)
+{
+    std::vector<int> out;
+    const auto& l = all();
+    for (int i = 0; i < (int) l.size(); ++i)
+    {
+        const auto& p = l[(size_t) i];
+        const bool ok = k == UnitKind::Eq     ? presetHasEq (p)
+                      : k == UnitKind::VariMu ? (p.comp.compIn && p.comp.threshold > 0)
+                                              : (p.full && p.ca.in);
+        if (ok) out.push_back (i);
+    }
+    return out;
+}
 } // namespace ppm::presets
