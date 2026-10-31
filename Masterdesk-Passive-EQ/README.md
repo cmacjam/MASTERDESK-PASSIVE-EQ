@@ -199,7 +199,7 @@ To ship a signed AAX to other people, sign the `.aaxplugin` from the build (same
 
 The hardware these units are modelled on stores no presets: it is all knobs. What the makers do publish is a few starting settings in their manuals, and those are in the preset menus under **From the Manley manuals** (each preset's notes quote the manual):
 
-- **Massive Passive** (EQ menus): *Stacked High Shelves* (3.3 kHz shelf +4 dB, then 12 kHz shelf +10 dB) and *Subsonic Filter* (the mastering version's 23 Hz high-pass). The manual's drum low-end tip is left out because EQ presets here are for the stereo master only.
+- **Massive Passive** (EQ menus): *Stacked High Shelves* (3.3 kHz shelf +4 dB, then 12 kHz shelf +10 dB). The manual's subsonic high-pass tip is already the factory *Subsonic Clean-up Only* preset, so it isn't repeated. The manual's drum low-end tip is left out because EQ presets here are for the stereo master only.
 - **Variable Mu** (Vari-Mu menu): *Mastering Limit (2-4 dB)*, *Gentle Mix Compression*, *Drums (Fast Attack)*, *Vocals & Bass (Slow Attack)* and *Tube Colour*. Where the manual gives no number (for example the amount for a drum preset), the notes say what was used.
 - **Sontec MES-432C/9** and **elysia alpha**: their makers publish no settings or presets (the alpha manual describes each control without example values), so there is nothing official to add. If you own the official plug-in versions, their factory presets can be copied in from screenshots of the settings.
 

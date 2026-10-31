@@ -171,11 +171,6 @@ inline const std::vector<Preset>& all()
           "3.3 kHz shelf +4 dB at 12:00 bandwidth (the manual's starting point for shelves); 12 kHz shelf +10 dB, bandwidth a little wider than 12:00 so this model reaches 10 dB. "
           "An illustration of stacking shelves: a lot of top for a master, so pull the gains back to taste." },
 
-        { "Massive Passive manual - Subsonic Filter",
-          channel (flat(), flat(), flat(), flat(), 3), false, 0.0f, CompSettings {}, 0, "Manley manuals",
-          "From the Massive Passive manual (Filters): the lowest high-pass is \"designed to remove sub-sonic frequencies that may have been boosted by previous EQ.\" "
-          "The mastering version's 23 Hz filter." },
-
         { "Variable Mu manual - Mastering Limit (2-4 dB)",
           channel (flat(), flat(), flat(), flat()), false, 0.0f, comp (6, 8, 6, 6, 10, Limit), 0, "Manley manuals",
           "From the Variable Mu manual: for clean limiting \"set the input for 2 to 4 dB of limiting, then adjust the outputs\", and slower recovery is \"the most inaudible\". "

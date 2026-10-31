@@ -188,13 +188,13 @@ inline std::vector<Preset> engineerPresets()
     }
     {   // Tom Lord-Alge - Explosive Rock Toms (1176)
         Preset p; p.name = "Tom Lord-Alge - Explosive Rock Toms (1176)"; p.category = "Drums"; p.full = true;
-        p.notes = "Floor and rack toms. 4:1 or 8:1 (8:1 used), attack 4, release 1 (slowest). Gain reduction not given: about 6 dB. Class-A: FEED FWD, threshold -14.9 dB (set it for about 6.0 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by Tom Lord-Alge.";
+        p.notes = "Floor and rack toms. 4:1 or 8:1 (4:1 used: Chris Lord-Alge's tom preset is the 8:1 one), attack 4, release 1 (slowest). Gain reduction not given: about 6 dB. Class-A: FEED FWD, threshold -16.0 dB (set it for about 6.0 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by Tom Lord-Alge.";
         p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
         p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
         p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
         p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -14.9; c.attackMs = 0.205; c.releaseMs = 1100; c.ratioPos = 10.09; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 6.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        for (auto& c : p.ca.ch) { c.thresholdDb = -16.0; c.attackMs = 0.205; c.releaseMs = 1100; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 6.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
     {   // Al Schmitt - Silky Tube Vocal Leveler

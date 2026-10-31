@@ -365,6 +365,29 @@ int main()
                                                          || list[(size_t) i].category == kManualCategory);
             for (const auto& p : list) if (p.full && p.category != "Mix & Master Bus" && presetHasEq (p) && p.name != "Init (Flat)") masterOnly = false;
             std::printf ("  EQ presets are stereo-master only: %s\n", masterOnly ? "yes" : "NO");
+            // no two presets in a unit's menu have the same settings
+            auto eqKey = [&] (const Preset& p)
+            {
+                juce::String k;
+                for (const auto& b : p.ch.band) k << (b.gainStep > 0 && b.mode != ppm::Out ? juce::String (b.freqIndex) + "," + juce::String (b.gainStep) + "," + juce::String (b.bwStep) + "," + juce::String (b.mode) + "," + juce::String ((int) b.shelf) : juce::String ("-")) << ";";
+                k << p.ch.hp << "/" << p.ch.lp << "/" << p.ch.trim;
+                if (p.full && p.pq.in) for (const auto& b : p.pq.ch[0].band) k << "|" << b.freqIdx << "," << b.shape << "," << b.level;
+                if (p.full && p.pq.in) k << "|" << p.pq.ch[0].hiShelfLevel << (int) p.pq.ch[0].hiShelf12k << p.pq.ch[0].loShelfLevel << (int) p.pq.ch[0].loShelf100;
+                return k;
+            };
+            auto vmKey = [] (const Preset& p) { const auto& c = p.comp; return juce::String (c.threshold) + "," + juce::String (c.attack) + "," + juce::String (c.recovery) + "," + juce::String (c.output) + "," + juce::String (c.mix) + "," + juce::String (c.mode); };
+            auto caKey = [] (const Preset& p) { const auto& h = p.ca.ch[0]; return juce::String (h.thresholdDb) + "," + juce::String (h.attackMs) + "," + juce::String (h.releaseMs) + "," + juce::String (h.ratioPos) + "," + juce::String ((int) h.feedForward) + "," + juce::String (h.mix); };
+            int dups = 0;
+            auto check = [&] (const std::vector<int>& ids, std::function<juce::String (const Preset&)> key)
+            {
+                for (size_t a = 0; a < ids.size(); ++a)
+                    for (size_t b = a + 1; b < ids.size(); ++b)
+                        if (key (list[(size_t) ids[a]]) == key (list[(size_t) ids[b]]))
+                        { std::printf ("  SAME SETTINGS: %s / %s\n", list[(size_t) ids[a]].name.c_str(), list[(size_t) ids[b]].name.c_str()); ++dups; }
+            };
+            check (eq, eqKey); check (vm, vmKey); check (ca, caKey);
+            std::printf ("  duplicate presets: %d\n", dups);
+            if (dups) ++failures;
             if (! masterOnly) ++failures;
             if (eq.size() < 25 || vm.size() < 8 || ca.size() < 25 || ! eqOk || ! caOk || ! vmOk) ++failures;
         }

@@ -129,7 +129,7 @@ static std::vector<Spec> specs()
         { "Alan Parsons", "Classic Rock Guitar EQ (TG12345)", G, "Heavy distorted guitars",
           { bell (2800, 2, 1.0), lshelf (200, -2) }, {}, "Presence +2 dB at 2.8 kHz, bass -2 dB at 200 Hz (console shelf)." },
         { "Tom Lord-Alge", "Explosive Rock Toms (1176)", D, "Floor and rack toms",
-          {}, { classA (8, k1176Att (4), k1176Rel (1), 6) }, "4:1 or 8:1 (8:1 used), attack 4, release 1 (slowest). Gain reduction not given: about 6 dB." },
+          {}, { classA (4, k1176Att (4), k1176Rel (1), 6) }, "4:1 or 8:1 (4:1 used: Chris Lord-Alge's tom preset is the 8:1 one), attack 4, release 1 (slowest). Gain reduction not given: about 6 dB." },
         { "Al Schmitt", "Silky Tube Vocal Leveler", V, "Natural jazz/pop lead vocal",
           {}, { variMu (20, 800, 1.5) }, "Tube leveler, attack and release on Medium, 1-2 dB on peaks." },
         { "Dave Pensado", "Vocal 'In-Your-Face' Mid Push", V, "Lead vocal",
