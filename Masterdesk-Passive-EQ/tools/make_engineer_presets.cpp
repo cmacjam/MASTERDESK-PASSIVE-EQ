@@ -13,6 +13,8 @@
 //    high/low pass  -> passive EQ filters (12-39 Hz, 15-52 kHz)
 //    compressors    -> M/S Class-A compressor (ratio, attack, release in ms)
 //                      or the Vari-Mu (tube / opto style units)
+//  EQ presets are for the stereo master only: track presets (vocals, drums, bass, guitars,
+//  keys) keep their compressor settings and leave their EQ moves out.
 //  Moves the plug-in cannot make (for example a 300 Hz high-pass) are left out
 //  and named in the preset's notes. Every preset's notes say how close the EQ
 //  curve came out.
@@ -386,8 +388,18 @@ int main()
                  "#pragma once\n\nnamespace ppm::presets\n{\ninline std::vector<Preset> engineerPresets()\n{\n    std::vector<Preset> v;\n");
     int count = 0;
     std::fprintf (stderr, "%-64s %s\n", "preset", "EQ fit (max dB over 30 Hz-16 kHz) / dropped");
-    for (const auto& sp : specs())
+    int strippedEq = 0, skipped = 0;
+    for (auto sp : specs())
     {
+        // EQ presets are for the stereo master only: track presets (vocals, drums, bass, guitars, keys)
+        // keep their compressor settings, their EQ moves are left out, and EQ-only track presets are skipped
+        if (sp.cat != "Mix & Master Bus" && ! sp.eq.empty())
+        {
+            if (sp.comps.empty() || sp.title.find ("Kick Chain") != std::string::npos) { ++skipped; continue; }   // the kick chain = the kick compressor preset
+            sp.eq.clear();
+            sp.notes += " Its EQ moves are left out: EQ presets here are for the stereo master only.";
+            ++strippedEq;
+        }
         Fit fit;
         for (const auto& m : sp.eq) place (fit, m);
 
@@ -506,6 +518,6 @@ int main()
                       fit.placed.empty() ? "-" : (std::to_string (worst).substr (0, 4) + " dB").c_str(), dropped.c_str());
     }
     std::printf ("    return v;\n}\n} // namespace ppm::presets\n");
-    std::fprintf (stderr, "%d presets\n", count);
+    std::fprintf (stderr, "%d presets (%d track EQ presets skipped, %d kept their compressor only)\n", count, skipped, strippedEq);
     return 0;
 }

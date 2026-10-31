@@ -32,23 +32,12 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Chris Lord-Alge - Snare Drum Snap
-        Preset p; p.name = "Chris Lord-Alge - Snare Drum Snap"; p.category = "Drums"; p.full = true;
-        p.notes = "Snare top mic. Bass slider -2 dB and treble +3.5 dB at 5 kHz as listed. The CLA Drums compressor slider has no ratio/time values, so it is not included. EQ curve within 0.7 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Chris Lord-Alge.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 7, 6, 0, 0, true }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 8; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
     {   // Andrew Scheps - Parallel Vocal Crush
         Preset p; p.name = "Andrew Scheps - Parallel Vocal Crush"; p.category = "Vocals"; p.full = true;
-        p.notes = "Auxiliary vocal parallel bus. All-buttons-in (~20:1) with attack 1 (slowest) and release 7 (fastest); WARM adds the grit. Pre-EQ -3 dB at 150 Hz; the +2.5 dB at 100 Hz post-lift runs before the compressor here (this plug-in's EQs come first). Use on a parallel bus, or blend with MIX. EQ curve within 0.5 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -18.5 dB (set it for about 10.0 dB of gain reduction). Release 60 ms (its fastest). Settings as given in the supplied list; not verified with or endorsed by Andrew Scheps.";
+        p.notes = "Auxiliary vocal parallel bus. All-buttons-in (~20:1) with attack 1 (slowest) and release 7 (fastest); WARM adds the grit. Pre-EQ -3 dB at 150 Hz; the +2.5 dB at 100 Hz post-lift runs before the compressor here (this plug-in's EQs come first). Use on a parallel bus, or blend with MIX. Its EQ moves are left out: EQ presets here are for the stereo master only. Class-A: FEED FWD, threshold -18.5 dB (set it for about 10.0 dB of gain reduction). Release 60 ms (its fastest). Settings as given in the supplied list; not verified with or endorsed by Andrew Scheps.";
         p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 7, 8, 2, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 13, 2, 18 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
         p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
         for (auto& c : p.ca.ch) { c.thresholdDb = -18.5; c.attackMs = 0.400; c.releaseMs = 60; c.ratioPos = 10.18; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 10.0; c.mix = 1.00; c.warm = true; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
@@ -131,17 +120,6 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -10.6; c.attackMs = 6.500; c.releaseMs = 400; c.ratioPos = 3.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 1.8; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Manny Marroquin - Universal Hip-Hop/Pop Kick EQ
-        Preset p; p.name = "Manny Marroquin - Universal Hip-Hop/Pop Kick EQ"; p.category = "Drums"; p.full = true;
-        p.notes = "Kick drum channel. Q not given for 300 Hz (1.4 used) or the 'sharp' 3.2 kHz boost (2.5 used). EQ curve within 0.5 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Manny Marroquin.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 7, 4, 15, 0, false }, { 5, 0, 7, 0, false }, 4, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 5, 2, 5 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 18; c.loShelf100 = false; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
     {   // Manny Marroquin - Kick Drum Punch Compression
         Preset p; p.name = "Manny Marroquin - Kick Drum Punch Compression"; p.category = "Drums"; p.full = true;
         p.notes = "Kick drum dynamics. SSL-style 4:1, 30 ms attack, 100 ms release, 3-4 dB of gain reduction. Class-A: FEED FWD, threshold -12.7 dB (set it for about 3.5 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by Manny Marroquin.";
@@ -153,56 +131,12 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -12.7; c.attackMs = 15.000; c.releaseMs = 100; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 3.5; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Manny Marroquin - Kick Chain (Punch Comp + Character EQ)
-        Preset p; p.name = "Manny Marroquin - Kick Chain (Punch Comp + Character EQ)"; p.category = "Drums"; p.full = true;
-        p.notes = "Kick drum channel. The two steps together. The list puts the compressor first; in this plug-in the EQ runs before the Class-A compressor. EQ curve within 0.5 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -12.7 dB (set it for about 3.5 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by Manny Marroquin.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 7, 4, 15, 0, false }, { 5, 0, 7, 0, false }, 4, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 5, 2, 5 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 18; c.loShelf100 = false; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -12.7; c.attackMs = 15.000; c.releaseMs = 100; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 3.5; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
     {   // Eric Boulanger - Surgical Mastering EQ
         Preset p; p.name = "Eric Boulanger - Surgical Mastering EQ"; p.category = "Mix & Master Bus"; p.full = true;
         p.notes = "Master bus correction. 3.5 kHz cut listed as -0.5 to -0.8 dB (middle value used). EQ curve within 0.9 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Eric Boulanger.";
         p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
         p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 3, 0);
         p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 2, 2, 10 }; c.band[2] = { 0, 3, 11 }; c.hiShelfLevel = 13; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Dave Pensado - Modern Pop Vocal 'Air' (Pultec)
-        Preset p; p.name = "Dave Pensado - Modern Pop Vocal 'Air' (Pultec)"; p.category = "Vocals"; p.full = true;
-        p.notes = "Lead vocal. Pultec HF 16 kHz, boost 3.5 and atten 1 at 20 kHz as listed; the knob numbers are read as about +5 dB and -1.5 dB. EQ curve within 0.1 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Dave Pensado.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 9, 11, 4, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 11; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Dave Pensado - Lead Vocal 'Warmth Rescue'
-        Preset p; p.name = "Dave Pensado - Lead Vocal 'Warmth Rescue'"; p.category = "Vocals"; p.full = true;
-        p.notes = "Thin vocal tracks. EQ curve within 0.2 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Dave Pensado.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 3, 2, 15 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Andrew Scheps - Classic Rock Guitar Presence (73)
-        Preset p; p.name = "Andrew Scheps - Classic Rock Guitar Presence (73)"; p.category = "Guitars & Keys"; p.full = true;
-        p.notes = "Distorted rhythm guitars. Neve-style mid at 3.2 kHz +2 dB. Q not given: 1.0. EQ curve within 0.2 dB of the listed moves (30 Hz-16 kHz). Not possible here, left out: high-pass 80 Hz (the EQs' high-pass stops at 39 Hz, the low-pass at 15 kHz). Settings as given in the supplied list; not verified with or endorsed by Andrew Scheps.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 7, 5, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
         p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
         for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
@@ -241,28 +175,6 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -14.0; c.attackMs = 2.500; c.releaseMs = 100; c.ratioPos = 3.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 4.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Serban Ghenea - Pristine Pop Vocal Air (40 kHz)
-        Preset p; p.name = "Serban Ghenea - Pristine Pop Vocal Air (40 kHz)"; p.category = "Vocals"; p.full = true;
-        p.notes = "Main pop vocal. Air band 40 kHz, +2-3 dB as listed (+2.5 used). EQ curve within 0.1 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Serban Ghenea.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 13; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Serban Ghenea - Pop Vocal Boxiness Cut
-        Preset p; p.name = "Serban Ghenea - Pop Vocal Boxiness Cut"; p.category = "Vocals"; p.full = true;
-        p.notes = "Lead vocal cleaning stage. 700-800 Hz as listed (750 Hz used). EQ curve within 0.4 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Serban Ghenea.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 10, 3, 9 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
     {   // Sören von Malmborg - Modern Pop Master Bus Glue (SSL G)
         Preset p; p.name = "Sören von Malmborg - Modern Pop Master Bus Glue (SSL G)"; p.category = "Mix & Master Bus"; p.full = true;
         p.notes = "High-energy pop master bus. 4:1, 30 ms attack, auto release, 1-2 dB of gain reduction. Class-A: FEED FWD, threshold -10.0 dB (set it for about 1.5 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by Sören von Malmborg.";
@@ -272,17 +184,6 @@ inline std::vector<Preset> engineerPresets()
         p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
         for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 15.000; c.releaseMs = 300; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = true; c.gainDb = 1.5; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Alan Parsons - Classic Rock Guitar EQ (TG12345)
-        Preset p; p.name = "Alan Parsons - Classic Rock Guitar EQ (TG12345)"; p.category = "Guitars & Keys"; p.full = true;
-        p.notes = "Heavy distorted guitars. Presence +2 dB at 2.8 kHz, bass -2 dB at 200 Hz (console shelf). EQ curve within 0.4 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Alan Parsons.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 7, 4, 0, 2, true }, { 9, 5, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
     {   // Tom Lord-Alge - Explosive Rock Toms (1176)
@@ -307,17 +208,6 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Dave Pensado - Vocal 'In-Your-Face' Mid Push
-        Preset p; p.name = "Dave Pensado - Vocal 'In-Your-Face' Mid Push"; p.category = "Vocals"; p.full = true;
-        p.notes = "Lead vocal. EQ curve within 0.3 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Dave Pensado.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 4, 10, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
     {   // Chris Lord-Alge - Smooth Pop Ballad Vocal (LA-2A)
         Preset p; p.name = "Chris Lord-Alge - Smooth Pop Ballad Vocal (LA-2A)"; p.category = "Vocals"; p.full = true;
         p.notes = "Dynamic pop/R&B vocals. Opto in COMPRESS, 4-6 dB of reduction with the slow two-stage release (1.2 s recovery here). Vari-Mu: threshold -13.5 dB (set it for about 5.0 dB), attack 10 ms, recovery 1.2 s. Settings as given in the supplied list; not verified with or endorsed by Chris Lord-Alge.";
@@ -325,17 +215,6 @@ inline std::vector<Preset> engineerPresets()
         p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
         p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
         p.comp.compIn = true; p.comp.threshold = 9; p.comp.attack = 2; p.comp.recovery = 4; p.comp.output = 10; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Lu Diaz - R&B Vocal Top-End
-        Preset p; p.name = "Lu Diaz - R&B Vocal Top-End"; p.category = "Vocals"; p.full = true;
-        p.notes = "Clean high-fidelity lead vocal. EQ curve within 0.3 dB of the listed moves (30 Hz-16 kHz). Not possible here, left out: high-pass 110 Hz (the EQs' high-pass stops at 39 Hz, the low-pass at 15 kHz). Settings as given in the supplied list; not verified with or endorsed by Lu Diaz.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 18; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
         for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
@@ -362,39 +241,6 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -12.0; c.attackMs = 0.205; c.releaseMs = 575; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 3.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Andrew Scheps - Background Vocal Stack Separation
-        Preset p; p.name = "Andrew Scheps - Background Vocal Stack Separation"; p.category = "Vocals"; p.full = true;
-        p.notes = "Background vocal group bus. EQ curve within 0.1 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Andrew Scheps.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 10, 7, 5, 2, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Phil Tan - Airy R&B Backing Vocals
-        Preset p; p.name = "Phil Tan - Airy R&B Backing Vocals"; p.category = "Vocals"; p.full = true;
-        p.notes = "Wide backing harmony stacks. EQ curve within 0.5 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Phil Tan.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 4, 5, 0, 2, true }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 19; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Eric Boulanger - Precision Vocal Mud Notch
-        Preset p; p.name = "Eric Boulanger - Precision Vocal Mud Notch"; p.category = "Vocals"; p.full = true;
-        p.notes = "Resonant lead vocal. EQ curve within 0.3 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Eric Boulanger.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 4, 4, 8 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
     {   // Lu Diaz - Aggressive Hip-Hop Vocal Leveling (1176)
         Preset p; p.name = "Lu Diaz - Aggressive Hip-Hop Vocal Leveling (1176)"; p.category = "Vocals"; p.full = true;
         p.notes = "Raw modern hip-hop lead. 4:1, attack 5, release 7 as listed. Gain reduction not given: about 6 dB. Class-A: FEED FWD, threshold -16.0 dB (set it for about 6.0 dB of gain reduction). Release 60 ms (its fastest). Settings as given in the supplied list; not verified with or endorsed by Lu Diaz.";
@@ -404,17 +250,6 @@ inline std::vector<Preset> engineerPresets()
         p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
         for (auto& c : p.ca.ch) { c.thresholdDb = -16.0; c.attackMs = 0.140; c.releaseMs = 60; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 6.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Manny Marroquin - Punchy Snare EQ
-        Preset p; p.name = "Manny Marroquin - Punchy Snare EQ"; p.category = "Drums"; p.full = true;
-        p.notes = "Snare top mic. Neve-style bands; Q not given: 1.0. EQ curve within 0.5 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Manny Marroquin.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 4, 7, 8, 2, false }, { 8, 7, 8, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
     {   // Chris Lord-Alge - Heavy Rock Toms (1176)
@@ -428,17 +263,6 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -14.9; c.attackMs = 0.205; c.releaseMs = 1100; c.ratioPos = 10.09; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 6.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Andy Wallace - Snare Rim Crack (SSL)
-        Preset p; p.name = "Andy Wallace - Snare Rim Crack (SSL)"; p.category = "Drums"; p.full = true;
-        p.notes = "Snare top channel. SSL bells; Q not given: 1.0. EQ curve within 0.2 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Andy Wallace.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 2, 5, 7, 0, false }, { 5, 0, 7, 0, false }, { 7, 8, 8, 0, false }, 0, 0);
-        p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
     {   // Tom Lord-Alge - Explosive Parallel Drum Crush (Nuke)
         Preset p; p.name = "Tom Lord-Alge - Explosive Parallel Drum Crush (Nuke)"; p.category = "Drums"; p.full = true;
         p.notes = "Parallel drum aux. Nuke (brickwall) at 15 % blend as listed. Distressor attack 2 / release 2 have no times given: about 1 ms and 150 ms. Class-A: FEED FWD, threshold -18.1 dB (set it for about 10.0 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by Tom Lord-Alge.";
@@ -448,17 +272,6 @@ inline std::vector<Preset> engineerPresets()
         p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
         for (auto& c : p.ca.ch) { c.thresholdDb = -18.1; c.attackMs = 0.500; c.releaseMs = 150; c.ratioPos = 10.23; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.8; c.mix = 0.15; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Dave Rat - Live Punchy Kick Definition
-        Preset p; p.name = "Dave Rat - Live Punchy Kick Definition"; p.category = "Drums"; p.full = true;
-        p.notes = "Kick drum in mic. 3.5 kHz boost Q not given: 1.2. EQ curve within 1.1 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Dave Rat.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 4, 4, 1 }; c.band[2] = { 0, 2, 19 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
     {   // Bob Clearmountain - Transparent Overhead Leveling
@@ -505,28 +318,6 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Lu Diaz - Hip-Hop 808/Kick Separation
-        Preset p; p.name = "Lu Diaz - Hip-Hop 808/Kick Separation"; p.category = "Drums"; p.full = true;
-        p.notes = "Hip-hop sub-kick channel. EQ curve within 0.4 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Lu Diaz.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 0, 5, 14, 2, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Greg Fidelman - Hard Rock Floor Tom Attack
-        Preset p; p.name = "Greg Fidelman - Hard Rock Floor Tom Attack"; p.category = "Drums"; p.full = true;
-        p.notes = "Floor toms. SSL bells; Q not given: 1.0. EQ curve within 0.6 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Greg Fidelman.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 7, 8, 8, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 18 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
     {   // Chris Lord-Alge - Wall-of-Sound Guitars (SSL G comp)
         Preset p; p.name = "Chris Lord-Alge - Wall-of-Sound Guitars (SSL G comp)"; p.category = "Guitars & Keys"; p.full = true;
         p.notes = "Hard-rock L/R guitars. 2:1, 1 ms attack, 100 ms release, 1.5-2 dB. Class-A: FEEDBACK, threshold -11.5 dB (set it for about 1.8 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by Chris Lord-Alge.";
@@ -536,17 +327,6 @@ inline std::vector<Preset> engineerPresets()
         p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
         for (auto& c : p.ca.ch) { c.thresholdDb = -11.5; c.attackMs = 1.000; c.releaseMs = 100; c.ratioPos = 7.50; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 1.8; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Dave Pensado - Lush Acoustic Guitar Brilliance
-        Preset p; p.name = "Dave Pensado - Lush Acoustic Guitar Brilliance"; p.category = "Guitars & Keys"; p.full = true;
-        p.notes = "Strummed acoustic guitars. EQ curve within 0.4 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Dave Pensado.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 7, 8, 7, 2, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 19; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
     {   // Alan Parsons - Prog-Rock Acoustic Guitar (LA-3A)
@@ -571,28 +351,6 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Eddie Kramer - Vintage Fuzz Guitar EQ (Helios)
-        Preset p; p.name = "Eddie Kramer - Vintage Fuzz Guitar EQ (Helios)"; p.category = "Guitars & Keys"; p.full = true;
-        p.notes = "Fuzz guitar solos. EQ curve within 0.2 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Eddie Kramer.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 19; c.hiShelf12k = true; c.loShelfLevel = 7; c.loShelf100 = false; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Manny Marroquin - Warm Grand Piano Body
-        Preset p; p.name = "Manny Marroquin - Warm Grand Piano Body"; p.category = "Guitars & Keys"; p.full = true;
-        p.notes = "Stereo acoustic piano. Broad 250 Hz bell (Q 0.6); 2.5 kHz Q not given: 1.0. EQ curve within 0.3 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Manny Marroquin.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 9, 5, 7, 2, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 4, 1, 15 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
     {   // Joe Chiccarelli - Indie Rock Bass Saturation (SSL comp)
         Preset p; p.name = "Joe Chiccarelli - Indie Rock Bass Saturation (SSL comp)"; p.category = "Bass"; p.full = true;
         p.notes = "Electric bass. 4:1, 3 ms attack, 100 ms release. Gain reduction not given: about 4 dB. Class-A: FEED FWD, threshold -13.3 dB (set it for about 4.0 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by Joe Chiccarelli.";
@@ -602,17 +360,6 @@ inline std::vector<Preset> engineerPresets()
         p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
         for (auto& c : p.ca.ch) { c.thresholdDb = -13.3; c.attackMs = 1.500; c.releaseMs = 100; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 4.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Greg Fidelman - Metal Riff Guitar Fizz Cut
-        Preset p; p.name = "Greg Fidelman - Metal Riff Guitar Fizz Cut"; p.category = "Guitars & Keys"; p.full = true;
-        p.notes = "High-gain rhythm guitars. EQ curve within 0.3 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Greg Fidelman.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 20, 4, 6 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
     {   // Tchad Blake - Acoustic Guitar Parallel Smash (1176)
@@ -635,17 +382,6 @@ inline std::vector<Preset> engineerPresets()
         p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
         p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
         for (auto& c : p.ca.ch) { c.thresholdDb = -14.0; c.attackMs = 6.500; c.releaseMs = 300; c.ratioPos = 3.53; c.feedForward = true; c.autoFastAttack = true; c.autoFastRelease = true; c.gainDb = 4.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
-        v.push_back (p);
-    }
-    {   // Sören von Malmborg - Pop Acoustic Guitar Shimmer (Air 20k)
-        Preset p; p.name = "Sören von Malmborg - Pop Acoustic Guitar Shimmer (Air 20k)"; p.category = "Guitars & Keys"; p.full = true;
-        p.notes = "Stereo pop acoustic guitars. EQ curve within 0.1 dB of the listed moves (30 Hz-16 kHz). Settings as given in the supplied list; not verified with or endorsed by Sören von Malmborg.";
-        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
-        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
-        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 15; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
-        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
-        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
-        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
     {   // Bob Katz - Parallel Mastering 'Tonalisation Clear'

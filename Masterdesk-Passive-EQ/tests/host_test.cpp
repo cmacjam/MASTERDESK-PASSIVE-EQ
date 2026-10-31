@@ -339,7 +339,7 @@ int main()
                 if (worst > 0.35) { std::printf ("  ENGINEER PRESET %s: plug-in %.2f dB off its model\n", pr.name.c_str(), worst); ++failures; }
             }
             std::printf ("  engineer presets: %d (%d with EQ), plug-in vs model worst %.2f dB, compressor settings land: checked\n", nEng, nEq, worstAll);
-            if (nEng < 60) ++failures;
+            if (nEng < 35) ++failures;
         }
         // PRESETS buttons on the units: each lists its own presets and changes only its own unit
         {
@@ -360,7 +360,13 @@ int main()
             const bool vmOk = vms.compIn && vms.threshold == list[(size_t) schmitt].comp.threshold && proc.getClassASettings().in && proc.getParametricSettings().in;
             std::printf ("  unit PRESETS buttons: EQ %d, Vari-Mu %d, Class-A %d presets; EQ only %s, Class-A only %s, Vari-Mu only %s\n",
                          (int) eq.size(), (int) vm.size(), (int) ca.size(), eqOk ? "ok" : "WRONG", caOk ? "ok" : "WRONG", vmOk ? "ok" : "WRONG");
-            if (eq.size() < 40 || vm.size() < 8 || ca.size() < 25 || ! eqOk || ! caOk || ! vmOk) ++failures;
+            bool masterOnly = true;
+            for (int i : eq) masterOnly = masterOnly && (list[(size_t) i].category == "Factory" || list[(size_t) i].category == "Mix & Master Bus"
+                                                         || list[(size_t) i].category == kManualCategory);
+            for (const auto& p : list) if (p.full && p.category != "Mix & Master Bus" && presetHasEq (p) && p.name != "Init (Flat)") masterOnly = false;
+            std::printf ("  EQ presets are stereo-master only: %s\n", masterOnly ? "yes" : "NO");
+            if (! masterOnly) ++failures;
+            if (eq.size() < 25 || vm.size() < 8 || ca.size() < 25 || ! eqOk || ! caOk || ! vmOk) ++failures;
         }
         // state round-trip keeps the program and parameters
         proc.setCurrentProgram (3);

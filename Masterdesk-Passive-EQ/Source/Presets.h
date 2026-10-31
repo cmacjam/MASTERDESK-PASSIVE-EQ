@@ -162,6 +162,43 @@ inline const std::vector<Preset>& all()
         { "Engineer Move - Analog Warmth (tubes)",         // low-mid bloom, soft air, tubes pushed
           channel (flat(), band (1, 3, 0), flat(), band (10, 3, 0, Boost, true), 2),
           true, 6.0f },
+
+        // ---- From the Manley manuals: the starting settings Manley's own manuals give --------
+        //      (the hardware has no presets; Sontec and elysia publish no settings)
+        { "Massive Passive manual - Stacked High Shelves",
+          channel (flat(), flat(), band (7, 8, 7, Boost, true), band (8, 15, 3, Boost, true), 0), false, 0.0f, CompSettings {}, 0, "Manley manuals",
+          "From the Massive Passive manual (Shelf & Bell): \"start boosting at 3K3, say 4 dB, then apply another high shelf to boost 12K, say for 10 dB.\" "
+          "3.3 kHz shelf +4 dB at 12:00 bandwidth (the manual's starting point for shelves); 12 kHz shelf +10 dB, bandwidth a little wider than 12:00 so this model reaches 10 dB. "
+          "An illustration of stacking shelves: a lot of top for a master, so pull the gains back to taste." },
+
+        { "Massive Passive manual - Subsonic Filter",
+          channel (flat(), flat(), flat(), flat(), 3), false, 0.0f, CompSettings {}, 0, "Manley manuals",
+          "From the Massive Passive manual (Filters): the lowest high-pass is \"designed to remove sub-sonic frequencies that may have been boosted by previous EQ.\" "
+          "The mastering version's 23 Hz filter." },
+
+        { "Variable Mu manual - Mastering Limit (2-4 dB)",
+          channel (flat(), flat(), flat(), flat()), false, 0.0f, comp (6, 8, 6, 6, 10, Limit), 0, "Manley manuals",
+          "From the Variable Mu manual: for clean limiting \"set the input for 2 to 4 dB of limiting, then adjust the outputs\", and slower recovery is \"the most inaudible\". "
+          "LIMIT mode, threshold for about 3 dB, attack at 12:00 (~50 ms), recovery 4 s, +3 dB output. Adjust the threshold for 2-4 dB on the meter." },
+
+        { "Variable Mu manual - Gentle Mix Compression",
+          channel (flat(), flat(), flat(), flat()), false, 0.0f, comp (7, 8, 2, 7, 10, Compress), 0, "Manley manuals",
+          "From the Variable Mu manual: start with the controls at 12:00 and \"typical amounts of gain reduction ... should be 2 to 6 dB\". "
+          "COMPRESS mode (about 1.5:1), attack ~50 ms, recovery 0.6 s (12:00), about 3 dB of gain reduction." },
+
+        { "Variable Mu manual - Drums (Fast Attack)",
+          channel (flat(), flat(), flat(), flat()), false, 0.0f, comp (8, 5, 2, 8, 10, Compress), 0, "Manley manuals",
+          "From the Variable Mu manual: for drums, try fast attack with medium recovery (and slow the attack if the drums already sit well). "
+          "Attack 25 ms (the manual's Fast), recovery 0.6 s, about 4 dB." },
+
+        { "Variable Mu manual - Vocals & Bass (Slow Attack)",
+          channel (flat(), flat(), flat(), flat()), false, 0.0f, comp (7, 9, 2, 7, 10, Compress), 0, "Manley manuals",
+          "From the Variable Mu manual: a slow attack ignores the drums and reacts to vocals and bass. Attack 70 ms (the manual's Slow), recovery 0.6 s, about 3 dB." },
+
+        { "Variable Mu manual - Tube Colour",
+          channel (flat(), flat(), flat(), flat()), true, 6.0f, comp (3, 8, 2, 2, 10, Compress), 0, "Manley manuals",
+          "From the Variable Mu manual: for creative distortion, raise the input, lower the outputs and use little or no compression. "
+          "About 1 dB of compression with the tube stage driven +6 dB." },
     };
     // then the engineer presets, grouped by category (each group keeps the list's order)
     auto eng = engineerPresets();
@@ -172,6 +209,8 @@ inline const std::vector<Preset>& all()
     }();
     return list;
 }
+
+inline const char* const kManualCategory = "Manley manuals";
 
 // ---- per-unit preset lists (indices into all()) ------------------------------------------
 inline bool presetHasEq (const Preset& p)

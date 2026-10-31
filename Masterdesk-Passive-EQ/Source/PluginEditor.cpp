@@ -2844,8 +2844,14 @@ void UnitPresetButton::clicked()
     const auto& list = all();
     juce::PopupMenu menu;
     bool anyFactory = false;
+    juce::PopupMenu manual;
     for (int i : ids)
-        if (! list[(size_t) i].full) { menu.addItem (i + 1, proc.getProgramName (i)); anyFactory = true; }
+    {
+        if (list[(size_t) i].full) continue;
+        if (list[(size_t) i].category == kManualCategory) manual.addItem (i + 1, proc.getProgramName (i));
+        else { menu.addItem (i + 1, proc.getProgramName (i)); anyFactory = true; }
+    }
+    if (manual.getNumItems() > 0) { menu.addSubMenu ("From the Manley manuals", manual); anyFactory = true; }
     if (anyFactory) menu.addSeparator();
     menu.addSectionHeader ("ENGINEER PRESETS (settings as listed)");
     for (const char* cat : kEngineerCategories)
@@ -3113,6 +3119,13 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
         for (int i = 0; i < proc.getNumPrograms(); ++i)
             if (proc.getProgramCategory (i) == "Factory") root->addItem (i + 1, proc.getProgramName (i));
             else cats.addIfNotAlreadyThere (proc.getProgramCategory (i));
+        cats.removeString (ppm::presets::kManualCategory);
+        {
+            juce::PopupMenu man;
+            for (int i = 0; i < proc.getNumPrograms(); ++i)
+                if (proc.getProgramCategory (i) == ppm::presets::kManualCategory) man.addItem (i + 1, proc.getProgramName (i));
+            if (man.getNumItems() > 0) root->addSubMenu ("From the Manley manuals", man);
+        }
         root->addSeparator();
         root->addSectionHeader ("ENGINEER PRESETS (settings as listed)");
         for (const auto& cat : cats)
