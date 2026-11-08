@@ -1,15 +1,16 @@
 # Builds, tests, validates and packages Basemental MasterDesk Mastering Suite on macOS, Windows and Linux.
+#  - VST3, AU (Mac), AAX for Pro Tools (Mac + Windows), standalone app.
 #  - Every push / pull request: installers appear under the run's "Artifacts".
 #  - Pushing a tag like v1.0.0: also publishes a GitHub Release with the installers.
 name: Build plugin
-
+ 
 on:
   push:
     branches: [ main, master ]
     tags: [ 'v*' ]
   pull_request:
   workflow_dispatch:
-
+ 
 env:
   BUILD_TYPE: Release
   # Apple signing + notarization switch on automatically once these repository secrets exist
@@ -19,22 +20,22 @@ env:
   ART: build/PassiveMasterEQ_artefacts/Release
   OLD_NAME: Masterdesk Passive EQ        # earlier versions: removed when installing
   # NAME (the plug-in's name) is read from CMakeLists.txt in the "Version" step
-
+ 
 jobs:
   build:
-    name: ${{ matrix.name }}å
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: macOS,   os: macos-14 }
+          - { name: macOS,   os: macos-15 }       # macos-14 was retired by GitHub on 2 Nov 2026
           - { name: Windows, os: windows-2022 }
-          - { name: Linux,   os: ubuntu-22.04 }
-
+          - { name: Linux,   os: ubuntu-24.04 }   # ubuntu-22.04 is deprecated (removed Apr 2027)
+ 
     steps:
       - uses: actions/checkout@v4
-
+ 
       # Works whether the project files are at the top of the repository or inside a
       # folder (e.g. "MasterDesk-Mastering-Suite/") after a web upload. If there are
       # several copies (an old one at the top and a new one in a folder), the newest wins.
@@ -60,7 +61,7 @@ jobs:
             echo "::notice::Using the newest project, version $bestv, from the folder $best"
             cp -R "$best"/. .
           fi
-
+ 
       - name: Version
         id: ver
         shell: bash
@@ -71,7 +72,7 @@ jobs:
           n=$(sed -n 's/^ *PRODUCT_NAME *"\(.*\)".*/\1/p' CMakeLists.txt | head -1)
           echo "Building $n $v"
           echo "NAME=$n" >> "$GITHUB_ENV"
-
+ 
       - name: Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -79,13 +80,13 @@ jobs:
           sudo apt-get install -y libasound2-dev libjack-jackd2-dev libx11-dev libxext-dev libxrandr-dev \
             libxinerama-dev libxcursor-dev libxcomposite-dev libxrender-dev libfreetype-dev \
             libfontconfig1-dev libgl1-mesa-dev ninja-build
-
+ 
       - name: Cache JUCE download
         uses: actions/cache@v4
         with:
           path: build/_deps
           key: juce-8.0.10-${{ runner.os }}
-
+ 
       - name: Configure
         shell: bash
         run: |
@@ -96,23 +97,23 @@ jobs:
           else
             cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPPM_BUILD_TESTS=ON
           fi
-
+ 
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 4
-
+ 
       - name: Run tests (DSP model + processor + presets)
         shell: bash
         env:
           PPM_SNAPSHOT_DIR: ${{ github.workspace }}/screenshots
         run: ctest --test-dir build -C $BUILD_TYPE --output-on-failure
-
+ 
       - name: Upload UI screenshots
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-${{ matrix.name }}
           path: screenshots
           if-no-files-found: ignore
-
+ 
       # --- third-party validation (reported, never blocks the installers) ------
       - name: pluginval (VST3)
         continue-on-error: true
@@ -128,7 +129,7 @@ jobs:
           extra=""; [ "$RUNNER_OS" = "Linux" ] && extra="--skip-gui-tests"
           "$exe" --strictness-level 5 --validate-in-process $extra --output-dir pluginval-logs \
                  --validate "$ART/VST3/$NAME.vst3"
-
+ 
       - name: auval (Audio Unit)
         if: runner.os == 'macOS'
         continue-on-error: true
@@ -137,7 +138,7 @@ jobs:
           cp -R "$ART/AU/$NAME.component" ~/Library/Audio/Plug-Ins/Components/
           killall -9 AudioComponentRegistrar || true
           auval -v aufx Mdeq Bsmt
-
+ 
       # --- Apple Developer ID signing (removes the "Apple could not verify..." warning) -------
       - name: Set up Apple signing
         if: runner.os == 'macOS' && env.HAS_APPLE_SIGNING == 'true'
@@ -170,7 +171,7 @@ jobs:
           <plist version="1.0"><dict><key>com.apple.security.device.audio-input</key><true/></dict></plist>
           PLIST
           echo "APP_ENTITLEMENTS=$RUNNER_TEMP/app.entitlements" >> "$GITHUB_ENV"
-
+ 
       # --- packaging ------------------------------------------------------------
       # Plain zip of the Mac plug-ins first, so you always get them even if the .pkg step has a problem
       - name: Zip macOS plug-ins
@@ -183,7 +184,10 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           ZIP="$GITHUB_WORKSPACE/dist/MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-macOS-plugins.zip"
-          for b in "$ART/VST3/$NAME.vst3" "$ART/AU/$NAME.component" "$ART/Standalone/$NAME.app"; do
+          BUNDLES=("VST3/$NAME.vst3" "AU/$NAME.component" "Standalone/$NAME.app")
+          [ -d "$ART/AAX/$NAME.aaxplugin" ] && BUNDLES+=("AAX/$NAME.aaxplugin")       # Pro Tools
+          for rel in "${BUNDLES[@]}"; do
+            b="$ART/$rel"
             if [ -n "${SIGN_APP:-}" ]; then
               ent=""; case "$b" in *.app) ent="--entitlements $APP_ENTITLEMENTS" ;; esac
               codesign --force --options runtime --timestamp $ent --sign "$SIGN_APP" "$b"
@@ -192,15 +196,15 @@ jobs:
               codesign --force --deep --sign - "$b"          # unsigned build (no Apple secrets set)
             fi
           done
-          (cd "$ART" && zip -qry "$ZIP" "VST3/$NAME.vst3" "AU/$NAME.component" "Standalone/$NAME.app")
+          (cd "$ART" && zip -qry "$ZIP" "${BUNDLES[@]}")
           if [ -n "${SIGN_APP:-}" ] && [ "$HAS_APPLE_NOTARY" = "true" ]; then
             echo "Notarizing the plug-ins with Apple (takes a few minutes)..."
             xcrun notarytool submit "$ZIP" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait --timeout 30m
-            for b in "$ART/VST3/$NAME.vst3" "$ART/AU/$NAME.component" "$ART/Standalone/$NAME.app"; do xcrun stapler staple "$b"; done
+            for rel in "${BUNDLES[@]}"; do xcrun stapler staple "$ART/$rel" || echo "(nothing to staple on $rel)"; done
             rm -f "$ZIP"
-            (cd "$ART" && zip -qry "$ZIP" "VST3/$NAME.vst3" "AU/$NAME.component" "Standalone/$NAME.app")
+            (cd "$ART" && zip -qry "$ZIP" "${BUNDLES[@]}")
           fi
-
+ 
       # The .pkg installer is built right here, so this workflow file is the only thing to keep up to date
       - name: Package macOS installer
         if: runner.os == 'macOS'
@@ -217,7 +221,11 @@ jobs:
           cp -R "$ART/VST3/$NAME.vst3"      "$STAGE/vst3/"
           cp -R "$ART/AU/$NAME.component"   "$STAGE/au/"
           cp -R "$ART/Standalone/$NAME.app" "$STAGE/app/"
-
+          HAVE_AAX=false
+          if [ -d "$ART/AAX/$NAME.aaxplugin" ]; then
+            HAVE_AAX=true; mkdir -p "$STAGE/aax"; cp -R "$ART/AAX/$NAME.aaxplugin" "$STAGE/aax/"
+          fi
+ 
           # removes copies installed under the old name, so the DAW doesn't list the plug-in twice
           mkdir -p "$STAGE/scripts"
           cat > "$STAGE/scripts/preinstall" <<SH
@@ -226,7 +234,7 @@ jobs:
           exit 0
           SH
           chmod +x "$STAGE/scripts/preinstall"
-
+ 
           make_pkg () {   # <root> <id-suffix> <install-location>
             local root="$1" suffix="$2" location="$3" plist="$STAGE/$2.plist" i=0
             pkgbuild --analyze --root "$root" "$plist"
@@ -243,17 +251,25 @@ jobs:
           make_pkg "$STAGE/vst3" vst3 "/Library/Audio/Plug-Ins/VST3"
           make_pkg "$STAGE/au"   au   "/Library/Audio/Plug-Ins/Components"
           make_pkg "$STAGE/app"  app  "/Applications"
-
+          $HAVE_AAX && make_pkg "$STAGE/aax" aax "/Library/Application Support/Avid/Audio/Plug-Ins"
+          AAX_LINE=""; AAX_CHOICE=""; AAX_REF=""; AAX_TEXT=""
+          if $HAVE_AAX; then
+            AAX_LINE='<line choice="aax"/>'
+            AAX_CHOICE="<choice id=\"aax\" title=\"Pro Tools (AAX)\" description=\"For Pro Tools. Retail Pro Tools needs the PACE-signed version: see the README.\"><pkg-ref id=\"$ID.aax\"/></choice>"
+            AAX_REF="<pkg-ref id=\"$ID.aax\" version=\"$VERSION\">aax.pkg</pkg-ref>"
+            AAX_TEXT="  - Pro Tools (AAX) -> /Library/Application Support/Avid/Audio/Plug-Ins"
+          fi
+ 
           printf '%s\n' "Basemental MasterDesk Mastering Suite" "" \
             "Passive EQ, Vari-Mu compressor, Auto Master and Maximizer, with VU, spectrum, song key, vectorscope and LUFS metering." "" \
             "Earlier versions installed as 'Masterdesk Passive EQ' are replaced automatically (your saved sessions keep working)." "" \
             "Choose what to install on the next screens:" \
             "  - VST3 plug-in   -> /Library/Audio/Plug-Ins/VST3" \
             "  - Audio Unit     -> /Library/Audio/Plug-Ins/Components   (Logic Pro, GarageBand)" \
-            "  - Standalone app -> /Applications" "" \
+            "  - Standalone app -> /Applications" "$AAX_TEXT" "" \
             "Afterwards, rescan plug-ins in your DAW. Inside the plug-in, press HELP ? for a guide." \
             > "$STAGE/resources/welcome.txt"
-
+ 
           cat > "$STAGE/distribution.xml" <<XML
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="2">
@@ -261,16 +277,18 @@ jobs:
             <welcome file="welcome.txt" mime-type="text/plain"/>
             <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
             <domains enable_localSystem="true"/>
-            <choices-outline><line choice="vst3"/><line choice="au"/><line choice="app"/></choices-outline>
+            <choices-outline><line choice="vst3"/><line choice="au"/>$AAX_LINE<line choice="app"/></choices-outline>
             <choice id="vst3" title="VST3 plug-in" description="For Cubase, Ableton Live, Studio One, Reaper, FL Studio, Bitwig."><pkg-ref id="$ID.vst3"/></choice>
             <choice id="au" title="Audio Unit (AU)" description="For Logic Pro, GarageBand and other AU hosts."><pkg-ref id="$ID.au"/></choice>
             <choice id="app" title="Standalone app" description="Runs on its own without a DAW."><pkg-ref id="$ID.app"/></choice>
             <pkg-ref id="$ID.vst3" version="$VERSION">vst3.pkg</pkg-ref>
             <pkg-ref id="$ID.au" version="$VERSION">au.pkg</pkg-ref>
             <pkg-ref id="$ID.app" version="$VERSION">app.pkg</pkg-ref>
+            $AAX_CHOICE
+            $AAX_REF
           </installer-gui-script>
           XML
-
+ 
           PKG="dist/MasterDesk-Mastering-Suite-$VERSION-macOS.pkg"
           SIGNARGS=()
           [ -n "${SIGN_PKG:-}" ] && SIGNARGS=(--sign "$SIGN_PKG" --timestamp)
@@ -288,7 +306,7 @@ jobs:
             echo "::warning::The Mac installer is NOT signed, so macOS will warn when opening it. Add the Apple secrets (see README) to sign and notarize it."
           fi
           echo "Built $PKG"
-
+ 
       - name: Package Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -298,9 +316,18 @@ jobs:
           $art  = Resolve-Path "$env:ART"
           New-Item -ItemType Directory -Force dist | Out-Null
           $out  = Resolve-Path dist
-          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" "/DArtefacts=$art" "/DOutDir=$out" installer\windows\installer.iss
+          # use the plug-in's real name, whatever version of installer.iss is in the repository
+          $iss = Get-Content installer\windows\installer.iss -Raw
+          $iss = [regex]::Replace($iss, '(?m)^#define AppName ".*"', ('#define AppName "' + $env:NAME + '"'))
+          Set-Content -Path installer\windows\installer.ci.iss -Value $iss -Encoding utf8BOM
+          Write-Host "Packaging '$env:NAME'"
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" "/DArtefacts=$art" "/DOutDir=$out" installer\windows\installer.ci.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path "$art\AAX\$env:NAME.aaxplugin") {
+            Compress-Archive -Path "$art\AAX\$env:NAME.aaxplugin" -DestinationPath "dist\MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Windows-AAX-unsigned.zip"
+          }
           Compress-Archive -Path "$art\VST3\$env:NAME.vst3" -DestinationPath "dist\MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Windows-VST3.zip"
-
+ 
       - name: Package Linux tarball
         if: runner.os == 'Linux'
         run: |
@@ -309,9 +336,10 @@ jobs:
           cp -R "$ART/VST3/$NAME.vst3" "dist/$pkg/"
           cp "$ART/Standalone/$NAME" "dist/$pkg/"
           cp installer/linux/install.sh "dist/$pkg/" && chmod +x "dist/$pkg/install.sh"
+          sed -i "s/^NAME=.*/NAME=\"$NAME\"/" "dist/$pkg/install.sh"      # the plug-in's real name
           tar -C dist -czf "dist/$pkg.tar.gz" "$pkg"
           rm -rf "dist/$pkg"
-
+ 
       - name: Upload installers
         if: always()
         uses: actions/upload-artifact@v4
@@ -319,7 +347,7 @@ jobs:
           name: MasterDesk-Mastering-Suite-${{ matrix.name }}
           path: dist/*
           if-no-files-found: ignore
-
+ 
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
@@ -337,3 +365,4 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+ 
