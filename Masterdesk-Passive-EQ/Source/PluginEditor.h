@@ -490,6 +490,7 @@ public:
     UnitPresetButton (PassiveMasterEQProcessor& p, int kind);
     void clicked() override;
     static constexpr int kW = 104, kH = 24;
+    static constexpr int kLinkToggleId = 100000;
 private:
     void applied (int index);
     PassiveMasterEQProcessor& proc;

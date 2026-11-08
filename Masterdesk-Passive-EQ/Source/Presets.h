@@ -65,6 +65,8 @@ inline ChannelSettings channel (BandSettings low, BandSettings lowMid, BandSetti
 namespace ppm::presets
 {
 inline const char* const kEngineerCategories[] = { "Vocals", "Drums", "Bass", "Guitars & Keys", "Mix & Master Bus" };
+inline const char* const kTrackCategories[]    = { "Track: Keys & Pads", "Track: Guitars", "Track: Drums" };
+inline bool isTrackCategory (const std::string& c) { return c.rfind ("Track: ", 0) == 0; }
 
 inline const std::vector<Preset>& all()
 {
@@ -200,6 +202,9 @@ inline const std::vector<Preset>& all()
     for (const char* cat : kEngineerCategories)
         for (const auto& p : eng)
             if (p.category == cat) list.push_back (p);
+    for (const char* cat : kTrackCategories)                 // then the instrument / drum track presets
+        for (const auto& p : eng)
+            if (p.category == cat) list.push_back (p);
     return list;
     }();
     return list;
@@ -228,5 +233,39 @@ inline std::vector<int> unitPresets (UnitKind k)
         if (ok) out.push_back (i);
     }
     return out;
+}
+
+// ---- the compressor that goes with an EQ preset ---------------------------------------------
+//  Choosing an EQ preset can also set the matching compressor (and switch the other one out):
+//  a preset's own compressor if it has one; otherwise, for a stereo-master curve, a mastering
+//  compressor that suits the curve's character.
+struct LinkedComp { UnitKind kind = UnitKind::Eq; int index = -1; };   // kind Eq = no compressor
+inline int presetIndex (const char* name)
+{
+    const auto& l = all();
+    for (int i = 0; i < (int) l.size(); ++i) if (l[(size_t) i].name == name) return i;
+    return -1;
+}
+inline double presetEqDb (const Preset& p, double f)
+{
+    ChannelSettings c = p.ch; c.hp = 0; c.lp = 0;
+    return channelResponseDb (c, f) + (p.full && p.pq.in ? sontec::channelResponseDb (p.pq.ch[0], f) : 0.0);
+}
+inline LinkedComp linkedCompressor (int index)
+{
+    const auto& l = all();
+    if (! (index >= 0 && index < (int) l.size())) return {};
+    const auto& p = l[(size_t) index];
+    if (p.full && p.ca.in) return { UnitKind::ClassA, index };
+    if (p.comp.compIn && p.comp.threshold > 0) return { UnitKind::VariMu, index };
+    if (isTrackCategory (p.category) || p.name == "Init (Flat)") return {};
+    // stereo-master curve: pick by character (strongest boost low and high; these shelves dip before they lift)
+    auto maxDb = [&p] (double a, double b) { double m = 0.0; for (double f = a; f <= b; f *= 1.06) m = std::max (m, presetEqDb (p, f)); return m; };
+    const double lo = maxDb (25.0, 120.0), hi = maxDb (8000.0, 20000.0);
+    if (lo > 0.8 && hi > 0.8)                                        // smile / loud: punchy bus glue
+        return { UnitKind::ClassA, presetIndex ("S\xc3\xb6ren von Malmborg - Modern Pop Master Bus Glue (SSL G)") };
+    if (p.driveDb > 0.0f || lo > hi + 0.3)                           // warm / weighty / tube colour: tube glue
+        return { UnitKind::VariMu, presetIndex ("Variable Mu manual - Gentle Mix Compression") };
+    return { UnitKind::ClassA, presetIndex ("Ian Shepherd - Safe Master Bus Glue (SSL G)") };   // bright / air / corrective: clean glue
 }
 } // namespace ppm::presets

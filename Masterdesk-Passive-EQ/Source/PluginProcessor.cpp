@@ -308,7 +308,10 @@ void PassiveMasterEQProcessor::setCurrentProgram (int index)
     const auto& pr = list[(size_t) index];
 
     applySettings (pr.ch, pr.comp, pr.order, pr.tubeOn, pr.driveDb);
-    if (pr.full) { applyParametric (pr.pq); applyClassA (pr.ca); }    // engineer presets set every unit
+    // a whole preset sets every unit: engineer presets carry Parametric EQ + Class-A settings,
+    // factory presets (passive EQ + vari-mu) switch those two units out
+    if (pr.full) { applyParametric (pr.pq); applyClassA (pr.ca); }
+    else         { setParamPlain (params::pq::in, 0.0f); setParamPlain (params::ca::in, 0.0f); }
     setParamPlain (params::maxOn, 0.0f);          // presets are EQ + compressor only: maximizer off
     setParamPlain (params::maxGain, 0.0f);
 }
@@ -357,7 +360,7 @@ void PassiveMasterEQProcessor::applySettings (const ChannelSettings& chs, const 
     set (params::tubeDrive, driveDb);
 }
 
-void PassiveMasterEQProcessor::applyEqPreset (int index)
+void PassiveMasterEQProcessor::applyEqPreset (int index, bool withLinkedComp)
 {
     const auto& list = presets::all();
     if (! juce::isPositiveAndBelow (index, (int) list.size())) return;
@@ -380,6 +383,13 @@ void PassiveMasterEQProcessor::applyEqPreset (int index)
     }
     setParamPlain (params::link, 1.0f);
     if (pr.full) applyParametric (pr.pq);        // engineer EQ presets use both EQs together
+    if (! withLinkedComp) return;
+    // the matching compressor: set it, switch the other one out
+    const auto lc = presets::linkedCompressor (index);
+    auto variMuOut = [this] { setParamPlain (params::chanId (0, "c_in"), 0.0f); setParamPlain (params::chanId (1, "c_in"), 0.0f); };
+    if (lc.kind == presets::UnitKind::VariMu && lc.index >= 0)      { applyVariMuPreset (lc.index); setParamPlain (params::ca::in, 0.0f); }
+    else if (lc.kind == presets::UnitKind::ClassA && lc.index >= 0) { applyClassAPreset (lc.index); variMuOut(); }
+    else                                                            { variMuOut(); setParamPlain (params::ca::in, 0.0f); }
 }
 
 void PassiveMasterEQProcessor::applyVariMuPreset (int index)
@@ -506,11 +516,14 @@ void PassiveMasterEQProcessor::autoReapply()
     }
     const int genreIdx = (int) std::lround (apvts.getRawParameterValue (params::amGenre)->load());
     const double amount = apvts.getRawParameterValue (params::amAmount)->load() / 100.0;
+    // the Parametric EQ and the Class-A stay as the user set them: the plan works around them
+    const auto paraNow = pqParams.read (isLinked());
+    const auto classANow = classAParams.read();
     cancelSolve.store (false);
     solving.store (true);
-    pool.addJob ([this, genreIdx, amount]
+    pool.addJob ([this, genreIdx, amount, paraNow, classANow]
     {
-        auto p = solvePlan (genreIdx, amount);
+        auto p = solvePlan (genreIdx, amount, paraNow, classANow);
         {
             const juce::SpinLock::ScopedLockType sl (planLock);
             pendingPlan = p;
@@ -559,7 +572,11 @@ void PassiveMasterEQProcessor::autoMasterTick()
         {
             const juce::SpinLock::ScopedLockType sl (planLock);
             plan = p;
-            autoMessage = "APPLIED - checking the loudness while the song plays...";
+            juce::String kept;
+            if (p.withParametric && p.withClassA) kept = " (planned with your Parametric EQ and Class-A as set)";
+            else if (p.withParametric)            kept = " (planned with your Parametric EQ as set)";
+            else if (p.withClassA)                kept = " (planned with your Class-A as set)";
+            autoMessage = "APPLIED" + kept + " - checking the loudness while the song plays...";
         }
         verifyRound = 0;
         verifyLufs.store (-200.0f);
@@ -594,7 +611,8 @@ void PassiveMasterEQProcessor::autoMasterTick()
 }
 
 // Runs on the background thread: everything here works on the recording only.
-PassiveMasterEQProcessor::AutoPlan PassiveMasterEQProcessor::solvePlan (int genreIdx, double amount) const
+PassiveMasterEQProcessor::AutoPlan PassiveMasterEQProcessor::solvePlan (int genreIdx, double amount,
+                                                                     const ppm::sontec::Settings& para, const ppm::ClassASettings& classASet) const
 {
     namespace am = automaster;
     AutoPlan p;
@@ -604,17 +622,32 @@ PassiveMasterEQProcessor::AutoPlan PassiveMasterEQProcessor::solvePlan (int genr
     const double fs = capRate;
     if (n <= 0) return p;
 
-    // 1. tonal balance -> EQ
-    const auto spec = am::measureSpectrum (capL.data(), capR.data(), n, fs);
-    if (! spec.ok) return p;
-    p.corr = am::computeCorrection (spec, genreIdx, amount);
-    p.eq = am::fitEq (p.corr, t.hp, t.lp);
-    {
-        ChannelSettings eqOnly = p.eq; eqOnly.hp = 0; eqOnly.lp = 0;
-        for (int b = 0; b < am::kOct; ++b) p.fitted[b] = channelResponseDb (eqOnly, am::kOctHz[b]);
-    }
-    p.eqText = am::describeEq (p.eq);
     p.tubeOn = t.tubeOn; p.drive = t.drive; p.ceiling = t.ceiling; p.targetLufs = t.lufs;
+    p.withParametric = para.in;
+    p.withClassA = classASet.in;
+    const int os = fs < 88000.0 ? 2 : (fs < 176000.0 ? 1 : 0);      // the plug-in's internal oversampling
+    const int osBlk = 1024;
+    // runs fn on every (oversampled) sample pair of a / b, exactly like the real path
+    auto renderOversampled = [&] (std::vector<float>& a, std::vector<float>& b, const std::function<void (double&, double&)>& fn)
+    {
+        juce::dsp::Oversampling<float> ov (2, (size_t) os, juce::dsp::Oversampling<float>::filterHalfBandFIREquiripple, true, true);
+        ov.initProcessing ((size_t) osBlk);
+        for (int pos = 0; pos < n; pos += osBlk)
+        {
+            const int len = juce::jmin (osBlk, n - pos);
+            float* chans[2] = { a.data() + pos, b.data() + pos };
+            juce::dsp::AudioBlock<float> block (chans, 2, (size_t) len);
+            auto up = ov.processSamplesUp (block);
+            float* l = up.getChannelPointer (0); float* r = up.getChannelPointer (1);
+            for (size_t i = 0; i < up.getNumSamples(); ++i)
+            {
+                double x = l[i], y = r[i];
+                fn (x, y);
+                l[i] = (float) x; r[i] = (float) y;
+            }
+            ov.processSamplesDown (block);
+        }
+    };
 
     auto lufsOf = [fs] (const std::vector<float>& l, const std::vector<float>& r)
     {
@@ -636,28 +669,30 @@ PassiveMasterEQProcessor::AutoPlan PassiveMasterEQProcessor::solvePlan (int genr
         for (auto& v : b) v *= g;
     }
 
-    // 3. render the EQ + tubes exactly like the real path (oversampled)
+    // 3a. the Parametric EQ comes first in the chain: the passive EQ is fitted to what leaves it
+    if (para.in)
     {
-        const int os = fs < 88000.0 ? 2 : (fs < 176000.0 ? 1 : 0);
-        const int blk = 1024;
-        juce::dsp::Oversampling<float> ov (2, (size_t) os, juce::dsp::Oversampling<float>::filterHalfBandFIREquiripple, true, true);
-        ov.initProcessing ((size_t) blk);
+        sontec::SontecEQ pq; pq.setSettings (para); pq.prepare (fs * (1 << os)); pq.setSettings (para);
+        renderOversampled (a, b, [&pq] (double& l, double& r) { pq.process (l, r); });
+        if (cancelSolve.load()) return p;
+    }
+
+    // 1. tonal balance -> passive EQ (on the signal that reaches it)
+    const auto spec = am::measureSpectrum (a.data(), b.data(), n, fs);
+    if (! spec.ok) return p;
+    p.corr = am::computeCorrection (spec, genreIdx, amount);
+    p.eq = am::fitEq (p.corr, t.hp, t.lp);
+    {
+        ChannelSettings eqOnly = p.eq; eqOnly.hp = 0; eqOnly.lp = 0;
+        for (int k = 0; k < am::kOct; ++k) p.fitted[k] = channelResponseDb (eqOnly, am::kOctHz[k]);
+    }
+    p.eqText = am::describeEq (p.eq);
+
+    // 3b. render the passive EQ + tubes exactly like the real path (oversampled)
+    {
         ChannelEngine eng[2];
         for (auto& e : eng) { e.prepare (fs * (1 << os)); e.setSettings (p.eq, p.tubeOn, p.drive); }
-        float* ptr[2] = { a.data(), b.data() };
-        for (int pos = 0; pos < n; pos += blk)
-        {
-            const int len = juce::jmin (blk, n - pos);
-            float* chans[2] = { ptr[0] + pos, ptr[1] + pos };
-            juce::dsp::AudioBlock<float> block (chans, 2, (size_t) len);
-            auto up = ov.processSamplesUp (block);
-            for (int c = 0; c < 2; ++c)
-            {
-                float* d = up.getChannelPointer ((size_t) c);
-                for (size_t i = 0; i < up.getNumSamples(); ++i) d[i] = (float) eng[c].process (d[i]);
-            }
-            ov.processSamplesDown (block);
-        }
+        renderOversampled (a, b, [&eng] (double& l, double& r) { l = eng[0].process (l); r = eng[1].process (r); });
     }
     if (cancelSolve.load()) return p;
 
@@ -699,6 +734,14 @@ PassiveMasterEQProcessor::AutoPlan PassiveMasterEQProcessor::solvePlan (int genr
     std::vector<float> cl ((size_t) n), cr ((size_t) n);
     runComp (cs, &cl, &cr);
     if (cancelSolve.load()) return p;
+
+    // 4b. the Class-A compressor follows the vari-mu: the maximizer is planned on what leaves it
+    if (classASet.in)
+    {
+        ClassACompressor ca; ca.setSettings (classASet); ca.prepare (fs * (1 << os)); ca.setSettings (classASet);
+        renderOversampled (cl, cr, [&ca] (double& l, double& r) { ca.process (l, r); });
+        if (cancelSolve.load()) return p;
+    }
 
     // 5. maximizer: gain that lands the integrated loudness on the genre target
     auto limited = [&] (double gainDb, double* grOut)

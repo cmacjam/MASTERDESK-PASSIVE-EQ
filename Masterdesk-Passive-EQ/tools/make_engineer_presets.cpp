@@ -207,6 +207,64 @@ static std::vector<Spec> specs()
     };
 }
 
+// ---- TRACK presets: EQ + matching compressor for one instrument on its own track -----------
+//  Common engineering starting points (not attributed to anyone). This EQ has no high-pass
+//  above 39 Hz, so the usual instrument low-cut is a low-shelf cut here.
+static std::vector<Spec> trackSpecs()
+{
+    const char* K = "Track: Keys & Pads"; const char* G = "Track: Guitars"; const char* D = "Track: Drums";
+    return {
+        { "", "Synth Pad - Wide, Out of the Way", K, "Synth / string pads",
+          { lshelf (150, -6), bell (400, -2.5, 0.8), bell (2500, -2, 1.0), hshelf (10000, 2) },
+          { classA (1.6, 40, 400, 1.5) }, "Low end cleared for bass and kick, mud and vocal range dipped, a little air." },
+        { "", "Keyboards - Electric Piano (Rhodes / Wurli)", K, "Electric piano",
+          { lshelf (100, -3), bell (250, -2, 1.2), bell (1200, 2, 1.0), hshelf (8000, 1.5) },
+          { variMu (20, 600, 2) }, "Less boom and mud, the tine bark forward, soft top." },
+        { "", "Keyboards - Synth Keys / Organ", K, "Synth keys, organ",
+          { lshelf (120, -4), bell (500, -2, 1.0), bell (3000, 2, 1.2), hshelf (12000, 2) },
+          { classA (3, 10, 150, 3) }, "Cleared low end, boxiness out, presence and air up." },
+        { "", "Piano - Upright / Pop Piano", K, "Upright or pop piano",
+          { lshelf (90, -2), bell (300, -3, 1.0), bell (2500, 2, 1.0), hshelf (10000, 1.5) },
+          { variMu (25, 800, 2) }, "Boxy 300 Hz out, attack and sparkle up so it cuts in a band mix." },
+        { "", "Grand Piano - Full & Clear", K, "Grand piano",
+          { hpf (30), lshelf (60, 1), bell (250, -2, 0.8), bell (1000, -1.5, 1.2), bell (4000, 1.5, 1.0), hshelf (12000, 2) },
+          { classA (2, 20, 250, 2) }, "Keeps the weight, takes out low-mid mud and the 1 kHz honk, adds clarity and air." },
+        { "", "Electric Guitar - Rhythm Fit", G, "Electric guitar (any)",
+          { lshelf (100, -5), bell (500, -2, 1.0), bell (3000, 2, 1.2), hshelf (10000, -2) },
+          { classA (2.5, 3, 120, 2) }, "Out of the bass's way, less boxiness, bite up, fizz down." },
+        { "", "Guitar - Hollow Body (Jazz Box)", G, "Hollow-body guitar",
+          { lshelf (120, -4), bell (200, -3, 1.5), bell (2000, 2, 1.0), hshelf (8000, 1.5) },
+          { variMu (35, 800, 2) }, "Tames the boom and body resonance around 200 Hz, brings the note definition forward." },
+        { "", "Guitar - Semi-Hollow (335 Style)", G, "Semi-hollow guitar",
+          { lshelf (100, -3), bell (300, -2, 1.2), bell (1500, 2, 1.0), bell (5000, 1.5, 1.2) },
+          { classA (2.5, 10, 200, 2) }, "Less low-mid bloom, warm midrange and a little shine." },
+        { "", "Guitar - Strat (Single Coil)", G, "Stratocaster-style single coils",
+          { lshelf (100, -3), bell (250, -2, 1.0), bell (3000, -2.5, 2.0), hshelf (8000, 1.5) },
+          { classA (3, 15, 150, 2.5) }, "Takes the ice-pick edge off around 3 kHz, keeps the sparkle on top." },
+        { "", "Guitar - Telecaster (Twang)", G, "Telecaster-style bridge pickup",
+          { bell (150, 2, 1.0), bell (500, -2, 1.0), bell (3500, -3, 2.0), hshelf (10000, 1) },
+          { classA (4, 5, 120, 3) }, "More body, the harsh part of the twang tamed, snap kept; firmer compression for chicken pickin'." },
+        { "", "Acoustic Guitar - Clear & Even", G, "Steel-string acoustic",
+          { lshelf (100, -4), bell (250, -3, 1.0), bell (5000, 1.5, 1.0), hshelf (12000, 2) },
+          { variMu (15, 400, 2.5) }, "Less boom and body ring, more pick definition and air." },
+        { "", "Kick Drum - Punch & Click", D, "Kick drum",
+          { hpf (30), bell (60, 3, 1.0), bell (350, -4, 1.5), bell (4000, 3, 1.5) },
+          { classA (4, 25, 100, 4) }, "Sub weight, the boxy 350 Hz out, beater click for small speakers." },
+        { "", "Snare Drum - Body & Crack", D, "Snare drum",
+          { bell (200, 2, 1.0), bell (900, -3, 2.0), bell (5000, 3, 1.0), hshelf (10000, 1.5) },
+          { classA (4, 10, 120, 4) }, "Body, the ring around 900 Hz down, crack and snares up." },
+        { "", "Toms - Round & Punchy", D, "Rack and floor toms",
+          { bell (100, 3, 1.0), bell (400, -4, 1.5), bell (4000, 2, 1.2) },
+          { classA (4, 15, 200, 4) }, "Low thump, cardboard 400 Hz out, stick attack." },
+        { "", "Drum Overheads - Cymbals & Space", D, "Stereo overheads",
+          { lshelf (200, -6), bell (1000, -1.5, 1.0), hshelf (12000, 2) },
+          { classA (2, 30, 200, 1.5) }, "The kick and toms kept to their own mics, a touch less clang, shimmer on top." },
+        { "", "Drum Bus - Glue & Weight", D, "Drum group bus",
+          { bell (60, 2, 1.0), bell (400, -2, 1.0), bell (5000, 2, 0.8), hshelf (12000, 1) },
+          { autoRel (classA (4, 30, 300, 3)) }, "Weight, less mud, snap and air; 4:1 / 30 ms / auto release glue." },
+    };
+}
+
 // ---- ideal curves of the listed moves ------------------------------------------------------
 static double idealDb (const Move& m, double f)
 {
@@ -389,11 +447,14 @@ int main()
     int count = 0;
     std::fprintf (stderr, "%-64s %s\n", "preset", "EQ fit (max dB over 30 Hz-16 kHz) / dropped");
     int strippedEq = 0, skipped = 0;
-    for (auto sp : specs())
+    auto all = specs();
+    for (const auto& t : trackSpecs()) all.push_back (t);
+    for (auto sp : all)
     {
+        const bool track = sp.engineer.empty();
         // EQ presets are for the stereo master only: track presets (vocals, drums, bass, guitars, keys)
         // keep their compressor settings, their EQ moves are left out, and EQ-only track presets are skipped
-        if (sp.cat != "Mix & Master Bus" && ! sp.eq.empty())
+        if (! track && sp.cat != "Mix & Master Bus" && ! sp.eq.empty())
         {
             if (sp.comps.empty() || sp.title.find ("Kick Chain") != std::string::npos) { ++skipped; continue; }   // the kick chain = the kick compressor preset
             sp.eq.clear();
@@ -480,13 +541,15 @@ int main()
             }
         }
         notes += compNotes;
-        notes += "Settings as given in the supplied list; not verified with or endorsed by " + sp.engineer + ".";
+        notes += track ? std::string ("A starting point for this instrument on its own track, not for the stereo master.")
+                       : "Settings as given in the supplied list; not verified with or endorsed by " + sp.engineer + ".";
 
         // escape for a C++ string literal
         auto esc = [] (const std::string& s) { std::string o; for (char ch : s) { if (ch == '"' || ch == '\\') o += '\\'; o += ch; } return o; };
 
-        std::printf ("    {   // %s - %s\n        Preset p; p.name = \"%s - %s\"; p.category = \"%s\"; p.full = true;\n",
-                     sp.engineer.c_str(), sp.title.c_str(), esc (sp.engineer).c_str(), esc (sp.title).c_str(), sp.cat.c_str());
+        const std::string fullName = track ? sp.title : sp.engineer + " - " + sp.title;
+        std::printf ("    {   // %s\n        Preset p; p.name = \"%s\"; p.category = \"%s\"; p.full = true;\n",
+                     fullName.c_str(), esc (fullName).c_str(), sp.cat.c_str());
         std::printf ("        p.notes = \"%s\";\n", esc (notes).c_str());
         std::printf ("        p.tubeOn = %s; p.driveDb = %.1ff; p.order = %d;\n", yes (sp.tube), sp.drive, sp.order);
         const auto& a = fit.pa;
@@ -514,7 +577,7 @@ int main()
 
         std::string dropped;
         for (const auto& m : fit.dropped) dropped += " [" + moveText (m) + "]";
-        std::fprintf (stderr, "%-64s %s%s\n", (sp.engineer + " - " + sp.title).c_str(),
+        std::fprintf (stderr, "%-64s %s%s\n", fullName.c_str(),
                       fit.placed.empty() ? "-" : (std::to_string (worst).substr (0, 4) + " dB").c_str(), dropped.c_str());
     }
     std::printf ("    return v;\n}\n} // namespace ppm::presets\n");

@@ -362,8 +362,8 @@ int main()
                          (int) eq.size(), (int) vm.size(), (int) ca.size(), eqOk ? "ok" : "WRONG", caOk ? "ok" : "WRONG", vmOk ? "ok" : "WRONG");
             bool masterOnly = true;
             for (int i : eq) masterOnly = masterOnly && (list[(size_t) i].category == "Factory" || list[(size_t) i].category == "Mix & Master Bus"
-                                                         || list[(size_t) i].category == kManualCategory);
-            for (const auto& p : list) if (p.full && p.category != "Mix & Master Bus" && presetHasEq (p) && p.name != "Init (Flat)") masterOnly = false;
+                                                         || list[(size_t) i].category == kManualCategory || isTrackCategory (list[(size_t) i].category));
+            for (const auto& p : list) if (p.full && p.category != "Mix & Master Bus" && ! isTrackCategory (p.category) && presetHasEq (p) && p.name != "Init (Flat)") masterOnly = false;
             std::printf ("  EQ presets are stereo-master only: %s\n", masterOnly ? "yes" : "NO");
             // no two presets in a unit's menu have the same settings
             auto eqKey = [&] (const Preset& p)
@@ -388,6 +388,31 @@ int main()
             check (eq, eqKey); check (vm, vmKey); check (ca, caKey);
             std::printf ("  duplicate presets: %d\n", dups);
             if (dups) ++failures;
+
+            // EQ preset + matching compressor: every EQ preset finds its compressor, and choosing one
+            // leaves exactly one compressor running (or none for flat / track presets without one)
+            int nLinked = 0, nVm = 0, nCa = 0, bad = 0, nTrack = 0;
+            for (int i : eq)
+            {
+                const auto lc = linkedCompressor (i);
+                const auto& p = list[(size_t) i];
+                if (isTrackCategory (p.category)) ++nTrack;
+                if (lc.kind != UnitKind::Eq && lc.index < 0) { std::printf ("  NO MATCHING COMPRESSOR FOUND for %s\n", p.name.c_str()); ++bad; continue; }
+                proc.applyEqPreset (i, true);
+                const bool vmOn = proc.getCompSettings (0).compIn, caOn = proc.getClassASettings().in;
+                const bool ok = lc.kind == UnitKind::VariMu ? (vmOn && ! caOn) : lc.kind == UnitKind::ClassA ? (caOn && ! vmOn) : (! vmOn && ! caOn);
+                if (! ok) { std::printf ("  %s: compressors after linking wrong (vari-mu %d, class-A %d)\n", p.name.c_str(), (int) vmOn, (int) caOn); ++bad; }
+                if (lc.kind == UnitKind::VariMu) ++nVm; else if (lc.kind == UnitKind::ClassA) ++nCa;
+                if (lc.kind != UnitKind::Eq) ++nLinked;
+            }
+            const bool vmBefore = proc.getCompSettings (0).compIn, caBefore = proc.getClassASettings().in;
+            const float thrBefore = proc.getClassASettings().ch[0].thresholdDb;
+            proc.applyEqPreset (find ("Eric Boulanger - Surgical Mastering EQ"), false);   // link off: compressors untouched
+            const bool untouched = proc.getCompSettings (0).compIn == vmBefore && proc.getClassASettings().in == caBefore
+                                && proc.getClassASettings().ch[0].thresholdDb == thrBefore;
+            std::printf ("  EQ + matching compressor: %d of %d EQ presets link one (%d Vari-Mu, %d Class-A); %d track presets; link off leaves the compressors: %s\n",
+                         nLinked, (int) eq.size(), nVm, nCa, nTrack, untouched ? "yes" : "NO");
+            if (bad || nTrack < 16 || ! untouched) ++failures;
             if (! masterOnly) ++failures;
             if (eq.size() < 25 || vm.size() < 8 || ca.size() < 25 || ! eqOk || ! caOk || ! vmOk) ++failures;
         }
@@ -766,6 +791,71 @@ int main()
                          && std::lround (s.getRawParameterValue ("L_c_thresh")->load()) == 0;
         std::printf ("  UNDO restores the original settings: %s\n", undone ? "yes" : "NO");
         if (! undone) ++failures;
+    }
+
+    // ---- everything together: AUTO MASTER plans around the Parametric EQ and the Class-A the user has on,
+    //      and its loudness prediction matches what really plays (no loudness-check nudging)
+    {
+        std::printf ("all units together (48 kHz):\n");
+        PassiveMasterEQProcessor proc;
+        auto& s = proc.apvts;
+        proc.listenSeconds = 12.0; proc.verifySeconds = 1000.0;          // keep measuring, never nudge
+        proc.setPlayConfigDetails (2, 2, 48000.0, 1600);
+        proc.prepareToPlay (48000.0, 1600);
+        // Parametric EQ: +6 dB at 100 Hz (LO band); Class-A: 4:1 feed-forward, -20 dB threshold, +3 dB gain
+        ppm::sontec::Settings pq; pq.in = true;
+        for (auto& c : pq.ch) { c.in = true; c.band[0] = { 13, 1, 24 }; }
+        proc.applyParametric (pq);
+        ppm::ClassASettings ca; ca.in = true; ca.link = true;
+        for (auto& c : ca.ch) { c.thresholdDb = -20; c.ratioPos = 7.5; c.feedForward = true; c.attackMs = 10; c.releaseMs = 200; c.gainDb = 3; c.mix = 1; }
+        proc.applyClassA (ca);
+        setParam (s, ppm::params::amGenre, (float) ppm::automaster::Pop);
+
+        juce::AudioBuffer<float> buf (2, 1600);
+        double t = 0; juce::Random rnd (3); double outPeak = 0;
+        auto play = [&] (int frames, bool tick)
+        {
+            for (int f = 0; f < frames; ++f)
+            {
+                for (int i = 0; i < 1600; ++i, t += 1.0 / 48000.0)
+                {
+                    const double tw = 2 * juce::MathConstants<double>::pi, beat = std::fmod (t, 0.5);
+                    const double kick = std::exp (-beat * 14.0) * std::sin (tw * (48.0 + 80.0 * std::exp (-beat * 35.0)) * beat);
+                    double chord = 0;
+                    for (double fr : { 196.0, 246.9, 293.7, 392.0 }) chord += 0.07 * std::sin (tw * fr * t);
+                    const double v = 0.2 * (0.8 * kick + 0.25 * std::sin (tw * 49.0 * t) + chord + 0.05 * (rnd.nextFloat() * 2 - 1));
+                    buf.setSample (0, i, (float) v); buf.setSample (1, i, (float) (v * 0.95));
+                }
+                juce::MidiBuffer m; proc.processBlock (buf, m);
+                outPeak = std::max (outPeak, (double) std::max (buf.getMagnitude (0, 0, 1600), buf.getMagnitude (1, 0, 1600)));
+                if (tick && f % 3 == 0) proc.autoMasterTick();
+            }
+        };
+        play (30, false);
+        proc.autoListen();
+        int guard = 0;
+        while (! proc.autoHasRecording() && ++guard < 2000) play (1, true);
+        proc.autoMasterTick();
+        while (proc.autoBusy()) juce::Thread::sleep (20);
+        proc.autoMasterTick();
+        const auto plan = proc.getAutoPlan();
+        const bool kept = proc.getParametricSettings().in && proc.getClassASettings().in;
+        play (30, true);                                             // let the meters settle after applying
+        outPeak = 0;
+        play (300, true);                                            // 10 s of playback, measured
+        const double measured = proc.getVerifyLufs();
+        std::printf ("  POP plan with Parametric %s, Class-A %s: predicted %.1f LUFS, measured %.1f (target %.1f); output peak %.2f dBFS (ceiling %.1f); units kept on: %s\n  %s\n",
+                     plan.withParametric ? "on" : "OFF", plan.withClassA ? "on" : "OFF", plan.predictedLufs, measured, plan.targetLufs,
+                     20 * std::log10 (outPeak), plan.ceiling, kept ? "yes" : "NO", proc.getAutoMessage().toRawUTF8());
+        if (! plan.ok || ! plan.withParametric || ! plan.withClassA || ! kept
+            || std::abs (measured - plan.predictedLufs) > 0.8 || std::abs (plan.predictedLufs - plan.targetLufs) > 0.5
+            || 20 * std::log10 (outPeak) > plan.ceiling + 0.01) ++failures;
+
+        // a whole factory preset (footer menu) switches the Parametric EQ and Class-A out
+        proc.setCurrentProgram (0);
+        const bool reset = ! proc.getParametricSettings().in && ! proc.getClassASettings().in;
+        std::printf ("  factory preset switches Parametric EQ and Class-A out: %s\n", reset ? "yes" : "NO");
+        if (! reset) ++failures;
     }
 
     std::printf ("%s\n", failures ? "FAILED" : "PASSED");

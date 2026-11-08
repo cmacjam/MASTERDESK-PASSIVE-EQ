@@ -1989,7 +1989,7 @@ juce::String AutoMasterPanel::getTooltip()
                "the genre's target. Aqua: your mix after the EQ AUTO MASTER chose. Underneath: the moves it made, and the "
                "loudness before -> after (LUFS).";
     return "AUTO MASTER - choose a genre, press LISTEN and play the song. It measures your mix's tonal balance and loudness, "
-           "then sets the EQ, tubes, compressor and MAXIMIZER for that style. Everything it sets stays adjustable.";
+           "then sets the EQ, tubes, compressor and MAXIMIZER for that style. Everything it sets stays adjustable. Your Parametric EQ and Class-A settings stay as they are and are included in the plan.";
 }
 
 void AutoMasterPanel::paint (juce::Graphics& g)
@@ -2832,7 +2832,8 @@ UnitWindow::~UnitWindow() { clearContentComponent(); }
 
 UnitPresetButton::UnitPresetButton (PassiveMasterEQProcessor& p, int k) : juce::TextButton ("PRESETS"), proc (p), kind (k)
 {
-    setTooltip (kind == Eq     ? "EQ PRESETS - curves for the Parametric and Passive EQs. Engineer presets set both EQs together; compressors are left alone."
+    setTooltip (kind == Eq     ? "EQ PRESETS - curves for the Parametric and Passive EQs: stereo-master curves, plus track presets for instruments and drums. "
+                                 "With 'Also set the matching compressor' ticked (the first menu item), the compressor that suits the curve is set too and the other one switched out."
               : kind == VariMu ? "VARI-MU PRESETS - settings for this compressor only; the EQs are left alone."
                                : "CLASS-A PRESETS - settings for this compressor only; the EQs are left alone.");
 }
@@ -2843,6 +2844,11 @@ void UnitPresetButton::clicked()
     const auto ids = unitPresets (kind == Eq ? UnitKind::Eq : kind == VariMu ? UnitKind::VariMu : UnitKind::ClassA);
     const auto& list = all();
     juce::PopupMenu menu;
+    if (kind == Eq)
+    {   // first item: also set the compressor that matches the curve
+        menu.addItem (kLinkToggleId, "Also set the matching compressor", true, proc.linkCompWithEq());
+        menu.addSeparator();
+    }
     bool anyFactory = false;
     juce::PopupMenu manual;
     for (int i : ids)
@@ -2861,18 +2867,39 @@ void UnitPresetButton::clicked()
             if (list[(size_t) i].full && list[(size_t) i].category == cat) sub.addItem (i + 1, proc.getProgramName (i));
         if (sub.getNumItems() > 0) menu.addSubMenu (cat, sub);
     }
+    menu.addSeparator();
+    menu.addSectionHeader ("TRACK PRESETS (on that instrument's own track)");
+    for (const char* cat : kTrackCategories)
+    {
+        juce::PopupMenu sub;
+        for (int i : ids)
+            if (list[(size_t) i].category == cat) sub.addItem (i + 1, proc.getProgramName (i));
+        if (sub.getNumItems() > 0) menu.addSubMenu (juce::String (cat).fromFirstOccurrenceOf ("Track: ", false, false), sub);
+    }
+
     juce::Component::SafePointer<UnitPresetButton> safe (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
-                        [safe] (int result) { if (safe != nullptr && result > 0) safe->applied (result - 1); });
+                        [safe] (int result)
+                        {
+                            if (safe == nullptr || result <= 0) return;
+                            if (result == kLinkToggleId) { safe->proc.setLinkCompWithEq (! safe->proc.linkCompWithEq()); return; }
+                            safe->applied (result - 1);
+                        });
 }
 
 void UnitPresetButton::applied (int index)
 {
-    if (kind == Eq)          proc.applyEqPreset (index);
+    if (kind == Eq)          proc.applyEqPreset (index, proc.linkCompWithEq());
     else if (kind == VariMu) proc.applyVariMuPreset (index);
     else                     proc.applyClassAPreset (index);
     const auto notes = proc.getProgramNotes (index);
-    setTooltip (proc.getProgramName (index) + (notes.isNotEmpty() ? "\n\n" + notes : juce::String()));
+    juce::String comp;
+    if (kind == Eq && proc.linkCompWithEq())
+    {
+        const auto c = proc.linkedCompName (index);
+        comp = "\n\nMatching compressor: " + (c.isNotEmpty() ? (c == proc.getProgramName (index) ? juce::String ("its own settings") : c) : juce::String ("none (both compressors out)"));
+    }
+    setTooltip (proc.getProgramName (index) + (notes.isNotEmpty() ? "\n\n" + notes : juce::String()) + comp);
 }
 
 void PopOutButton::paintButton (juce::Graphics& g, bool hi, bool down)
@@ -3126,6 +3153,9 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
                 if (proc.getProgramCategory (i) == ppm::presets::kManualCategory) man.addItem (i + 1, proc.getProgramName (i));
             if (man.getNumItems() > 0) root->addSubMenu ("From the Manley manuals", man);
         }
+        juce::StringArray trackCats;
+        for (const auto& c : cats) if (ppm::presets::isTrackCategory (c.toStdString())) trackCats.add (c);
+        for (const auto& c : trackCats) cats.removeString (c);
         root->addSeparator();
         root->addSectionHeader ("ENGINEER PRESETS (settings as listed)");
         for (const auto& cat : cats)
@@ -3134,6 +3164,15 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
             for (int i = 0; i < proc.getNumPrograms(); ++i)
                 if (proc.getProgramCategory (i) == cat) sub.addItem (i + 1, proc.getProgramName (i));
             root->addSubMenu (cat, sub);
+        }
+        root->addSeparator();
+        root->addSectionHeader ("TRACK PRESETS (on that instrument's own track)");
+        for (const auto& cat : trackCats)
+        {
+            juce::PopupMenu sub;
+            for (int i = 0; i < proc.getNumPrograms(); ++i)
+                if (proc.getProgramCategory (i) == cat) sub.addItem (i + 1, proc.getProgramName (i));
+            root->addSubMenu (cat.fromFirstOccurrenceOf ("Track: ", false, false), sub);
         }
     }
     presetBox.setTextWhenNothingSelected ("- choose a preset -");

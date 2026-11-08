@@ -428,6 +428,182 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
+    {   // Synth Pad - Wide, Out of the Way
+        Preset p; p.name = "Synth Pad - Wide, Out of the Way"; p.category = "Track: Keys & Pads"; p.full = true;
+        p.notes = "Synth / string pads. Low end cleared for bass and kick, mud and vocal range dipped, a little air. EQ curve within 1.2 dB of the listed moves (30 Hz-16 kHz). Class-A: FEEDBACK, threshold -12.0 dB (set it for about 1.5 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 6, 9, 0, 2, true }, { 4, 6, 5, 2, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 17, 2, 7 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 17; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -12.0; c.attackMs = 40.000; c.releaseMs = 400; c.ratioPos = 4.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 1.5; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Keyboards - Electric Piano (Rhodes / Wurli)
+        Preset p; p.name = "Keyboards - Electric Piano (Rhodes / Wurli)"; p.category = "Track: Keys & Pads"; p.full = true;
+        p.notes = "Electric piano. Less boom and mud, the tine bark forward, soft top. EQ curve within 0.3 dB of the listed moves (30 Hz-16 kHz). Vari-Mu: threshold -7.5 dB (set it for about 2.0 dB), attack 20 ms, recovery 0.6 s. A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 7, 5, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 4, 2, 8 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 15; c.hiShelf12k = false; c.loShelfLevel = 6; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = true; p.comp.threshold = 5; p.comp.attack = 4; p.comp.recovery = 2; p.comp.output = 4; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Keyboards - Synth Keys / Organ
+        Preset p; p.name = "Keyboards - Synth Keys / Organ"; p.category = "Track: Keys & Pads"; p.full = true;
+        p.notes = "Synth keys, organ. Cleared low end, boxiness out, presence and air up. EQ curve within 0.8 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -12.5 dB (set it for about 3.0 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 8, 2, 7 }; c.band[2] = { 0, 2, 16 }; c.hiShelfLevel = 16; c.hiShelf12k = true; c.loShelfLevel = 5; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -12.5; c.attackMs = 5.000; c.releaseMs = 150; c.ratioPos = 3.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 3.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Piano - Upright / Pop Piano
+        Preset p; p.name = "Piano - Upright / Pop Piano"; p.category = "Track: Keys & Pads"; p.full = true;
+        p.notes = "Upright or pop piano. Boxy 300 Hz out, attack and sparkle up so it cuts in a band mix. EQ curve within 0.4 dB of the listed moves (30 Hz-16 kHz). Vari-Mu: threshold -7.5 dB (set it for about 2.0 dB), attack 25 ms, recovery 0.8 s. A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 9, 5, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 5, 2, 6 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 16; c.hiShelf12k = true; c.loShelfLevel = 8; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = true; p.comp.threshold = 5; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 4; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Grand Piano - Full & Clear
+        Preset p; p.name = "Grand Piano - Full & Clear"; p.category = "Track: Keys & Pads"; p.full = true;
+        p.notes = "Grand piano. Keeps the weight, takes out low-mid mud and the 1 kHz honk, adds clarity and air. EQ curve within 0.4 dB of the listed moves (30 Hz-16 kHz). Class-A: FEEDBACK, threshold -12.0 dB (set it for about 2.0 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 3, 5, 5, 2, false }, { 5, 0, 7, 0, false }, { 5, 4, 7, 0, false }, 4, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 9 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 16; c.hiShelf12k = true; c.loShelfLevel = 14; c.loShelf100 = false; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -12.0; c.attackMs = 20.000; c.releaseMs = 250; c.ratioPos = 7.50; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 2.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Electric Guitar - Rhythm Fit
+        Preset p; p.name = "Electric Guitar - Rhythm Fit"; p.category = "Track: Guitars"; p.full = true;
+        p.notes = "Electric guitar (any). Out of the bass's way, less boxiness, bite up, fizz down. EQ curve within 0.5 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -11.3 dB (set it for about 2.0 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 8, 2, 7 }; c.band[2] = { 0, 2, 16 }; c.hiShelfLevel = 7; c.hiShelf12k = true; c.loShelfLevel = 4; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -11.3; c.attackMs = 1.500; c.releaseMs = 120; c.ratioPos = 1.52; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 2.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Guitar - Hollow Body (Jazz Box)
+        Preset p; p.name = "Guitar - Hollow Body (Jazz Box)"; p.category = "Track: Guitars"; p.full = true;
+        p.notes = "Hollow-body guitar. Tames the boom and body resonance around 200 Hz, brings the note definition forward. EQ curve within 0.6 dB of the listed moves (30 Hz-16 kHz). Vari-Mu: threshold -7.5 dB (set it for about 2.0 dB), attack 35 ms, recovery 0.8 s. A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 17, 2, 6 }; c.band[1] = { 16, 2, 17 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 15; c.hiShelf12k = false; c.loShelfLevel = 5; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = true; p.comp.threshold = 5; p.comp.attack = 6; p.comp.recovery = 3; p.comp.output = 4; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Guitar - Semi-Hollow (335 Style)
+        Preset p; p.name = "Guitar - Semi-Hollow (335 Style)"; p.category = "Track: Guitars"; p.full = true;
+        p.notes = "Semi-hollow guitar. Less low-mid bloom, warm midrange and a little shine. EQ curve within 0.3 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -11.3 dB (set it for about 2.0 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 5, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 5, 2, 8 }; c.band[2] = { 5, 2, 15 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 6; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -11.3; c.attackMs = 5.000; c.releaseMs = 200; c.ratioPos = 1.52; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 2.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Guitar - Strat (Single Coil)
+        Preset p; p.name = "Guitar - Strat (Single Coil)"; p.category = "Track: Guitars"; p.full = true;
+        p.notes = "Stratocaster-style single coils. Takes the ice-pick edge off around 3 kHz, keeps the sparkle on top. EQ curve within 0.6 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -11.7 dB (set it for about 2.5 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 7, 5, 12, 2, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 4, 2, 7 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 15; c.hiShelf12k = false; c.loShelfLevel = 6; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -11.7; c.attackMs = 7.500; c.releaseMs = 150; c.ratioPos = 3.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 2.5; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Guitar - Telecaster (Twang)
+        Preset p; p.name = "Guitar - Telecaster (Twang)"; p.category = "Track: Guitars"; p.full = true;
+        p.notes = "Telecaster-style bridge pickup. More body, the harsh part of the twang tamed, snap kept; firmer compression for chicken pickin'. EQ curve within 0.4 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -12.0 dB (set it for about 3.0 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 5, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 8, 2, 7 }; c.band[2] = { 0, 3, 6 }; c.hiShelfLevel = 14; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -12.0; c.attackMs = 2.500; c.releaseMs = 120; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 3.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Acoustic Guitar - Clear & Even
+        Preset p; p.name = "Acoustic Guitar - Clear & Even"; p.category = "Track: Guitars"; p.full = true;
+        p.notes = "Steel-string acoustic. Less boom and body ring, more pick definition and air. EQ curve within 0.4 dB of the listed moves (30 Hz-16 kHz). Vari-Mu: threshold -9.0 dB (set it for about 2.5 dB), attack 15 ms, recovery 0.4 s. A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 4, 2, 6 }; c.band[2] = { 5, 2, 15 }; c.hiShelfLevel = 16; c.hiShelf12k = true; c.loShelfLevel = 5; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = true; p.comp.threshold = 6; p.comp.attack = 3; p.comp.recovery = 1; p.comp.output = 5; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = false; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -10.0; c.attackMs = 13.000; c.releaseMs = 300; c.ratioPos = 6.00; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 0.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Kick Drum - Punch & Click
+        Preset p; p.name = "Kick Drum - Punch & Click"; p.category = "Track: Drums"; p.full = true;
+        p.notes = "Kick drum. Sub weight, the boxy 350 Hz out, beater click for small speakers. EQ curve within 0.5 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -13.3 dB (set it for about 4.0 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 10, 6, 11, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 4, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 10, 2, 18 }; c.band[1] = { 6, 2, 5 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -13.3; c.attackMs = 12.500; c.releaseMs = 100; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 4.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Snare Drum - Body & Crack
+        Preset p; p.name = "Snare Drum - Body & Crack"; p.category = "Track: Drums"; p.full = true;
+        p.notes = "Snare drum. Body, the ring around 900 Hz down, crack and snares up. EQ curve within 0.6 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -13.3 dB (set it for about 4.0 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 17, 2, 17 }; c.band[1] = { 11, 3, 6 }; c.band[2] = { 5, 2, 18 }; c.hiShelfLevel = 16; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -13.3; c.attackMs = 5.000; c.releaseMs = 120; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 4.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Toms - Round & Punchy
+        Preset p; p.name = "Toms - Round & Punchy"; p.category = "Track: Drums"; p.full = true;
+        p.notes = "Rack and floor toms. Low thump, cardboard 400 Hz out, stick attack. EQ curve within 0.5 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -13.3 dB (set it for about 4.0 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 4, 7, 8, 0, false }, { 4, 7, 11, 2, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 20, 2, 16 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -13.3; c.attackMs = 7.500; c.releaseMs = 200; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 4.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Drum Overheads - Cymbals & Space
+        Preset p; p.name = "Drum Overheads - Cymbals & Space"; p.category = "Track: Drums"; p.full = true;
+        p.notes = "Stereo overheads. The kick and toms kept to their own mics, a touch less clang, shimmer on top. EQ curve within 1.3 dB of the listed moves (30 Hz-16 kHz). Class-A: FEEDBACK, threshold -11.0 dB (set it for about 1.5 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 7, 9, 0, 2, true }, { 5, 0, 7, 0, false }, { 4, 4, 7, 2, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 16; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -11.0; c.attackMs = 30.000; c.releaseMs = 200; c.ratioPos = 7.50; c.feedForward = false; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 1.5; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
+    {   // Drum Bus - Glue & Weight
+        Preset p; p.name = "Drum Bus - Glue & Weight"; p.category = "Track: Drums"; p.full = true;
+        p.notes = "Drum group bus. Weight, less mud, snap and air; 4:1 / 30 ms / auto release glue. EQ curve within 0.4 dB of the listed moves (30 Hz-16 kHz). Class-A: FEED FWD, threshold -12.0 dB (set it for about 3.0 dB of gain reduction). A starting point for this instrument on its own track, not for the stereo master.";
+        p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
+        p.ch = channel ({ 5, 0, 7, 0, false }, { 4, 5, 7, 2, false }, { 8, 5, 5, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
+        p.pq.in = true; for (auto& c : p.pq.ch) { c.band[0] = { 10, 2, 17 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 14; c.hiShelf12k = true; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }
+        p.comp.compIn = false; p.comp.threshold = 0; p.comp.attack = 5; p.comp.recovery = 3; p.comp.output = 0; p.comp.mix = 10; p.comp.mode = 0; p.comp.scHp = true;
+        p.ca.in = true; p.ca.mode = ClassAStereo; p.ca.link = true;
+        for (auto& c : p.ca.ch) { c.thresholdDb = -12.0; c.attackMs = 15.000; c.releaseMs = 300; c.ratioPos = 7.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = true; c.gainDb = 3.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
+        v.push_back (p);
+    }
     return v;
 }
 } // namespace ppm::presets

@@ -42,9 +42,19 @@ public:
         return juce::isPositiveAndBelow (index, (int) list.size()) ? juce::String::fromUTF8 (list[(size_t) index].category.c_str()) : juce::String();
     }
     // one unit only (the PRESETS button on each EQ / compressor)
-    void applyEqPreset (int index);          // passive EQ (+ parametric EQ for engineer presets)
+    void applyEqPreset (int index, bool withLinkedComp = false);   // passive EQ (+ parametric EQ for engineer presets),
+                                                                    // optionally the matching compressor too
+    bool linkCompWithEq() const { return (bool) apvts.state.getProperty ("linkComp", true); }
+    void setLinkCompWithEq (bool b) { apvts.state.setProperty ("linkComp", b, nullptr); }
+    juce::String linkedCompName (int eqIndex) const
+    {
+        const auto lc = ppm::presets::linkedCompressor (eqIndex);
+        return lc.index >= 0 ? juce::String::fromUTF8 (ppm::presets::all()[(size_t) lc.index].name.c_str()) : juce::String();
+    }
     void applyVariMuPreset (int index);
     void applyClassAPreset (int index);
+    void applyParametric (const ppm::sontec::Settings&);
+    void applyClassA (const ppm::ClassASettings&);
     int getNumPrograms() override { return (int) ppm::presets::all().size(); }
     int getCurrentProgram() override { return currentProgram; }
     void setCurrentProgram (int index) override;
@@ -127,6 +137,7 @@ public:
         bool   ok = false;
         int    genre = 0;
         double amount = 0.6;
+        bool   withParametric = false, withClassA = false;   // planned around these units as the user set them
         ppm::automaster::Correction corr;
         double fitted[ppm::automaster::kOct] {};    // EQ response at the octave centres, dB
         ppm::ChannelSettings eq;
@@ -159,9 +170,8 @@ private:
     void timerCallback() override { autoMasterTick(); }
     void applySettings (const ppm::ChannelSettings&, const ppm::CompSettings&, int order, bool tubeOn, float driveDb);
     void setParamPlain (const juce::String& id, float plain);
-    void applyParametric (const ppm::sontec::Settings&);
-    void applyClassA (const ppm::ClassASettings&);
-    AutoPlan solvePlan (int genre, double amount) const;
+    // plans with the Parametric EQ (before the passive EQ) and Class-A (after the vari-mu) as they are set
+    AutoPlan solvePlan (int genre, double amount, const ppm::sontec::Settings& para, const ppm::ClassASettings& classASet) const;
     std::vector<float> capL, capR;
     int capLen = 0;
     double capRate = 0.0, capInputDb = 0.0;      // INPUT knob position while recording
