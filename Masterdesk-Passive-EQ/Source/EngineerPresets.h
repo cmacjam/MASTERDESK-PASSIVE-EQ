@@ -175,9 +175,9 @@ inline std::vector<Preset> engineerPresets()
         for (auto& c : p.ca.ch) { c.thresholdDb = -14.0; c.attackMs = 2.500; c.releaseMs = 100; c.ratioPos = 3.53; c.feedForward = true; c.autoFastAttack = false; c.autoFastRelease = false; c.gainDb = 4.0; c.mix = 1.00; c.warm = false; c.scOn = false; c.scTilt = 0.0; c.scFreq = 280; }
         v.push_back (p);
     }
-    {   // Sören von Malmborg - Modern Pop Master Bus Glue (SSL G)
-        Preset p; p.name = "Sören von Malmborg - Modern Pop Master Bus Glue (SSL G)"; p.category = "Mix & Master Bus"; p.full = true;
-        p.notes = "High-energy pop master bus. 4:1, 30 ms attack, auto release, 1-2 dB of gain reduction. Class-A: FEED FWD, threshold -10.0 dB (set it for about 1.5 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by Sören von Malmborg.";
+    {   // S??ren von Malmborg - Modern Pop Master Bus Glue (SSL G)
+        Preset p; p.name = "S\xc3" "\xb6" "ren von Malmborg - Modern Pop Master Bus Glue (SSL G)"; p.category = "Mix & Master Bus"; p.full = true;
+        p.notes = "High-energy pop master bus. 4:1, 30 ms attack, auto release, 1-2 dB of gain reduction. Class-A: FEED FWD, threshold -10.0 dB (set it for about 1.5 dB of gain reduction). Settings as given in the supplied list; not verified with or endorsed by S\xc3" "\xb6" "ren von Malmborg.";
         p.tubeOn = false; p.driveDb = 0.0f; p.order = 0;
         p.ch = channel ({ 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, { 5, 0, 7, 0, false }, 0, 0);
         p.pq.in = false; for (auto& c : p.pq.ch) { c.band[0] = { 12, 2, 12 }; c.band[1] = { 12, 2, 12 }; c.band[2] = { 11, 2, 12 }; c.hiShelfLevel = 12; c.hiShelf12k = false; c.loShelfLevel = 12; c.loShelf100 = true; c.in = true; }

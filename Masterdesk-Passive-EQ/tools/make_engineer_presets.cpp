@@ -26,10 +26,13 @@
 #include "dsp/SontecEQ.h"
 #include "dsp/ClassAComp.h"
 #include "dsp/VariMu.h"
+#include <algorithm>
+#include <cmath>
+#include <complex>
 #include <cstdio>
+#include <functional>
 #include <string>
 #include <vector>
-#include <functional>
 
 using namespace ppm;
 namespace so = ppm::sontec;
@@ -40,7 +43,7 @@ static Move bell (double f, double g, double q = 1.0) { return { 'B', f, g, q, 0
 static Move lshelf (double f, double g, double q = 0.707) { return { 'L', f, g, q, 0 }; }
 static Move hshelf (double f, double g, double q = 0.707) { return { 'H', f, g, q, 0 }; }
 static Move hpf (double f, int dbPerOct = 12) { return { 'P', f, 0, 0, dbPerOct / 6 }; }
-static Move lpf (double f, int dbPerOct = 12) { return { 'Q', f, 0, 0, dbPerOct / 6 }; }
+[[maybe_unused]] static Move lpf (double f, int dbPerOct = 12) { return { 'Q', f, 0, 0, dbPerOct / 6 }; }
 
 struct Comp
 {
@@ -124,7 +127,7 @@ static std::vector<Spec> specs()
           { hshelf (40000, 2.5, 0.5) }, {}, "Air band 40 kHz, +2-3 dB as listed (+2.5 used)." },
         { "Serban Ghenea", "Pop Vocal Boxiness Cut", V, "Lead vocal cleaning stage",
           { bell (750, -1.5, 2.5) }, {}, "700-800 Hz as listed (750 Hz used)." },
-        { "Sören von Malmborg", "Modern Pop Master Bus Glue (SSL G)", M, "High-energy pop master bus",
+        { "S\xc3\xb6ren von Malmborg", "Modern Pop Master Bus Glue (SSL G)", M, "High-energy pop master bus",
           {}, { autoRel (classA (4, 30, 300, 1.5)) }, "4:1, 30 ms attack, auto release, 1-2 dB of gain reduction." },
         { "Alan Parsons", "Classic Rock Guitar EQ (TG12345)", G, "Heavy distorted guitars",
           { bell (2800, 2, 1.0), lshelf (200, -2) }, {}, "Presence +2 dB at 2.8 kHz, bass -2 dB at 200 Hz (console shelf)." },
@@ -193,7 +196,7 @@ static std::vector<Spec> specs()
           {}, { classA (20, k1176Att (1), k1176Rel (7), 10, 0.25) }, "20:1, attack 1, release 7, blended under the dry guitar (MIX 25 %)." },
         { "Butch Vig", "Synth Bass Low-End Stabilizer (dbx 160)", B, "Electronic synth bass",
           {}, { autoAtt (autoRel (classA (3, 13, 300, 4))) }, "3:1, 4 dB on the lowest notes. The dbx 160's program-dependent times are the AUTO FAST switches." },
-        { "Sören von Malmborg", "Pop Acoustic Guitar Shimmer (Air 20k)", G, "Stereo pop acoustic guitars",
+        { "S\xc3\xb6ren von Malmborg", "Pop Acoustic Guitar Shimmer (Air 20k)", G, "Stereo pop acoustic guitars",
           { hshelf (20000, 3, 0.5) }, {}, "" },
         { "Bob Katz", "Parallel Mastering 'Tonalisation Clear'", M, "Full mix master bus",
           {}, { scHp (classA (1.2, 13, 300, 1.5, 0.5), 500) },
@@ -545,11 +548,23 @@ int main()
                        : "Settings as given in the supplied list; not verified with or endorsed by " + sp.engineer + ".";
 
         // escape for a C++ string literal
-        auto esc = [] (const std::string& s) { std::string o; for (char ch : s) { if (ch == '"' || ch == '\\') o += '\\'; o += ch; } return o; };
+        // escape for a C++ string literal; non-ASCII bytes (UTF-8) as \xNN so the header is plain ASCII on every compiler
+        auto esc = [] (const std::string& s)
+        {
+            std::string o;
+            for (unsigned char ch : s)
+            {
+                if (ch >= 0x80) { char h[12]; std::snprintf (h, sizeof h, "\\x%02x\" \"", ch); o += h; continue; }
+                if (ch == '"' || ch == '\\') o += '\\';
+                o += (char) ch;
+            }
+            return o;
+        };
 
         const std::string fullName = track ? sp.title : sp.engineer + " - " + sp.title;
+        std::string commentName; for (unsigned char ch : fullName) commentName += ch < 0x80 ? (char) ch : '?';   // ASCII-only comment
         std::printf ("    {   // %s\n        Preset p; p.name = \"%s\"; p.category = \"%s\"; p.full = true;\n",
-                     fullName.c_str(), esc (fullName).c_str(), sp.cat.c_str());
+                     commentName.c_str(), esc (fullName).c_str(), sp.cat.c_str());
         std::printf ("        p.notes = \"%s\";\n", esc (notes).c_str());
         std::printf ("        p.tubeOn = %s; p.driveDb = %.1ff; p.order = %d;\n", yes (sp.tube), sp.drive, sp.order);
         const auto& a = fit.pa;
