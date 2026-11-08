@@ -221,14 +221,15 @@ int main()
                 // SCROLL mode: the panel fills the width; hovering near the top / bottom edge glides it up / down (no scroll bar)
                 {
                     e->toggleScroll();
-                    ed->setSize (840, 520);
+                    ed->setSize (840, 520);                               // the editor may fit this to a small screen:
+                    const int sw0 = ed->getWidth(), sh0 = ed->getHeight();   // use the size it really has
                     const double maxPos = e->scrollMax();
-                    e->hoverScrollStep (260, 1.0);                        // mouse in the middle: nothing moves
+                    e->hoverScrollStep (sh0 / 2, 1.0);                        // mouse in the middle: nothing moves
                     const double still = e->scrollPosition();
                     snap (*ed, "editor_scroll_top.png");
-                    e->hoverScrollStep (520 - 6, 0.5);                    // near the bottom edge for half a second
+                    e->hoverScrollStep (sh0 - 6, 0.5);                    // near the bottom edge for half a second
                     const double down1 = e->scrollPosition();
-                    for (int i = 0; i < 400; ++i) e->hoverScrollStep (520 - 2, 1.0 / 60.0);   // keep hovering: reaches the end
+                    for (int i = 0; i < 400; ++i) e->hoverScrollStep (sh0 - 2, 1.0 / 60.0);   // keep hovering: reaches the end
                     const double bottom = e->scrollPosition();
                     snap (*ed, "editor_scroll_bottom.png");
                     e->hoverScrollStep (40, 0.5);                         // just inside the top zone: slow
@@ -244,25 +245,26 @@ int main()
                                  "top zone slow %.0f / edge fast %.0f px per 0.5 s; held -> %.0f; off -> %dx%d\n",
                                  sw, sh, maxPos, PassiveMasterEQEditor::designHeight(), still, down1, bottom, slowUp, fastUp, top, nw, nh);
                     // at 840 wide the zoom is 840/1440 = 0.583, so 520 px shows 891 of the 2380 panel px
-                    if (std::abs (maxPos - (PassiveMasterEQEditor::designHeight() - 520.0 * 1440.0 / 840.0)) > 2.0 || still != 0.0
+                    if (std::abs (maxPos - (PassiveMasterEQEditor::designHeight() - sh0 * 1440.0 / (double) (sw0 - PassiveMasterEQEditor::kScrollBarW))) > 2.0 || still != 0.0
                         || down1 <= 100.0 || std::abs (bottom - maxPos) > 0.01 || slowUp <= 0.0 || fastUp < 3.0 * slowUp
                         || top != 0.0 || (double) nw / nh < aspect - 0.01) ++failures;
                 }
                 // CLICK & ZOOM: zoom in at a point (it stays under the mouse), look around, zoom back out
                 {
-                    ed->setSize (600, 992);
-                    const juce::Point<float> at (450.0f, 300.0f);
+                    ed->setSize (600, 992);                               // may be fitted to a small screen: use the real size
+                    const float zw = (float) ed->getWidth(), zh = (float) ed->getHeight();
+                    const juce::Point<float> at (zw * 0.75f, zh * 0.3f);
                     const auto before = e->visiblePanelArea();
                     const auto pBefore = ed->getLocalPoint (ed.get(), at);
-                    const juce::Point<float> panelAt (before.getX() + at.x / 600.0f * before.getWidth(), before.getY() + at.y / 992.0f * before.getHeight());
+                    const juce::Point<float> panelAt (before.getX() + at.x / zw * before.getWidth(), before.getY() + at.y / zh * before.getHeight());
                     e->toggleZoomAt (at);
                     const auto in = e->visiblePanelArea();
-                    const juce::Point<float> panelAfter (in.getX() + at.x / 600.0f * in.getWidth(), in.getY() + at.y / 992.0f * in.getHeight());
+                    const juce::Point<float> panelAfter (in.getX() + at.x / zw * in.getWidth(), in.getY() + at.y / zh * in.getHeight());
                     snap (*ed, "editor_zoom.png");
                     const float z = e->zoomFactor();
-                    e->hoverPanStep (2, 500, 0.5);                        // left edge: look left
+                    e->hoverPanStep (2, (int) (zh * 0.5f), 0.5);                        // left edge: look left
                     const float leftMove = in.getX() - e->visiblePanelArea().getX();
-                    e->hoverPanStep (300, 990, 0.5);                      // bottom edge: look down
+                    e->hoverPanStep ((int) (zw * 0.5f), (int) zh - 2, 0.5);                      // bottom edge: look down
                     const float downMove = e->visiblePanelArea().getY() - in.getY();
                     for (int i = 0; i < 600; ++i) e->hoverPanStep (2, 2, 1.0 / 60.0);   // top-left corner: stops at the panel's edge
                     const auto corner = e->visiblePanelArea();
