@@ -425,13 +425,22 @@ public:
     void paintButton (juce::Graphics&, bool highlighted, bool down) override;
 };
 
+class InputMeter : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    void setLevels (float peakL, float peakR, float dt);
+    void paint (juce::Graphics&) override;
+private:
+    float level[2] { -80.0f, -80.0f }, hold[2] { -80.0f, -80.0f }, holdTimer[2] {};
+};
+
 class ParametricPanel : public juce::Component
 {
 public:
     explicit ParametricPanel (PassiveMasterEQProcessor&);
     void resized() override;
     void paint (juce::Graphics&) override;
-    void update();
+    void update (float dt = 1.0f / 30.0f);
 private:
     struct Channel
     {
@@ -445,7 +454,9 @@ private:
     PushEqButton pushEq;
     JewelLamp ledL { "LEFT", col::green }, ledR { "RIGHT", col::green }, ledOn { "", col::green };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> pushAtt;
-    juce::Rectangle<int> centreCol, legendCol, badgeL, badgeR;
+    std::unique_ptr<SkirtKnob> inKnob, outKnob;      // INPUT / OUTPUT trims (-12..+12 dB)
+    InputMeter pqMeter;                                        // output level of the parametric EQ
+    juce::Rectangle<int> centreCol, legendCol, ioCol, badgeL, badgeR;
     bool lastLinked = false;
 };
 
@@ -543,17 +554,15 @@ class HelpOverlay : public juce::Component
 public:
     HelpOverlay();
     void paint (juce::Graphics&) override;
+    void resized() override;
     void mouseDown (const juce::MouseEvent&) override { setVisible (false); }
+    // writes the built-in user manual (PDF) to the temp folder and returns it (doesn't open it)
+    static juce::File extractManual();
+private:
+    juce::TextButton openManual { "OPEN MANUAL" };
 };
 // Small L/R LED input meter that sits under the INPUT knob -----------------------
-class InputMeter : public juce::Component, public juce::SettableTooltipClient
-{
-public:
-    void setLevels (float peakL, float peakR, float dt);
-    void paint (juce::Graphics&) override;
-private:
-    float level[2] { -80.0f, -80.0f }, hold[2] { -80.0f, -80.0f }, holdTimer[2] {};
-};
+
 
 // The whole panel, drawn at a fixed design size (kW x kH); the editor scales it.
 class Faceplate : public juce::Component, private juce::Timer
@@ -574,11 +583,12 @@ public:
     void showHelp() { help.setVisible (true); help.toFront (false); }
     void setScaleChoice (float scale);
     std::function<void (float)> onScaleRequested;                  // set by the editor
-    std::function<void()> onToggleFullScreen, onToggleCompact, onToggleScroll;      // set by the editor
+    std::function<void()> onToggleFullScreen, onToggleCompact, onToggleScroll, onToggleHover;      // set by the editor
     void setCompact (bool c);
     bool isCompact() const { return compact; }
     void updatePresetTip();
     void setFullScreenState (bool fs) { fullButton.setButtonText (fs ? "EXIT FULL" : "FULL SCREEN"); }
+    void setHoverState (bool on) { hoverButton.setToggleState (on, juce::dontSendNotification); hoverButton.setButtonText (on ? "HOVER ON" : "HOVER OFF"); }
     void setScrollState (bool on) { scrollButton.setToggleState (on, juce::dontSendNotification); scrollButton.setButtonText (on ? "SCROLL ON" : "SCROLL"); }
 
     enum Unit { UnitParametric = 0, UnitPassive, UnitVariMu, UnitClassA, UnitAuto, kNumUnits };
@@ -621,7 +631,7 @@ private:
     juce::ComboBox presetBox, sizeBox;
     SteppedKnob drive, inputKnob;
     InputMeter inputMeter;
-    juce::TextButton fullButton { "FULL SCREEN" }, miniButton { "MINI" }, scrollButton { "SCROLL" };
+    juce::TextButton fullButton { "FULL SCREEN" }, miniButton { "MINI" }, scrollButton { "SCROLL" }, hoverButton { "HOVER ON" };
     HelpOverlay help;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linkAtt, tubeAtt;
 
@@ -710,6 +720,10 @@ public:
     void toggleCompact();
     void toggleScroll();
     bool isScrollMode() const { return scrollMode; }
+    // HOVER on/off: when off, resting the mouse near an edge no longer scrolls or pans (the wheel and dragging still work)
+    void toggleHover() { setHoverEnabled (! hoverOn); }
+    void setHoverEnabled (bool on);
+    bool isHoverEnabled() const { return hoverOn; }
     double scrollMax() const;                                   // how far the panel can scroll (panel pixels)
     void scrollTo (double pos) { scrollPos = pos; resized(); } // tests
     double scrollPosition() const { return scrollPos; }
@@ -765,6 +779,7 @@ private:
         juce::Point<float> last;
     } zoomMouse { *this };
     bool scrollMode = false;
+    bool hoverOn = true;
     double scrollPos = 0.0;                                     // top of the visible part, in panel pixels
     bool scrolling() const { return scrollMode && ! face.isCompact(); }
     juce::Rectangle<int> sizeBeforeFull;

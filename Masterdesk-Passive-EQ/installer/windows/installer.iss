@@ -10,6 +10,9 @@
 #ifndef OutDir
   #define OutDir "..\..\dist"
 #endif
+#ifndef Manual
+  #define Manual "..\..\docs\MasterDesk-User-Manual.pdf"
+#endif
 #define AppName "MasterDesk Mastering Suite"
 #define OldName "Masterdesk Passive EQ"
 #if DirExists(Artefacts + "\AAX\" + AppName + ".aaxplugin")
@@ -48,6 +51,7 @@ Name: "vst3"; Description: "VST3 plug-in (Cubase, Ableton Live, Studio One, Reap
 Name: "aax";  Description: "Pro Tools (AAX) plug-in"; Types: full custom
 #endif
 Name: "app";  Description: "Standalone app (runs without a DAW)"; Types: full
+Name: "manual"; Description: "User manual (PDF, with a Start-menu shortcut)"; Types: full custom
 
 [Files]
 Source: "{#Artefacts}\VST3\{#AppName}.vst3\*"; DestDir: "{commoncf64}\VST3\{#AppName}.vst3"; Components: vst3; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -55,6 +59,7 @@ Source: "{#Artefacts}\VST3\{#AppName}.vst3\*"; DestDir: "{commoncf64}\VST3\{#App
 Source: "{#Artefacts}\AAX\{#AppName}.aaxplugin\*"; DestDir: "{commoncf64}\Avid\Audio\Plug-Ins\{#AppName}.aaxplugin"; Components: aax; Flags: ignoreversion recursesubdirs createallsubdirs
 #endif
 Source: "{#Artefacts}\Standalone\{#AppName}.exe"; DestDir: "{app}"; Components: app; Flags: ignoreversion
+Source: "{#Manual}"; DestDir: "{app}"; DestName: "{#AppName} - User Manual.pdf"; Components: manual; Flags: ignoreversion
 
 [InstallDelete]
 ; copies installed under the old name (versions up to 1.3.0)
@@ -64,6 +69,7 @@ Type: files; Name: "{autoprograms}\{#OldName}.lnk"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppName}.exe"; Components: app
+Name: "{autoprograms}\{#AppName} - User Manual"; Filename: "{app}\{#AppName} - User Manual.pdf"; Components: manual
 
 [Messages]
 FinishedLabel=Setup has installed [name] on your computer.%n%nRescan plug-ins in your DAW (Pro Tools finds the AAX version on its next launch), then insert MasterDesk Mastering Suite (by Basemental) on your master bus. Press HELP ? inside the plug-in for a guide to every control.

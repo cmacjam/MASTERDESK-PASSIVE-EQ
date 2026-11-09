@@ -2,6 +2,7 @@
 # Installs Basemental MasterDesk Mastering Suite for the current user (no root needed):
 #   VST3       -> ~/.vst3
 #   Standalone -> ~/.local/bin
+#   Manual     -> ~/.local/share/doc/masterdesk-mastering-suite
 # Run from the extracted folder:  ./install.sh      (./install.sh --uninstall to remove)
 set -euo pipefail
 NAME="MasterDesk Mastering Suite"
@@ -9,7 +10,7 @@ OLD="Masterdesk Passive EQ"            # name used up to version 1.3.0
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 if [ "${1:-}" = "--uninstall" ]; then
-    rm -rf "$HOME/.vst3/$NAME.vst3" "$HOME/.local/bin/$NAME"
+    rm -rf "$HOME/.vst3/$NAME.vst3" "$HOME/.local/bin/$NAME" "$HOME/.local/share/doc/masterdesk-mastering-suite"
     echo "Removed $NAME."
     exit 0
 fi
@@ -24,4 +25,11 @@ if [ -f "$HERE/$NAME" ]; then
     chmod +x "$HOME/.local/bin/$NAME"
     echo "  Standalone: $HOME/.local/bin/$NAME"
 fi
+for pdf in "$HERE"/*Manual*.pdf; do
+    [ -f "$pdf" ] || continue
+    DOC="$HOME/.local/share/doc/masterdesk-mastering-suite"
+    mkdir -p "$DOC"
+    cp "$pdf" "$DOC/"
+    echo "  Manual:     $DOC/$(basename "$pdf")"
+done
 echo "Rescan plug-ins in your DAW (Reaper, Bitwig, Ardour...)."

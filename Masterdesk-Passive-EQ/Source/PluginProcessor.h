@@ -91,6 +91,7 @@ public:
         std::atomic<float> gr[2]      { {0.0f}, {0.0f} };   // compressor gain reduction, dB
         std::atomic<float> grA[2]     { {0.0f}, {0.0f} };   // class-A compressor gain reduction (ch1, ch2), dB
         std::atomic<bool>  clipA      { false };            // class-A soft clip working (GUI resets)
+        std::atomic<float> pqLevel[2] { {0.0f}, {0.0f} };   // parametric EQ output peak (after its OUTPUT), GUI resets
         std::atomic<int>   numChannels { 2 };
     } meters;
 
@@ -221,6 +222,8 @@ private:
     ppm::StereoVariMu comp;
     ppm::ClassACompressor classA;
     ppm::sontec::SontecEQ paraEq;
+    juce::SmoothedValue<double> pqInGain { 1.0 }, pqOutGain { 1.0 };   // INPUT / OUTPUT volume around the parametric EQ
+    std::atomic<float>* pqInGainParam = nullptr; std::atomic<float>* pqOutGainParam = nullptr;
     ppm::params::PqParamPtrs pqParams;
     ppm::params::ClassAParamPtrs classAParams;
     ppm::LoudnessMeter loudnessMeter;

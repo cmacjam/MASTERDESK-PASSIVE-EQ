@@ -258,6 +258,17 @@ int main()
                     const double fastUp = bottom - slowUp - e->scrollPosition();
                     for (int i = 0; i < 400; ++i) e->hoverScrollStep (1, 1.0 / 60.0);
                     const double top = e->scrollPosition();
+                    // HOVER OFF: resting at the edge does nothing; ON again: it glides
+                    e->setHoverEnabled (false);
+                    for (int i = 0; i < 60; ++i) e->hoverScrollStep (sh0 - 2, 1.0 / 60.0);
+                    const double hoverOffMove = e->scrollPosition() - top;
+                    const bool hoverSaved = ! (bool) proc.apvts.state.getProperty ("uiHover", true);
+                    e->setHoverEnabled (true);
+                    for (int i = 0; i < 30; ++i) e->hoverScrollStep (sh0 - 2, 1.0 / 60.0);
+                    const double hoverOnMove = e->scrollPosition() - top;
+                    std::printf ("  HOVER off: moved %.1f px in 1 s (saved %s); on again: %.0f px in 0.5 s\n", hoverOffMove, hoverSaved ? "yes" : "no", hoverOnMove);
+                    if (std::abs (hoverOffMove) > 0.01 || ! hoverSaved || hoverOnMove < 20.0 || ! e->isHoverEnabled()) failCheck (failures, __LINE__);
+                    e->scrollTo (0.0);
                     const int sw = ed->getWidth(), sh = ed->getHeight();
                     e->toggleScroll();                                    // back to the normal fit-to-window view
                     const int nw = ed->getWidth(), nh = ed->getHeight();
@@ -729,6 +740,42 @@ int main()
         const double off = measureDb (proc, 44100.0, 100.0);
         std::printf ("  PUSH EQ off: %+.3f dB at 100 Hz\n", off);
         if (std::abs (off) > 0.01) failCheck (failures, __LINE__);
+    }
+
+    // ---- the user manual is built in (HELP ? > OPEN MANUAL) -------------------------
+    {
+        const auto f = ui::HelpOverlay::extractManual();
+        juce::MemoryBlock mb; f.loadFileAsData (mb);
+        const bool pdf = mb.getSize() > 100000 && std::memcmp (mb.getData(), "%PDF", 4) == 0;
+        std::printf ("built-in user manual: %s, %d KB, %s\n", f.getFileName().toRawUTF8(), (int) (mb.getSize() / 1024), pdf ? "PDF ok" : "MISSING");
+        if (! pdf) failCheck (failures, __LINE__);
+    }
+
+    // ---- parametric INPUT / OUTPUT trims and its meter ---------------------------
+    {
+        std::printf ("parametric INPUT / OUTPUT and meter (EQ flat):\n");
+        PassiveMasterEQProcessor proc;
+        auto& s = proc.apvts;
+        namespace pq = ppm::params::pq;
+        setParam (s, ppm::params::tubeOn, 0.0f);
+        setParam (s, "L_c_in", 0.0f); setParam (s, "R_c_in", 0.0f);
+        proc.setPlayConfigDetails (2, 2, 44100.0, 512);
+        proc.prepareToPlay (44100.0, 512);
+        setParam (s, pq::in, 1.0f);
+        const double unity = measureDb (proc, 44100.0, 1000.0);
+        setParam (s, pq::inGain, 6.0f);
+        const double in6 = measureDb (proc, 44100.0, 1000.0);
+        setParam (s, pq::outGain, -4.0f);
+        const double net2 = measureDb (proc, 44100.0, 1000.0);
+        proc.meters.pqLevel[0].store (0.0f);
+        measureDb (proc, 44100.0, 1000.0);
+        const float meterPk = proc.meters.pqLevel[0].load();   // sine 0.1 peak, +2 dB -> about 0.126
+        setParam (s, pq::in, 0.0f);
+        const double bypass = measureDb (proc, 44100.0, 1000.0);
+        std::printf ("  0/0 dB %+.2f; IN +6 %+.2f; IN +6 OUT -4 %+.2f (meter peak %.3f); PUSH EQ off %+.2f dB\n",
+                     unity, in6, net2, meterPk, bypass);
+        if (std::abs (unity) > 0.05 || std::abs (in6 - 6.0) > 0.1 || std::abs (net2 - 2.0) > 0.1
+            || std::abs (meterPk - 0.1259f) > 0.01f || std::abs (bypass) > 0.05) failCheck (failures, __LINE__);
     }
 
     // ---- M/S CLASS-A compressor inside the plugin --------------------------------

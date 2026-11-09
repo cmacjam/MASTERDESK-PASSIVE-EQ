@@ -39,6 +39,7 @@ inline const juce::String amAmount  { "am_amount" };    // AUTO MASTER EQ amount
 namespace pq
 {
     inline const juce::String in { "pq_in" };                                       // PUSH EQ
+    inline const juce::String inGain { "pq_in_gain" }, outGain { "pq_out_gain" };   // INPUT / OUTPUT volume, dB
     inline juce::String id (int ch, const juce::String& what) { return juce::String ("pq_") + (ch == 0 ? "L_" : "R_") + what; }
     inline juce::String band (int ch, int b, const char* what) { return id (ch, "b" + juce::String (b + 1) + "_" + what); }
 }
@@ -163,6 +164,11 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         namespace so = ppm::sontec;
         auto g = std::make_unique<AudioProcessorParameterGroup> ("pq", "Parametric Mastering EQ", " | ");
         g->addChild (std::make_unique<AudioParameterBool> (ParameterID { pq::in, version }, "Parametric EQ In", false));
+        // INPUT / OUTPUT volume around the EQ (0.5 dB detents), bypassed with PUSH EQ like the rest of the unit
+        g->addChild (std::make_unique<AudioParameterFloat> (ParameterID { pq::inGain, version }, "Parametric Input",
+                                                             NormalisableRange<float> (-12.0f, 12.0f, 0.5f), 0.0f, AudioParameterFloatAttributes().withLabel ("dB")));
+        g->addChild (std::make_unique<AudioParameterFloat> (ParameterID { pq::outGain, version }, "Parametric Output",
+                                                             NormalisableRange<float> (-12.0f, 12.0f, 0.5f), 0.0f, AudioParameterFloatAttributes().withLabel ("dB")));
         StringArray levels, shapes;
         for (int i = 0; i < so::kNumLevels; ++i) { const double v = so::levelDb (i); levels.add ((v > 0 ? "+" : "") + String (v, std::abs (v - std::round (v)) < 1e-9 ? 0 : 1) + " dB"); }
         for (double d : so::kShapeDbOct) shapes.add (String ((int) d) + " dB/oct");

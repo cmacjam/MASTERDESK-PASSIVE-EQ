@@ -75,6 +75,10 @@ void PassiveMasterEQProcessor::prepareToPlay (double sampleRate, int samplesPerB
     classA.prepare (internalRate);
     paraEq.setSettings (pqParams.read (isLinked()));
     paraEq.prepare (internalRate);
+    pqInGainParam  = apvts.getRawParameterValue (params::pq::inGain);
+    pqOutGainParam = apvts.getRawParameterValue (params::pq::outGain);
+    pqInGain.reset (internalRate, 0.02);  pqInGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain ((double) pqInGainParam->load()));
+    pqOutGain.reset (internalRate, 0.02); pqOutGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain ((double) pqOutGainParam->load()));
     activeOrder = getCompOrder();
     lastInputGain = juce::Decibels::decibelsToGain (inputParam->load());
     scope.sampleRate.store (sampleRate);
@@ -181,7 +185,15 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
     comp.setSettings (getCompSettings (0), getCompSettings (1), isLinked());
     classA.setSettings (classAParams.read());
-    paraEq.setSettings (pqParams.read (isLinked()));
+    const auto pqNow = pqParams.read (isLinked());
+    paraEq.setSettings (pqNow);
+    const bool pqOn = pqNow.in;                       // INPUT / OUTPUT are part of the unit: bypassed with PUSH EQ
+    if (pqInGainParam != nullptr)
+    {
+        pqInGain.setTargetValue (pqOn ? juce::Decibels::decibelsToGain ((double) pqInGainParam->load()) : 1.0);
+        pqOutGain.setTargetValue (pqOn ? juce::Decibels::decibelsToGain ((double) pqOutGainParam->load()) : 1.0);
+    }
+    double pqPeak[2] {};
     const int wantOrder = getCompOrder();
 
     // Hosts may send more samples than announced in prepareToPlay: process in pieces
@@ -197,8 +209,14 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         double l = d[0][i];
         double r = d[1] != nullptr ? (double) d[1][i] : l;
 
-        // parametric mastering EQ: first in the chain, in front of the passive EQ
-        paraEq.process (l, r);
+        // parametric mastering EQ: first in the chain, in front of the passive EQ (INPUT -> EQ -> OUTPUT)
+        {
+            const double gi = pqInGain.getNextValue(), go = pqOutGain.getNextValue();
+            l *= gi; r *= gi;
+            paraEq.process (l, r);
+            l *= go; r *= go;
+            pqPeak[0] = std::max (pqPeak[0], std::abs (l)); pqPeak[1] = std::max (pqPeak[1], std::abs (r));
+        }
         if (d[1] == nullptr) r = l;
 
         if (activeOrder == 0)          // EQ > COMP
@@ -236,6 +254,8 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
     oversampler->processSamplesDown (block);
     }
+    holdMax (meters.pqLevel[0], (float) pqPeak[0]);
+    holdMax (meters.pqLevel[1], (float) (numCh > 1 ? pqPeak[1] : pqPeak[0]));
 
     // MAXIMIZER: final look-ahead brickwall limiter
     maximizer.setParams (maxOnParam->load() > 0.5f, maxGainParam->load(), maxCeilParam->load());
@@ -312,7 +332,8 @@ void PassiveMasterEQProcessor::setCurrentProgram (int index)
     // a compressor preset: its compressor, everything else neutral
     applySettings (pr.ch, pr.comp, pr.order, pr.tubeOn, pr.driveDb);
     if (pr.full) { applyParametric (pr.pq); applyClassA (pr.ca); }
-    else         { setParamPlain (params::pq::in, 0.0f); setParamPlain (params::ca::in, 0.0f); }
+    else         { setParamPlain (params::pq::in, 0.0f); setParamPlain (params::ca::in, 0.0f);
+                   setParamPlain (params::pq::inGain, 0.0f); setParamPlain (params::pq::outGain, 0.0f); }
     setParamPlain (params::maxOn, 0.0f);
     setParamPlain (params::maxGain, 0.0f);
 }
@@ -428,6 +449,8 @@ void PassiveMasterEQProcessor::applyClassAPreset (int index)
 void PassiveMasterEQProcessor::applyParametric (const ppm::sontec::Settings& st)
 {
     setParamPlain (params::pq::in, st.in ? 1.0f : 0.0f);
+    setParamPlain (params::pq::inGain, 0.0f);       // presets start with the trims at 0 dB
+    setParamPlain (params::pq::outGain, 0.0f);
     for (int c = 0; c < 2; ++c)
     {
         const auto& ch = st.ch[c];
@@ -680,7 +703,9 @@ PassiveMasterEQProcessor::AutoPlan PassiveMasterEQProcessor::solvePlan (int genr
     if (para.in)
     {
         sontec::SontecEQ pq; pq.setSettings (para); pq.prepare (fs * (1 << os)); pq.setSettings (para);
-        renderOversampled (a, b, [&pq] (double& l, double& r) { pq.process (l, r); });
+        const double gi = juce::Decibels::decibelsToGain ((double) apvts.getRawParameterValue (params::pq::inGain)->load());
+        const double go = juce::Decibels::decibelsToGain ((double) apvts.getRawParameterValue (params::pq::outGain)->load());
+        renderOversampled (a, b, [&pq, gi, go] (double& l, double& r) { l *= gi; r *= gi; pq.process (l, r); l *= go; r *= go; });
         if (cancelSolve.load()) return p;
     }
 

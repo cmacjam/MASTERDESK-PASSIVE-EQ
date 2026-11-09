@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "")
 
-project(PassiveMasterEQ VERSION 1.12.0 LANGUAGES C CXX)
+project(PassiveMasterEQ VERSION 1.13.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -77,8 +77,13 @@ if(PPM_HEADLESS_LINUX)
         JUCE_ALSA=0 JUCE_JACK=0)
 endif()
 
+# the user manual, built into the plug-in (HELP ? > OPEN MANUAL) and shipped beside it by the installers
+juce_add_binary_data(PPMManual HEADER_NAME ManualData.h NAMESPACE ManualData SOURCES docs/MasterDesk-User-Manual.pdf)
+set_target_properties(PPMManual PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_link_libraries(PassiveMasterEQ
     PRIVATE
+        PPMManual
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -121,7 +126,7 @@ if(PPM_BUILD_TESTS)
         target_compile_definitions(host_test PRIVATE
             JUCE_USE_XRANDR=0 JUCE_USE_XINERAMA=0 JUCE_USE_XCURSOR=0 JUCE_USE_XRENDER=0 JUCE_ALSA=0 JUCE_JACK=0)
     endif()
-    target_link_libraries(host_test PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
+    target_link_libraries(host_test PRIVATE PPMManual juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
     add_test(NAME host_test COMMAND host_test)
     # the same, as if on a small 1024 x 761 screen (like the GitHub macOS machine)
     add_test(NAME host_test_small_screen COMMAND host_test)

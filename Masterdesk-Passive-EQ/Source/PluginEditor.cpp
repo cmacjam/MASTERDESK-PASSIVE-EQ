@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "ManualData.h"
 #include <optional>
 
 // The screen the plug-in sizes itself to. Tests can pretend it is a given size (e.g. a CI machine's small screen).
@@ -2522,6 +2523,12 @@ namespace tips
     static const juce::String pqHi    = "HI SHELF - lifts or lowers everything above 8 kHz (or 12 kHz with the switch), +/-9 dB.";
     static const juce::String pqLo    = "LO SHELF - lifts or lowers everything below 100 Hz (or 50 Hz with the switch), +/-9 dB.";
     static const juce::String pqMan   = "MAN / OFF - switches this channel of the parametric EQ in (MAN) or out (OFF).";
+    static const juce::String pqIn    = "INPUT - trims the level going into the parametric EQ, -12 to +12 dB in 0.5 dB steps. Double-click for 0 dB. "
+        "Works only while PUSH EQ is lit.";
+    static const juce::String pqOut   = "OUTPUT - sets the level leaving the parametric EQ, -12 to +12 dB in 0.5 dB steps. Use it to match the "
+        "level with PUSH EQ in and out. Double-click for 0 dB.";
+    static const juce::String pqMeter = "PARAMETRIC METER - peak level leaving the parametric EQ (after OUTPUT), left and right. "
+        "Green below -6 dBFS, amber to -1, red above.";
     static const juce::String pqPush  = "PUSH EQ - switches the whole parametric EQ in (lit) or out. It sits in front of the passive EQ. Starts switched out.";
 }
 
@@ -2574,17 +2581,33 @@ ParametricPanel::ParametricPanel (PassiveMasterEQProcessor& p) : proc (p)
     ledL.setTooltip ("LEFT - lit while the left channel is being equalised."); ledR.setTooltip ("RIGHT - lit while the right channel is being equalised.");
     ledOn.setTooltip (tips::pqPush);
     for (auto* c : std::initializer_list<juce::Component*> { &pushEq, &ledL, &ledR, &ledOn }) addAndMakeVisible (c);
+    const juce::StringArray io { "-12", "-6", "0", "+6", "+12" };
+    inKnob  = std::make_unique<SkirtKnob> (p.apvts, params::pq::inGain, io);
+    outKnob = std::make_unique<SkirtKnob> (p.apvts, params::pq::outGain, io);
+    inKnob->knobFraction = outKnob->knobFraction = 0.58f;
+    inKnob->setTooltip (tips::pqIn); outKnob->setTooltip (tips::pqOut);
+    pqMeter.setTooltip (tips::pqMeter);
+    for (auto* c : std::initializer_list<juce::Component*> { inKnob.get(), outKnob.get(), &pqMeter }) addAndMakeVisible (c);
 }
 
 void ParametricPanel::resized()
 {
     auto r = getLocalBounds().reduced (18, 10);
     r.removeFromBottom (24);                                         // engraved model line
-    legendCol = r.removeFromRight (74);
-    const int shelfW = 136, centreW = 150;
-    const int bw = (r.getWidth() - shelfW - centreW) / 6;
     const int H = r.getHeight();
     const int shapeH = H * 27 / 100, freqH = H * 41 / 100;
+    // INPUT / meter / OUTPUT column at the far right, then the legend
+    ioCol = r.removeFromRight (122);
+    {
+        auto c = ioCol;
+        inKnob->setBounds (c.removeFromTop (shapeH + 14).withTrimmedTop (14));
+        outKnob->setBounds (c.removeFromBottom (c.getHeight() / 2 + 4).withTrimmedTop (18));
+        pqMeter.setBounds (c.withSizeKeepingCentre (c.getWidth() - 8, juce::jmin (46, c.getHeight() - 24)).translated (0, 6));
+    }
+    r.removeFromRight (10);
+    legendCol = r.removeFromRight (64);
+    const int shelfW = 136, centreW = 150;
+    const int bw = (r.getWidth() - shelfW - centreW) / 6;
     auto place = [&] (juce::Rectangle<int> col, SkirtKnob& sh, SkirtKnob& fr, SkirtKnob& lv)
     {
         sh.setBounds (col.removeFromTop (shapeH).withTrimmedBottom (14));     // band name under the shape knob
@@ -2652,6 +2675,14 @@ void ParametricPanel::paint (juce::Graphics& g)
         engrave ("LO", ls.withWidth (24.0f).withY (ls.getBottom() - 24.0f).withHeight (14.0f).translated (-4.0f, 0), 10.0f, juce::Justification::centredLeft);
     }
     divider (legendCol.getX() - 6);
+    divider (ioCol.getX() - 6);
+    {
+        const float ix = (float) ioCol.getX(), iw = (float) ioCol.getWidth();
+        engrave ("INPUT", { ix, (float) inKnob->getY() - 14.0f, iw, 14.0f }, 10.5f);
+        engrave ("OUTPUT", { ix, (float) outKnob->getY() - 14.0f, iw, 14.0f }, 10.5f);
+        engrave ("METER", { ix, (float) pqMeter.getY() - 15.0f, iw, 13.0f }, 9.5f, juce::Justification::centred, 0.85f);
+        engrave ("dB", { ix, (float) outKnob->getBottom() - 14.0f, iw, 12.0f }, 9.5f, juce::Justification::centred, 0.85f);
+    }
     divider (centreCol.getRight() + 1);
     // L / R badges
     for (auto [b, t] : { std::pair<juce::Rectangle<int>, const char*> { badgeL, "L" }, { badgeR, "R" } })
@@ -2685,9 +2716,14 @@ void ParametricPanel::paint (juce::Graphics& g)
     g.drawText ("PARAMETRIC  MASTERING  EQUALIZER", juce::Rectangle<int> (chans[0].bandCol[0].getX(), getHeight() - 32, 520, 22), juce::Justification::centredLeft);
 }
 
-void ParametricPanel::update()
+void ParametricPanel::update (float dt)
 {
     const auto st = proc.getParametricSettings();
+    {
+        auto& m = proc.meters;
+        const float a = m.pqLevel[0].exchange (0.0f), b = m.pqLevel[1].exchange (0.0f);
+        pqMeter.setLevels (st.in ? a : 0.0f, st.in ? b : 0.0f, dt);
+    }
     ledL.setBrightness (st.in && st.ch[0].in ? 1.0f : 0.0f);
     ledR.setBrightness (st.in && st.ch[1].in ? 1.0f : 0.0f);
     ledOn.setBrightness (st.in ? 1.0f : 0.15f);
@@ -2953,7 +2989,32 @@ void PopOutButton::paintButton (juce::Graphics& g, bool hi, bool down)
 // =============================================================================
 //  HelpOverlay
 // =============================================================================
-HelpOverlay::HelpOverlay() { setInterceptsMouseClicks (true, false); }
+HelpOverlay::HelpOverlay()
+{
+    setInterceptsMouseClicks (true, true);
+    openManual.setTooltip ("OPEN MANUAL - opens the full user manual (PDF) in your PDF viewer.");
+    openManual.onClick = []
+    {
+        const auto f = extractManual();
+        if (f.existsAsFile()) f.startAsProcess();
+    };
+    addAndMakeVisible (openManual);
+}
+
+juce::File HelpOverlay::extractManual()
+{
+    const auto f = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                       .getChildFile ("MasterDesk Mastering Suite - User Manual.pdf");
+    if (! f.existsAsFile() || f.getSize() != (juce::int64) ManualData::MasterDeskUserManual_pdfSize)
+        f.replaceWithData (ManualData::MasterDeskUserManual_pdf, (size_t) ManualData::MasterDeskUserManual_pdfSize);
+    return f;
+}
+
+void HelpOverlay::resized()
+{
+    auto card = getLocalBounds().toFloat().reduced (40.0f, 30.0f).withSizeKeepingCentre ((float) getWidth() - 80.0f, 1200.0f);
+    openManual.setBounds (juce::Rectangle<int> ((int) card.getRight() - 34 - 170, (int) card.getY() + 26, 170, 34));
+}
 
 void HelpOverlay::paint (juce::Graphics& g)
 {
@@ -2999,7 +3060,7 @@ void HelpOverlay::paint (juce::Graphics& g)
           "BELL makes a hill or dip; SHELF lifts or lowers everything below (LOW, LOW MID) or above (HIGH MID, HIGH)." },
         { "4b  PARAMETRIC MASTERING EQUALIZER (black panel)",
           "First in the chain, before the passive EQ.  Per channel: SHELVING (HI 8/12 kHz, LO 100/50 Hz) and LO / MID / HI bands with SHAPE "
-          "(5-15 dB/oct, wide to narrow), FREQ and LEVEL (+/-9 dB).  MAN / OFF per channel, red PUSH EQ switches it in.  Hover a knob to see its value." },
+          "(5-15 dB/oct, wide to narrow), FREQ and LEVEL (+/-9 dB).  MAN / OFF per channel, red PUSH EQ switches it in.  INPUT / OUTPUT (right column) trim the level into and out of it (+/-12 dB) and its METER shows the level leaving it.  Hover a knob to see its value." },
         { "5  WHY IT SOUNDS 'PASSIVE'",
           "Like the hardware, the bands work in parallel inside one passive network. Two bands boosting the same spot don't stack fully, "
           "a boost and cut in the same place cancel, and gain depends on bandwidth: a wide bell tops out near 6 dB, a narrow one at 11 dB. "
@@ -3010,7 +3071,7 @@ void HelpOverlay::paint (juce::Graphics& g)
           "EQ IN / OUT bypasses the EQ for a quick before/after." },
         { "7  STEREO & WINDOW",
           "LINK keeps both sides identical; unlink to treat left and right separately. L > R / R > L copy one side to the other.  "
-          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  PRESETS (next to POP OUT on each EQ and compressor) opens that unit's presets, factory and engineer, and changes only that unit. POP OUT: the POP OUT button in each unit's top-left corner opens that unit in its own window (still connected). CLICK & ZOOM: double-click any empty spot (not a knob) to zoom in 2x right there; double-click again to zoom out. Ctrl/Cmd + mouse wheel zooms smoothly up to 4x. While zoomed, hover an edge, drag an empty spot or use the wheel to look around. MINI shows just the meters; SCROLL makes the panel fill the window's width at a bigger size; hover near the top or bottom edge to glide up or down (or use the mouse wheel; the window can be any height); "
+          "WINDOW: grab the chrome handle on the left or right side and pull: sideways makes it wider (the panel spreads out), up/down makes it bigger. The bottom-right corner works too. Nothing gets squashed.  PRESETS (next to POP OUT on each EQ and compressor) opens that unit's presets, factory and engineer, and changes only that unit. POP OUT: the POP OUT button in each unit's top-left corner opens that unit in its own window (still connected). CLICK & ZOOM: double-click any empty spot (not a knob) to zoom in 2x right there; double-click again to zoom out. Ctrl/Cmd + mouse wheel zooms smoothly up to 4x. While zoomed, hover an edge, drag an empty spot or use the wheel to look around. MINI shows just the meters; SCROLL makes the panel fill the window's width at a bigger size; hover near the top or bottom edge to glide up or down (or use the mouse wheel; the window can be any height). HOVER ON / OFF turns that edge-hover gliding on or off (the wheel and dragging always work); "
           "FULL PANEL brings everything back. FULL SCREEN fills the screen (press EXIT FULL to go back)." },
         { "8  VARI-MU COMPRESSOR (bottom panel)",
           "A tube 'variable-mu' compressor: very soft knee, and the ratio rises the harder you push (about 1.5:1 up to 4:1), "
@@ -3207,6 +3268,11 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
                              "to glide up or down (faster closer to the edge), or use the mouse wheel; make the window any height. Press again for the normal fit-to-window view.");
     scrollButton.onClick = [this] { if (onToggleScroll) onToggleScroll(); };
     addAndMakeVisible (scrollButton);
+    hoverButton.setTooltip ("HOVER - turns hover scrolling on or off. ON: rest the mouse near the top or bottom edge (or any edge while zoomed in) "
+                            "and the panel glides that way. OFF: the panel only moves with the mouse wheel or by dragging. Remembered with the session.");
+    hoverButton.setClickingTogglesState (false);
+    hoverButton.onClick = [this] { if (onToggleHover) onToggleHover(); };
+    addAndMakeVisible (hoverButton);
     for (auto* c : std::initializer_list<juce::Component*> { &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
         addAndMakeVisible (c);
     for (int u = 0; u < kNumUnits; ++u)
@@ -3331,7 +3397,7 @@ void Faceplate::timerCallback()
     if (! compact)
     {
         if (unitWindows[UnitAuto] == nullptr) autoPanel.update (dt);      // (the pop-out copy runs it while open)
-        classAPanel.update (dt); paraPanel.update();
+        classAPanel.update (dt); paraPanel.update (dt);
     }
     auto& m = proc.meters;
     const bool linked = proc.isLinked();
@@ -3560,9 +3626,10 @@ void Faceplate::resized()
         helpButton.setBounds (bar.removeFromLeft (92));  bar.removeFromLeft (8);
         miniButton.setBounds (bar.removeFromLeft (70));  bar.removeFromLeft (8);
         fullButton.setBounds (bar.removeFromLeft (114)); bar.removeFromLeft (8);
-        scrollButton.setBounds (bar.removeFromLeft (98));
+        scrollButton.setBounds (bar.removeFromLeft (98)); bar.removeFromLeft (8);
+        hoverButton.setBounds (bar.removeFromLeft (100));
         nameplate  = f.removeFromRight (270.0f).withSizeKeepingCentre (270.0f, 48.0f);
-        auto mid = f.withTrimmedLeft ((float) (scrollButton.getRight() - f.getX() + 14)).withTrimmedRight (16.0f).toNearestInt();
+        auto mid = f.withTrimmedLeft ((float) (hoverButton.getRight() - f.getX() + 14)).withTrimmedRight (16.0f).toNearestInt();
         sizeBox.setBounds (mid.removeFromRight (84).withSizeKeepingCentre (84, 30));
         mid.removeFromRight (44);
         presetLabel = mid.removeFromLeft (52).toFloat();
@@ -3729,6 +3796,8 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
     face.setCompact ((bool) proc.apvts.state.getProperty ("uiCompact", false));
     scrollMode = (bool) proc.apvts.state.getProperty ("uiScroll", false);
     face.setScrollState (scrollMode);
+    hoverOn = (bool) proc.apvts.state.getProperty ("uiHover", true);
+    face.setHoverState (hoverOn);
 
     setLookAndFeel (&laf);
     addAndMakeVisible (face);
@@ -3744,6 +3813,7 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
         else             setSize (juce::roundToInt (Faceplate::kW * sc), juce::roundToInt (designH() * sc));
     };
     face.onToggleScroll     = [this] { toggleScroll(); };
+    face.onToggleHover      = [this] { toggleHover(); };
     addChildComponent (hints);
     startTimerHz (60);                                  // hover scrolling / panning
     face.addMouseListener (&zoomMouse, true);           // click & zoom
@@ -3992,6 +4062,7 @@ void PassiveMasterEQEditor::mouseWheelMove (const juce::MouseEvent& e, const juc
 // SCROLL view: top / bottom. Zoomed: all four edges. Not while a mouse button is held (e.g. turning a knob).
 void PassiveMasterEQEditor::hoverScroll (float mouseX, float mouseY, double seconds)
 {
+    if (! hoverOn) mouseX = mouseY = -1.0f;            // HOVER OFF: the edges never scroll (the arrows still show where there's more)
     const float zone = (float) ui::ScrollHints::kZone, w = (float) getWidth(), h = (float) getHeight();
     bool can[4] {}; float hot[4] {};
     const bool inside = mouseX >= 0.0f && mouseX <= w && mouseY >= 0.0f && mouseY <= h;
@@ -4091,6 +4162,14 @@ void ui::ScrollHints::paint (juce::Graphics& g)
         g.setColour (juce::Colour (0xff9fe8ff).withAlpha (0.9f)); g.drawRoundedRectangle (pill, 13.0f, 1.2f);
         g.setFont (f); g.drawText (txt, pill, juce::Justification::centred);
     }
+}
+
+void PassiveMasterEQEditor::setHoverEnabled (bool on)
+{
+    hoverOn = on;
+    proc.apvts.state.setProperty ("uiHover", hoverOn, nullptr);
+    face.setHoverState (hoverOn);
+    hoverScroll (-1.0f, -1.0f, 0.0);                   // clear any lit edge
 }
 
 void PassiveMasterEQEditor::toggleScroll()
