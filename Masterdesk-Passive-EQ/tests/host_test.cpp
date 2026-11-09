@@ -74,6 +74,14 @@ static void playMusic (PassiveMasterEQProcessor& proc, PassiveMasterEQEditor& ed
     }
 }
 
+// every failed check names its line, so a CI run shows which check failed without the full log
+static void failCheck (int& failures, int line)
+{
+    ++failures;
+    std::printf ("CHECK FAILED at host_test.cpp line %d\n", line);
+    std::fflush (stdout);
+}
+
 int main()
 {
     juce::ScopedJuceInitialiser_GUI init;
@@ -102,7 +110,7 @@ int main()
             std::printf ("  %6.0f Hz  plugin %+6.2f dB   model %+6.2f dB\n", f, got, want);
         }
         std::printf ("  worst |diff| = %.2f dB\n", worst);
-        if (worst > 0.5) ++failures;
+        if (worst > 0.5) failCheck (failures, __LINE__);
 
         // stress: full-scale noise with tube on, everything maxed — must stay finite
         setParam (s, ppm::params::tubeOn, 1.0f); setParam (s, ppm::params::tubeDrive, 18.0f);
@@ -124,7 +132,7 @@ int main()
             for (int c = 0; c < 2; ++c) for (int i = 0; i < 512; ++i) { const float v = buf.getSample (c, i); finite &= std::isfinite (v); peak = std::max (peak, std::abs (v)); }
         }
         std::printf ("  stress: finite=%s peak=%.2f\n\n", finite ? "yes" : "NO", peak);
-        if (! finite) ++failures;
+        if (! finite) failCheck (failures, __LINE__);
 
         if (sr == 44100.0)
         {
@@ -217,7 +225,7 @@ int main()
                 if (std::abs (w1 - std::min (w0 + 300, maxW)) > 2 || h1 != h0 || p1 <= PassiveMasterEQEditor::designWidth()
                     || std::abs (w2 - std::min (w1 + 200, maxW)) > 2 || h2 != h0
                     || std::abs (h3 - std::min (h2 + 60, maxH)) > 2 || w3 < w2
-                    || (double) w4 / h4 < aspect - 0.01 || h4 > maxH + 1) ++failures;
+                    || (double) w4 / h4 < aspect - 0.01 || h4 > maxH + 1) failCheck (failures, __LINE__);
                 // SCROLL mode: the panel fills the width; hovering near the top / bottom edge glides it up / down (no scroll bar)
                 {
                     e->toggleScroll();
@@ -247,7 +255,7 @@ int main()
                     // at 840 wide the zoom is 840/1440 = 0.583, so 520 px shows 891 of the 2380 panel px
                     if (std::abs (maxPos - (PassiveMasterEQEditor::designHeight() - sh0 * 1440.0 / (double) (sw0 - PassiveMasterEQEditor::kScrollBarW))) > 2.0 || still != 0.0
                         || down1 <= 100.0 || std::abs (bottom - maxPos) > 0.01 || slowUp <= 0.0 || fastUp < 3.0 * slowUp
-                        || top != 0.0 || (double) nw / nh < aspect - 0.01) ++failures;
+                        || top != 0.0 || (double) nw / nh < aspect - 0.01) failCheck (failures, __LINE__);
                 }
                 // CLICK & ZOOM: zoom in at a point (it stays under the mouse), look around, zoom back out
                 {
@@ -278,7 +286,7 @@ int main()
                     if (std::abs (z - 2.0f) > 0.01f || std::abs (in.getWidth() * 2.0f - before.getWidth()) > 2.0f
                         || panelAt.getDistanceFrom (panelAfter) > 2.0f || leftMove <= 10.0f || downMove <= 10.0f
                         || corner.getX() > 0.5f || corner.getY() > 0.5f || e->zoomFactor() != 1.0f
-                        || std::abs (out.getWidth() - before.getWidth()) > 2.0f) ++failures;
+                        || std::abs (out.getWidth() - before.getWidth()) > 2.0f) failCheck (failures, __LINE__);
                 }
                 // (help snapshot taken above)
             }
@@ -303,7 +311,7 @@ int main()
             std::printf ("  %-32s comp %s thr %+5.1f  ", proc.getProgramName (i).toRawUTF8(), cs.compIn ? "in " : "out", ppm::compThresholdDb (cs.threshold));
             std::printf ("EQ %+6.1f .. %+5.1f dB  (vs model @1k %+.2f)\n",
                          lo, hi, at1k);
-            if (std::abs (at1k) > 0.6 || hi > 14.0) ++failures;     // at1k includes tube colour on presets with drive
+            if (std::abs (at1k) > 0.6 || hi > 14.0) failCheck (failures, __LINE__);     // at1k includes tube colour on presets with drive
         }
         // engineer presets: every EQ preset measured through the plug-in matches the units' models
         // (parametric + passive), and the compressor settings land on the Class-A / Vari-Mu
@@ -322,7 +330,7 @@ int main()
                     || (pr.ca.in && (std::abs (ca.ch[0].ratioPos - pr.ca.ch[0].ratioPos) > 0.011 || std::abs (ca.ch[0].thresholdDb - pr.ca.ch[0].thresholdDb) > 0.06
                                      || std::abs (ca.ch[0].attackMs - pr.ca.ch[0].attackMs) > 0.011 + 0.01 * pr.ca.ch[0].attackMs
                                      || ca.ch[0].feedForward != pr.ca.ch[0].feedForward || std::abs (ca.ch[0].mix - pr.ca.ch[0].mix) > 0.006)))
-                { std::printf ("  ENGINEER PRESET %s: compressor settings did not land\n", pr.name.c_str()); ++failures; }
+                { std::printf ("  ENGINEER PRESET %s: compressor settings did not land\n", pr.name.c_str()); failCheck (failures, __LINE__); }
                 const bool hasEq = pr.pq.in || std::any_of (std::begin (pr.ch.band), std::end (pr.ch.band), [] (const ppm::BandSettings& b) { return b.gainStep > 0; }) || pr.ch.hp || pr.ch.lp;
                 if (! hasEq) continue;
                 ++nEq;
@@ -338,10 +346,10 @@ int main()
                     worst = std::max (worst, std::abs (measureDb (proc, 48000.0, f) - model));
                 }
                 worstAll = std::max (worstAll, worst);
-                if (worst > 0.35) { std::printf ("  ENGINEER PRESET %s: plug-in %.2f dB off its model\n", pr.name.c_str(), worst); ++failures; }
+                if (worst > 0.35) { std::printf ("  ENGINEER PRESET %s: plug-in %.2f dB off its model\n", pr.name.c_str(), worst); failCheck (failures, __LINE__); }
             }
             std::printf ("  engineer presets: %d (%d with EQ), plug-in vs model worst %.2f dB, compressor settings land: checked\n", nEng, nEq, worstAll);
-            if (nEng < 35) ++failures;
+            if (nEng < 35) failCheck (failures, __LINE__);
         }
         // PRESETS buttons on the units: each lists its own presets and changes only its own unit
         {
@@ -389,7 +397,7 @@ int main()
             };
             check (eq, eqKey); check (vm, vmKey); check (ca, caKey);
             std::printf ("  duplicate presets: %d\n", dups);
-            if (dups) ++failures;
+            if (dups) failCheck (failures, __LINE__);
 
             // EQ preset + matching compressor: every EQ preset finds its compressor, and choosing one
             // leaves exactly one compressor running (or none for flat / track presets without one)
@@ -414,9 +422,9 @@ int main()
                                 && proc.getClassASettings().ch[0].thresholdDb == thrBefore;
             std::printf ("  EQ + matching compressor: %d of %d EQ presets link one (%d Vari-Mu, %d Class-A); %d track presets; link off leaves the compressors: %s\n",
                          nLinked, (int) eq.size(), nVm, nCa, nTrack, untouched ? "yes" : "NO");
-            if (bad || nTrack < 16 || ! untouched) ++failures;
-            if (! masterOnly) ++failures;
-            if (eq.size() < 25 || vm.size() < 8 || ca.size() < 25 || ! eqOk || ! caOk || ! vmOk) ++failures;
+            if (bad || nTrack < 16 || ! untouched) failCheck (failures, __LINE__);
+            if (! masterOnly) failCheck (failures, __LINE__);
+            if (eq.size() < 25 || vm.size() < 8 || ca.size() < 25 || ! eqOk || ! caOk || ! vmOk) failCheck (failures, __LINE__);
         }
         // state round-trip keeps the program and parameters
         proc.setCurrentProgram (3);
@@ -426,7 +434,7 @@ int main()
                        && other.getChannelSettings (0).band[1].mode == ppm::Cut
                        && other.getChannelSettings (0).hp == 4;
         std::printf ("  state round-trip: %s\n", same ? "ok" : "MISMATCH");
-        if (! same) ++failures;
+        if (! same) failCheck (failures, __LINE__);
     }
 
     // ---- spectrum analyzer reads a known tone correctly -------------------------
@@ -452,7 +460,7 @@ int main()
         using SA = ui::SpectrumAnalyzer;
         const float at1k = e->analyzerBandDb (SA::kBand1k), at250 = e->analyzerBandDb (SA::bandForHz (250.0f)), at4k = e->analyzerBandDb (SA::bandForHz (4000.0f));
         std::printf ("  1 kHz band %+6.1f dB (expect -6),  250 Hz band %+6.1f dB,  4 kHz band %+6.1f dB\n", at1k, at250, at4k);
-        if (std::abs (at1k + 6.0f) > 1.0f || at250 > -40.0f || at4k > -40.0f) ++failures;
+        if (std::abs (at1k + 6.0f) > 1.0f || at250 > -40.0f || at4k > -40.0f) failCheck (failures, __LINE__);
     }
 
     // ---- loudness meter and vectorscope inside the plugin ------------------------
@@ -482,19 +490,19 @@ int main()
         play (10.0, a23, a23);
         const float I = proc.loudness.integrated.load(), S = proc.loudness.shortTerm.load(), tp = proc.loudness.truePeakMax.load();
         std::printf ("  1 kHz -23 dBFS stereo: integrated %+.2f, short-term %+.2f LUFS, true peak %+.2f dBTP\n", I, S, tp);
-        if (std::abs (I + 23.0f) > 0.15f || std::abs (S + 23.0f) > 0.15f || std::abs (tp + 23.0f) > 0.2f) ++failures;
+        if (std::abs (I + 23.0f) > 0.15f || std::abs (S + 23.0f) > 0.15f || std::abs (tp + 23.0f) > 0.2f) failCheck (failures, __LINE__);
         std::printf ("  in-phase: correlation %+.2f, balance %+.2f\n", e->vectorscopeCorrelation(), e->vectorscopeBalance());
-        if (e->vectorscopeCorrelation() < 0.95f || std::abs (e->vectorscopeBalance()) > 0.05f) ++failures;
+        if (e->vectorscopeCorrelation() < 0.95f || std::abs (e->vectorscopeBalance()) > 0.05f) failCheck (failures, __LINE__);
         play (1.5, a23, -a23);
         std::printf ("  out of phase: correlation %+.2f\n", e->vectorscopeCorrelation());
-        if (e->vectorscopeCorrelation() > -0.95f) ++failures;
+        if (e->vectorscopeCorrelation() > -0.95f) failCheck (failures, __LINE__);
         play (1.5, a23, 0.0);
         std::printf ("  left only: balance %+.2f\n", e->vectorscopeBalance());
-        if (e->vectorscopeBalance() > -0.95f) ++failures;
+        if (e->vectorscopeBalance() > -0.95f) failCheck (failures, __LINE__);
         proc.loudness.resetRequested.store (true);
         play (0.2, a23, a23);
         std::printf ("  after RESET: integrated %s\n", proc.loudness.integrated.load() < -100.0f ? "cleared" : "NOT cleared");
-        if (proc.loudness.integrated.load() > -100.0f) ++failures;
+        if (proc.loudness.integrated.load() > -100.0f) failCheck (failures, __LINE__);
     }
 
     // ---- INPUT gain ------------------------------------------------------------------
@@ -511,7 +519,7 @@ int main()
             setParam (s, ppm::params::inputGain, g);
             const double got = measureStereo (proc, 48000.0, 1000.0, 0.05, 0.05, 0.5).first;
             std::printf ("  INPUT %+5.1f dB -> output %+6.2f dB\n", g, got);
-            if (std::abs (got - g) > 0.1) ++failures;
+            if (std::abs (got - g) > 0.1) failCheck (failures, __LINE__);
         }
     }
 
@@ -541,11 +549,11 @@ int main()
         int zc = 0; for (size_t i = out.size() - 96000; i + 1 < out.size(); ++i) if (out[i] <= 0 && out[i + 1] > 0) ++zc;
         const double f = zc / 2.0;
         std::printf ("  latency off %d / on %d samples; 440 Hz +2 st -> %.1f Hz (want 493.9)\n", lat0, lat1, f);
-        if (lat1 - lat0 != 4096 || std::abs (f - 493.9) > 1.5) ++failures;
+        if (lat1 - lat0 != 4096 || std::abs (f - 493.9) > 1.5) failCheck (failures, __LINE__);
         setParam (s, ppm::params::keyOn, 0.0f);
         for (int b = 0; b < 3; ++b) { juce::MidiBuffer m; proc.processBlock (buf, m); }
         std::printf ("  switched off: latency %d samples\n", proc.getLatencySamples());
-        if (proc.getLatencySamples() != lat0) ++failures;
+        if (proc.getLatencySamples() != lat0) failCheck (failures, __LINE__);
 
         // detection: an A minor progression through the plug-in, watched by the panel
         std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
@@ -575,11 +583,11 @@ int main()
         };
         playChords (24);
         std::printf ("  A minor progression -> panel shows %d (21 = A minor)\n", e->detectedKey());
-        if (e->detectedKey() != 21) ++failures;
+        if (e->detectedKey() != 21) failCheck (failures, __LINE__);
         setParam (s, ppm::params::keyOn, 1.0f); setParam (s, ppm::params::keySemis, 2.0f);
         playChords (30);
         std::printf ("  with KEY SHIFT +2: song key %d (21 = A minor), now playing in %d (23 = B minor)\n", e->detectedKey(), e->shiftedKey());
-        if (e->detectedKey() != 21 || e->shiftedKey() != 23) ++failures;
+        if (e->detectedKey() != 21 || e->shiftedKey() != 23) failCheck (failures, __LINE__);
         const juce::File dir (juce::SystemStats::getEnvironmentVariable ("PPM_SNAPSHOT_DIR", juce::File::getSpecialLocation (juce::File::tempDirectory).getFullPathName()));
         auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
         auto file = dir.getChildFile ("editor_key.png"); file.deleteFile();
@@ -601,24 +609,24 @@ int main()
         const double want = -ppm::variMuGainReductionDb (-6.0 + 18.0, ppm::Compress);
         const float meter = proc.meters.gr[0].load();
         std::printf ("  -6 dBFS in: gain %+.2f dB (curve %+.2f), GR meter %.2f dB\n", g.first, want, meter);
-        if (std::abs (g.first - want) > 0.7 || std::abs (meter + want) > 0.7) ++failures;
+        if (std::abs (g.first - want) > 0.7 || std::abs (meter + want) > 0.7) failCheck (failures, __LINE__);
 
         // linked: quiet right side gets the loud left side's gain reduction
         auto gl = measureStereo (proc, 48000.0, 1000.0, a, 0.01, 2.0);
         std::printf ("  linked, loud L / quiet R: L %+.2f dB, R %+.2f dB\n", gl.first, gl.second);
-        if (std::abs (gl.first - gl.second) > 0.3) ++failures;
+        if (std::abs (gl.first - gl.second) > 0.3) failCheck (failures, __LINE__);
         setParam (s, ppm::params::link, 0.0f);
         setParam (s, "R_c_thresh", 12); setParam (s, "R_c_attack", 3); setParam (s, "R_c_recovery", 0);
         auto gu = measureStereo (proc, 48000.0, 1000.0, a, 0.01, 2.0);
         std::printf ("  unlinked:                 L %+.2f dB, R %+.2f dB\n", gu.first, gu.second);
-        if (std::abs (gu.second) > 0.2 || gu.first > -6.0) ++failures;
+        if (std::abs (gu.second) > 0.2 || gu.first > -6.0) failCheck (failures, __LINE__);
         setParam (s, ppm::params::link, 1.0f);
 
         // comp out = unity
         setParam (s, "L_c_in", 0.0f);
         auto go = measureStereo (proc, 48000.0, 1000.0, a, a, 1.0);
         std::printf ("  COMP OUT: gain %+.3f dB\n", go.first);
-        if (std::abs (go.first) > 0.05) ++failures;
+        if (std::abs (go.first) > 0.05) failCheck (failures, __LINE__);
         setParam (s, "L_c_in", 1.0f);
 
         // order switch: both orders give finite, sensible output, no blow-up while switching
@@ -632,7 +640,7 @@ int main()
             for (int c = 0; c < 2; ++c) for (int i = 0; i < 512; ++i) finite &= std::isfinite (buf.getSample (c, i)) && std::abs (buf.getSample (c, i)) < 4.0f;
         }
         std::printf ("  order switching EQ>COMP / COMP>EQ while playing: %s\n", finite ? "ok" : "PROBLEM");
-        if (! finite) ++failures;
+        if (! finite) failCheck (failures, __LINE__);
     }
 
     // ---- parametric mastering EQ inside the plugin ------------------------------
@@ -660,11 +668,11 @@ int main()
             std::printf ("    %6.0f Hz  plugin %+6.2f dB   model %+6.2f dB\n", f, got, want);
         }
         std::printf ("  worst |diff| = %.2f dB (linked: right follows left)\n", worst);
-        if (worst > 0.15) ++failures;
+        if (worst > 0.15) failCheck (failures, __LINE__);
         setParam (s, pq::in, 0.0f);
         const double off = measureDb (proc, 44100.0, 100.0);
         std::printf ("  PUSH EQ off: %+.3f dB at 100 Hz\n", off);
-        if (std::abs (off) > 0.01) ++failures;
+        if (std::abs (off) > 0.01) failCheck (failures, __LINE__);
     }
 
     // ---- M/S CLASS-A compressor inside the plugin --------------------------------
@@ -690,7 +698,7 @@ int main()
         const double want = -g;
         std::printf ("  M/S, MID threshold -30 / 1:2.5 feedback, SIDE off: mono -10 dBFS -> %+.2f dB (curve %+.2f), out-of-phase -> %+.2f dB, MID meter %.1f dB\n",
                      mid.first, want, side.first, proc.meters.grA[0].load());
-        if (std::abs (mid.first - want) > 1.0 || std::abs (side.first) > 0.1) ++failures;
+        if (std::abs (mid.first - want) > 1.0 || std::abs (side.first) > 0.1) failCheck (failures, __LINE__);
         // soft clip at the plug-in's output: +9 dBFS in, never above 0 dBFS out
         setParam (s, ca::chan (0, "thr"), 2.0f);
         setParam (s, ca::clipOn, 1.0f);
@@ -703,7 +711,7 @@ int main()
             if (b > 10) for (int c = 0; c < 2; ++c) peak = std::max (peak, (double) buf.getMagnitude (c, 0, 512));
         }
         std::printf ("  SOFT CLIP: +9 dBFS in -> output peak %.3f (%.2f dBFS)\n", peak, 20 * std::log10 (peak));
-        if (peak > 1.02) ++failures;                    // (the oversampling filter may add a hair above the clipper's 1.0)
+        if (peak > 1.02) failCheck (failures, __LINE__);                    // (the oversampling filter may add a hair above the clipper's 1.0)
     }
 
     // ---- MAXIMIZER + AUTO MASTER inside the plugin --------------------------------
@@ -759,20 +767,20 @@ int main()
         const auto plan = proc.getAutoPlan();
         std::printf ("  HIP HOP plan: %s\n    comp threshold step %d (%.1f dB GR), maximizer %+.1f dB, input %.1f -> predicted %.1f LUFS (target %.1f)\n",
                      plan.eqText.toRawUTF8(), plan.comp.threshold, plan.compGrDb, plan.maxGain, plan.inputLufs, plan.predictedLufs, plan.targetLufs);
-        if (! plan.ok || std::abs (plan.predictedLufs - plan.targetLufs) > 0.5) ++failures;
-        if (s.getRawParameterValue (ppm::params::maxOn)->load() < 0.5f) ++failures;
+        if (! plan.ok || std::abs (plan.predictedLufs - plan.targetLufs) > 0.5) failCheck (failures, __LINE__);
+        if (s.getRawParameterValue (ppm::params::maxOn)->load() < 0.5f) failCheck (failures, __LINE__);
         // the mix is dull: the plan should lift the top
         ppm::ChannelSettings eqOnly = plan.eq; eqOnly.hp = 0; eqOnly.lp = 0;
         std::printf ("    EQ at 8 kHz %+.1f dB, 63 Hz %+.1f dB\n", ppm::channelResponseDb (eqOnly, 8000), ppm::channelResponseDb (eqOnly, 63));
-        if (ppm::channelResponseDb (eqOnly, 8000) < 1.0) ++failures;
+        if (ppm::channelResponseDb (eqOnly, 8000) < 1.0) failCheck (failures, __LINE__);
 
         outPeak = 0;
         guard = 0;
         while (proc.getAutoState() != PassiveMasterEQProcessor::AutoState::Done && ++guard < 2000) play (3, true);
         std::printf ("  after the loudness check: %s\n    measured %.1f LUFS, output peak %.2f dBFS (ceiling %.1f), latency %.0f samples\n",
                      proc.getAutoMessage().toRawUTF8(), proc.getVerifyLufs(), 20 * std::log10 (outPeak), plan.ceiling, lat);
-        if (std::abs (proc.getVerifyLufs() - plan.targetLufs) > 1.0) ++failures;
-        if (20 * std::log10 (outPeak) > plan.ceiling + 0.01) ++failures;
+        if (std::abs (proc.getVerifyLufs() - plan.targetLufs) > 1.0) failCheck (failures, __LINE__);
+        if (20 * std::log10 (outPeak) > plan.ceiling + 0.01) failCheck (failures, __LINE__);
 
         const juce::File dir (juce::SystemStats::getEnvironmentVariable ("PPM_SNAPSHOT_DIR", juce::File::getSpecialLocation (juce::File::tempDirectory).getFullPathName()));
         auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
@@ -786,13 +794,13 @@ int main()
         proc.autoMasterTick();
         const auto jp = proc.getAutoPlan();
         std::printf ("  JAZZ re-plan: maximizer %+.1f dB, predicted %.1f LUFS (target %.1f)\n", jp.maxGain, jp.predictedLufs, jp.targetLufs);
-        if (! jp.ok || std::abs (jp.predictedLufs - jp.targetLufs) > 0.5) ++failures;
+        if (! jp.ok || std::abs (jp.predictedLufs - jp.targetLufs) > 0.5) failCheck (failures, __LINE__);
 
         proc.autoUndo();
         const bool undone = s.getRawParameterValue (ppm::params::maxOn)->load() < 0.5f
                          && std::lround (s.getRawParameterValue ("L_c_thresh")->load()) == 0;
         std::printf ("  UNDO restores the original settings: %s\n", undone ? "yes" : "NO");
-        if (! undone) ++failures;
+        if (! undone) failCheck (failures, __LINE__);
     }
 
     // ---- everything together: AUTO MASTER plans around the Parametric EQ and the Class-A the user has on,
@@ -851,13 +859,13 @@ int main()
                      20 * std::log10 (outPeak), plan.ceiling, kept ? "yes" : "NO", proc.getAutoMessage().toRawUTF8());
         if (! plan.ok || ! plan.withParametric || ! plan.withClassA || ! kept
             || std::abs (measured - plan.predictedLufs) > 0.8 || std::abs (plan.predictedLufs - plan.targetLufs) > 0.5
-            || 20 * std::log10 (outPeak) > plan.ceiling + 0.01) ++failures;
+            || 20 * std::log10 (outPeak) > plan.ceiling + 0.01) failCheck (failures, __LINE__);
 
         // a whole factory preset (footer menu) switches the Parametric EQ and Class-A out
         proc.setCurrentProgram (0);
         const bool reset = ! proc.getParametricSettings().in && ! proc.getClassASettings().in;
         std::printf ("  factory preset switches Parametric EQ and Class-A out: %s\n", reset ? "yes" : "NO");
-        if (! reset) ++failures;
+        if (! reset) failCheck (failures, __LINE__);
     }
 
     std::printf ("%s\n", failures ? "FAILED" : "PASSED");
