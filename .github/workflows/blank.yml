@@ -111,7 +111,9 @@ jobs:
           rc=${PIPESTATUS[0]}
           if [ "$rc" -ne 0 ]; then
             # show the failing checks on the run page (annotations + summary), so no log download is needed
-            grep -E '\*\*\*Failed|\[FAIL\]|FAILED|FAILURE|WRONG|: NO|NO MATCHING|SAME SETTINGS|did not land|off its model|MISSING|STILL SHOWN| NO\b' ctest.log \
+            # each failed check prints "CHECK FAILED at ... line N"; show it with the line above it (the measured values)
+            { grep -B1 'CHECK FAILED' ctest.log | grep -v '^--$';
+              grep -E '\*\*\*Failed|\[FAIL\]|FAILURE|WRONG|NO MATCHING|SAME SETTINGS|did not land|off its model' ctest.log; } \
               | head -10 | while IFS= read -r line; do
                   line="${line//%/%25}"; echo "::error title=Failed test check (${{ matrix.name }})::${line}"
                 done
