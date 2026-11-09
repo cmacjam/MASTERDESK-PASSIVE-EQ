@@ -3849,7 +3849,7 @@ void PassiveMasterEQEditor::updateLimits()
     if (const auto* d = ppmScreen (getScreenBounds()))
         minScale = juce::jlimit (0.15, 0.3, juce::jmin ((double) (d->userArea.getHeight() - 80) / designH(),
                                                          (double) d->userArea.getWidth() / Faceplate::kW));
-    shapeConstrainer.setSizeLimits (juce::roundToInt (Faceplate::kW * minScale), juce::roundToInt (designH() * minScale),
+    shapeConstrainer.setSizeLimits ((int) std::floor (Faceplate::kW * minScale), (int) std::floor (designH() * minScale),   // rounded down: never a pixel past the screen
                                     juce::roundToInt (Faceplate::kW * kMaxWide * 3.0), juce::roundToInt (designH() * 3.0));
     const bool standalone = proc.wrapperType == juce::AudioProcessor::wrapperType_Standalone;
     const double ratio = (double) Faceplate::kW / (double) designH();
