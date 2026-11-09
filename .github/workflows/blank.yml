@@ -223,6 +223,11 @@ jobs:
             rm -f "$ZIP"
             (cd "$ART" && zip -qry "$ZIP" "${BUNDLES[@]}")
           fi
+          # the user manual rides along in the zip
+          if [ -f docs/MasterDesk-User-Manual.pdf ]; then
+            MAN="$(mktemp -d)"; cp docs/MasterDesk-User-Manual.pdf "$MAN/$NAME - User Manual.pdf"
+            (cd "$MAN" && zip -q "$ZIP" "$NAME - User Manual.pdf")
+          fi
 
       # The .pkg installer is built right here, so this workflow file is the only thing to keep up to date
       - name: Package macOS installer
@@ -240,6 +245,10 @@ jobs:
           cp -R "$ART/VST3/$NAME.vst3"      "$STAGE/vst3/"
           cp -R "$ART/AU/$NAME.component"   "$STAGE/au/"
           cp -R "$ART/Standalone/$NAME.app" "$STAGE/app/"
+          HAVE_MANUAL=false
+          if [ -f docs/MasterDesk-User-Manual.pdf ]; then
+            HAVE_MANUAL=true; mkdir -p "$STAGE/manual"; cp docs/MasterDesk-User-Manual.pdf "$STAGE/manual/$NAME - User Manual.pdf"
+          fi
           HAVE_AAX=false
           if [ -d "$ART/AAX/$NAME.aaxplugin" ]; then
             HAVE_AAX=true; mkdir -p "$STAGE/aax"; cp -R "$ART/AAX/$NAME.aaxplugin" "$STAGE/aax/"
@@ -271,6 +280,14 @@ jobs:
           make_pkg "$STAGE/au"   au   "/Library/Audio/Plug-Ins/Components"
           make_pkg "$STAGE/app"  app  "/Applications"
           $HAVE_AAX && make_pkg "$STAGE/aax" aax "/Library/Application Support/Avid/Audio/Plug-Ins"
+          $HAVE_MANUAL && make_pkg "$STAGE/manual" manual "/Applications"
+          MAN_LINE=""; MAN_CHOICE=""; MAN_REF=""; MAN_TEXT=""
+          if $HAVE_MANUAL; then
+            MAN_LINE='<line choice="manual"/>'
+            MAN_CHOICE="<choice id=\"manual\" title=\"User manual (PDF)\" description=\"The full user manual, next to the app in Applications.\"><pkg-ref id=\"$ID.manual\"/></choice>"
+            MAN_REF="<pkg-ref id=\"$ID.manual\" version=\"$VERSION\">manual.pkg</pkg-ref>"
+            MAN_TEXT="  - User manual    -> /Applications/$NAME - User Manual.pdf"
+          fi
           AAX_LINE=""; AAX_CHOICE=""; AAX_REF=""; AAX_TEXT=""
           if $HAVE_AAX; then
             AAX_LINE='<line choice="aax"/>'
@@ -285,7 +302,7 @@ jobs:
             "Choose what to install on the next screens:" \
             "  - VST3 plug-in   -> /Library/Audio/Plug-Ins/VST3" \
             "  - Audio Unit     -> /Library/Audio/Plug-Ins/Components   (Logic Pro, GarageBand)" \
-            "  - Standalone app -> /Applications" "$AAX_TEXT" "" \
+            "  - Standalone app -> /Applications" "$AAX_TEXT" "$MAN_TEXT" "" \
             "Afterwards, rescan plug-ins in your DAW. Inside the plug-in, press HELP ? for a guide." \
             > "$STAGE/resources/welcome.txt"
 
@@ -296,7 +313,7 @@ jobs:
             <welcome file="welcome.txt" mime-type="text/plain"/>
             <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
             <domains enable_localSystem="true"/>
-            <choices-outline><line choice="vst3"/><line choice="au"/>$AAX_LINE<line choice="app"/></choices-outline>
+            <choices-outline><line choice="vst3"/><line choice="au"/>$AAX_LINE<line choice="app"/>$MAN_LINE</choices-outline>
             <choice id="vst3" title="VST3 plug-in" description="For Cubase, Ableton Live, Studio One, Reaper, FL Studio, Bitwig."><pkg-ref id="$ID.vst3"/></choice>
             <choice id="au" title="Audio Unit (AU)" description="For Logic Pro, GarageBand and other AU hosts."><pkg-ref id="$ID.au"/></choice>
             <choice id="app" title="Standalone app" description="Runs on its own without a DAW."><pkg-ref id="$ID.app"/></choice>
@@ -305,6 +322,8 @@ jobs:
             <pkg-ref id="$ID.app" version="$VERSION">app.pkg</pkg-ref>
             $AAX_CHOICE
             $AAX_REF
+            $MAN_CHOICE
+            $MAN_REF
           </installer-gui-script>
           XML
 
@@ -345,7 +364,11 @@ jobs:
           if (Test-Path "$art\AAX\$env:NAME.aaxplugin") {
             Compress-Archive -Path "$art\AAX\$env:NAME.aaxplugin" -DestinationPath "dist\MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Windows-AAX-unsigned.zip"
           }
-          Compress-Archive -Path "$art\VST3\$env:NAME.vst3" -DestinationPath "dist\MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Windows-VST3.zip"
+          $man = @()
+          if (Test-Path docs\MasterDesk-User-Manual.pdf) {
+            Copy-Item docs\MasterDesk-User-Manual.pdf "dist\$env:NAME - User Manual.pdf"; $man = @("dist\$env:NAME - User Manual.pdf")
+          }
+          Compress-Archive -Path (@("$art\VST3\$env:NAME.vst3") + $man) -DestinationPath "dist\MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Windows-VST3.zip"
 
       - name: Package Linux tarball
         if: runner.os == 'Linux'
@@ -355,6 +378,7 @@ jobs:
           cp -R "$ART/VST3/$NAME.vst3" "dist/$pkg/"
           cp "$ART/Standalone/$NAME" "dist/$pkg/"
           cp installer/linux/install.sh "dist/$pkg/" && chmod +x "dist/$pkg/install.sh"
+          [ -f docs/MasterDesk-User-Manual.pdf ] && cp docs/MasterDesk-User-Manual.pdf "dist/$pkg/$NAME - User Manual.pdf"
           sed -i "s/^NAME=.*/NAME=\"$NAME\"/" "dist/$pkg/install.sh"      # the plug-in's real name
           tar -C dist -czf "dist/$pkg.tar.gz" "$pkg"
           rm -rf "dist/$pkg"
