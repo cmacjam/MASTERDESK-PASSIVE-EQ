@@ -1,4 +1,36 @@
 #include "PluginEditor.h"
+#include <optional>
+
+// The screen the plug-in sizes itself to. Tests can pretend it is a given size (e.g. a CI machine's small screen).
+static std::optional<juce::Rectangle<int>>& testScreenArea()
+{
+    static std::optional<juce::Rectangle<int>> a = []
+    {   // tests only: PPM_TEST_SCREEN=1024x761 runs everything as if on that screen
+        std::optional<juce::Rectangle<int>> r;
+        const auto v = juce::SystemStats::getEnvironmentVariable ("PPM_TEST_SCREEN", {});
+        if (v.containsChar ('x'))
+            r = juce::Rectangle<int> (0, 25, v.upToFirstOccurrenceOf ("x", false, false).getIntValue(),
+                                      v.fromFirstOccurrenceOf ("x", false, false).getIntValue());
+        return r;
+    }();
+    return a;
+}
+static const juce::Displays::Display* ppmScreen (juce::Rectangle<int> near)
+{
+    if (testScreenArea().has_value())
+    {
+        static juce::Displays::Display fake;
+        fake.userArea = fake.totalArea = *testScreenArea(); fake.isMain = true; fake.scale = 1.0;
+        return &fake;
+    }
+    const auto& displays = juce::Desktop::getInstance().getDisplays();
+    return near.isEmpty() ? displays.getPrimaryDisplay() : displays.getDisplayForRect (near);
+}
+void PassiveMasterEQEditor::testSetScreen (juce::Rectangle<int> area)
+{
+    if (area.isEmpty()) testScreenArea().reset(); else testScreenArea() = area;
+    updateLimits();
+}
 
 using namespace ui;
 using namespace ppm;
@@ -2817,7 +2849,7 @@ UnitWindow::UnitWindow (const juce::String& title, std::unique_ptr<UnitHost> hos
     host->setLookAndFeel (&laf);
     const int W = host->getWidth(), H = host->getHeight();
     float sc = 0.85f;
-    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+    if (auto* d = ppmScreen ({}))
         sc = juce::jmin (1.0f, (float) d->userArea.getWidth() * 0.9f / (float) W, (float) d->userArea.getHeight() * 0.8f / (float) H);
     setContentOwned (host.release(), false);
     setResizable (true, true);
@@ -3715,7 +3747,7 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
     // Remembered size, or the largest standard size that fits this screen.
     // (Read it first: setting resize limits below triggers a resize.)
     float fit = 0.7f;
-    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+    if (auto* d = ppmScreen ({}))
     {
         const auto area = d->userArea;
         fit = kScales[0];
@@ -3725,7 +3757,7 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
     }
     // a remembered zoom never opens bigger than this screen allows
     float screenMax = 1.6f;
-    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+    if (auto* d = ppmScreen ({}))
         screenMax = juce::jmin ((float) d->userArea.getHeight() * 0.95f / (float) Faceplate::kH, (float) d->userArea.getWidth() / (float) Faceplate::kW);
     const float scale = juce::jlimit (0.3f, juce::jmax (0.3f, juce::jmin (1.6f, screenMax)), (float) proc.apvts.state.getProperty ("uiScale", fit));
     face.setCompact ((bool) proc.apvts.state.getProperty ("uiCompact", false));
@@ -3763,7 +3795,7 @@ PassiveMasterEQEditor::PassiveMasterEQEditor (PassiveMasterEQProcessor& p)
     if (savedW > 200 && savedH > 150)
     {
         int w = savedW, h = savedH;                     // shrink to fit if it was saved on a bigger screen
-        if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        if (auto* d = ppmScreen ({}))
         {
             const double k = juce::jmin (1.0, (double) d->userArea.getWidth() / w, (double) d->userArea.getHeight() * 0.95 / h);
             w = (int) (w * k); h = (int) (h * k);
@@ -3787,7 +3819,7 @@ void PassiveMasterEQEditor::edgeDrag (int deltaX, int deltaY, bool rightEdge, bo
     if (win != nullptr && win->isFullScreen()) return;
     juce::Rectangle<int> b (dragStartBounds.getX(), dragStartBounds.getY(),
                             dragStartBounds.getWidth() + (rightEdge ? deltaX : -deltaX), dragStartBounds.getHeight() + deltaY);
-    const auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds());
+    const auto* d = ppmScreen (getScreenBounds());
     if (d != nullptr)                                   // fit the screen
         b.setSize (juce::jmin (b.getWidth(), d->userArea.getWidth()), juce::jmin (b.getHeight(), d->userArea.getHeight() - (win != nullptr ? 40 : 80)));
     shapeConstrainer.checkBounds (b, dragStartBounds, {}, false, ! rightEdge && deltaX != 0, deltaY != 0, rightEdge && deltaX != 0);
@@ -3811,7 +3843,13 @@ void PassiveMasterEQEditor::updateLimits()
     // Nothing is ever squashed: the height sets the zoom, and extra width (up to kMaxWide x) spreads the panel out.
     // In a DAW the window can't be narrower than the panel's own shape; in the standalone app it can be any shape
     // (the panel is then centred).
-    shapeConstrainer.setSizeLimits (juce::roundToInt (Faceplate::kW * 0.3), juce::roundToInt (designH() * 0.3),
+    // the smallest size is 30 %, or less on a screen too short for that (e.g. a 768-pixel laptop screen),
+    // so a drag never gets pushed past the screen and then shrunk back (which made it jump narrower)
+    double minScale = 0.3;
+    if (const auto* d = ppmScreen (getScreenBounds()))
+        minScale = juce::jlimit (0.15, 0.3, juce::jmin ((double) (d->userArea.getHeight() - 80) / designH(),
+                                                         (double) d->userArea.getWidth() / Faceplate::kW));
+    shapeConstrainer.setSizeLimits (juce::roundToInt (Faceplate::kW * minScale), juce::roundToInt (designH() * minScale),
                                     juce::roundToInt (Faceplate::kW * kMaxWide * 3.0), juce::roundToInt (designH() * 3.0));
     const bool standalone = proc.wrapperType == juce::AudioProcessor::wrapperType_Standalone;
     const double ratio = (double) Faceplate::kW / (double) designH();
@@ -4108,7 +4146,7 @@ void PassiveMasterEQEditor::toggleScroll()
         int nw = w, nh = h;
         if (! standalone)
         {
-            nh = juce::jmax (juce::roundToInt (designH() * 0.3), juce::jmin (h, (int) std::floor (w / ratio)));   // never narrower than the panel's shape
+            nh = juce::jmax (shapeConstrainer.getMinimumHeight(), juce::jmin (h, (int) std::floor (w / ratio)));   // never narrower than the panel's shape
             nw = juce::jlimit ((int) std::ceil (nh * ratio), (int) std::floor (nh * ratio * kMaxWide), w);
         }
         setSize (nw, nh);
@@ -4155,7 +4193,7 @@ void PassiveMasterEQEditor::toggleFullScreen()
     if (! pluginFullScreen)
     {
         sizeBeforeFull = getBounds();
-        auto area = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds())->userArea;
+        auto area = ppmScreen (getScreenBounds())->userArea;
         pluginFullScreen = true;
         // largest size with the panel's proportions; leave room for the host's window header
         setSize (area.getWidth() - 20, area.getHeight() - 110);      // the panel spreads out to fill it
@@ -4178,7 +4216,7 @@ void PassiveMasterEQEditor::toggleCompact()
     if (scrollMode)
     {   // MINI isn't scrolled (it's short); FULL PANEL comes back in the scroll view
         int h = face.isCompact() ? juce::roundToInt (designH() * scale) : juce::roundToInt (getWidth() * 0.9);
-        if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds()))
+        if (auto* d = ppmScreen (getScreenBounds()))
             h = juce::jmin (h, d->userArea.getHeight() - 80);
         setSize (getWidth(), juce::jmax (240, h));
         resized();

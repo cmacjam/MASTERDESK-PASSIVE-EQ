@@ -724,6 +724,7 @@ public:
     static constexpr float kMaxZoom = 4.0f;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     static constexpr int kScrollBarW = 0;                     // no scroll bar: hover at the top / bottom edge (or use the wheel)
+    void testSetScreen (juce::Rectangle<int> userArea);          // tests: pretend the screen is this size ({} = the real one)
     void testEdgeDrag (int deltaX, int deltaY, bool rightEdge) { edgeDrag (0, 0, rightEdge, true); edgeDrag (deltaX, deltaY, rightEdge, false); }   // tests
 
 private:

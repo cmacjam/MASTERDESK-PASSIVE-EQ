@@ -197,35 +197,45 @@ int main()
                 snap (*ed, "editor_mini.png");
                 e->toggleCompact();
                 setParam (s, ppm::params::inputGain, 0.0f);
-                // side handles: sideways = wider (panel spreads out, height stays), down = bigger, narrower = smaller
+                // side handles: sideways = wider (panel spreads out, height stays), down = bigger, narrower = smaller.
+                // Run on this machine's screen and on a pretend 1024 x 761 screen (GitHub's macOS 15 machine),
+                // which is shorter than the plug-in's usual smallest size.
                 const double aspect = (double) PassiveMasterEQEditor::designWidth() / PassiveMasterEQEditor::designHeight();
-                int maxW = 100000, maxH = 100000;
-                if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (ed->getScreenBounds()))
-                    { maxW = d->userArea.getWidth(); maxH = d->userArea.getHeight() - 80; }
-                // CI machines have small virtual screens (often shorter than the plug-in's smallest size, 30 %):
-                // the editor never goes below that size, so the room it really has is the larger of the two
-                const int minW = (int) std::ceil (PassiveMasterEQEditor::designWidth() * 0.30);
-                const int minH = (int) std::lround (minW / aspect);
-                maxH = std::max (maxH, minH);
-                maxW = std::max (maxW, minW);
-                // start inside that room
-                const int startW = std::max (minW, std::min (600, (int) ((maxH - 120) * aspect)));
-                ed->setSize (startW, (int) std::lround (startW / aspect));
-                const int w0 = ed->getWidth(), h0 = ed->getHeight();
-                e->testEdgeDrag (300, 0, true);                       // pull the right side out
-                const int w1 = ed->getWidth(), h1 = ed->getHeight(), p1 = e->panelWidth();
-                e->testEdgeDrag (-200, 0, false);                     // pull the left side out (leftwards = wider)
-                const int w2 = ed->getWidth(), h2 = ed->getHeight();
-                e->testEdgeDrag (0, 60, true);                        // pull down: bigger
-                const int w3 = ed->getWidth(), h3 = ed->getHeight();
-                e->testEdgeDrag (-2000, 0, true);                     // push far in: never narrower than the panel's shape
-                const int w4 = ed->getWidth(), h4 = ed->getHeight();
-                std::printf ("  side handles: %dx%d -> right +300 -> %dx%d (panel %d wide, standard %d) -> left +200 -> %dx%d -> down +60 -> %dx%d -> pushed in -> %dx%d (shape %.3f, min %.3f)\n",
-                             w0, h0, w1, h1, p1, PassiveMasterEQEditor::designWidth(), w2, h2, w3, h3, w4, h4, (double) w4 / h4, aspect);
-                if (std::abs (w1 - std::min (w0 + 300, maxW)) > 2 || h1 != h0 || p1 <= PassiveMasterEQEditor::designWidth()
-                    || std::abs (w2 - std::min (w1 + 200, maxW)) > 2 || h2 != h0
-                    || std::abs (h3 - std::min (h2 + 60, maxH)) > 2 || w3 < w2
-                    || (double) w4 / h4 < aspect - 0.01 || h4 > maxH + 1) failCheck (failures, __LINE__);
+                auto sideHandles = [&] (juce::Rectangle<int> screen, const char* label)
+                {
+                    e->testSetScreen (screen);
+                    int maxW = 100000, maxH = 100000;
+                    if (! screen.isEmpty()) { maxW = screen.getWidth(); maxH = screen.getHeight() - 80; }
+                    else if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (ed->getScreenBounds()))
+                        { maxW = d->userArea.getWidth(); maxH = d->userArea.getHeight() - 80; }
+                    // the smallest size is 30 %, or less when the screen is too short for that (as in the editor)
+                    const double minScale = juce::jlimit (0.15, 0.3, juce::jmin ((double) maxH / PassiveMasterEQEditor::designHeight(),
+                                                                                 (double) maxW / PassiveMasterEQEditor::designWidth()));
+                    const int minW = juce::roundToInt (PassiveMasterEQEditor::designWidth() * minScale);
+                    // start inside the room the screen has
+                    const int startW = std::max (minW, std::min (600, (int) ((maxH - 120) * aspect)));
+                    ed->setSize (startW, (int) std::lround (startW / aspect));
+                    const int w0 = ed->getWidth(), h0 = ed->getHeight();
+                    e->testEdgeDrag (300, 0, true);                       // pull the right side out
+                    const int w1 = ed->getWidth(), h1 = ed->getHeight(), p1 = e->panelWidth();
+                    e->testEdgeDrag (-200, 0, false);                     // pull the left side out (leftwards = wider)
+                    const int w2 = ed->getWidth(), h2 = ed->getHeight();
+                    e->testEdgeDrag (0, 60, true);                        // pull down: bigger
+                    const int w3 = ed->getWidth(), h3 = ed->getHeight();
+                    e->testEdgeDrag (-2000, 0, true);                     // push far in: never narrower than the panel's shape
+                    const int w4 = ed->getWidth(), h4 = ed->getHeight();
+                    std::printf ("  side handles (%s): %dx%d -> right +300 -> %dx%d (panel %d wide, standard %d) -> left +200 -> %dx%d -> down +60 -> %dx%d -> pushed in -> %dx%d (shape %.3f, min %.3f)\n",
+                                 label, w0, h0, w1, h1, p1, PassiveMasterEQEditor::designWidth(), w2, h2, w3, h3, w4, h4, (double) w4 / h4, aspect);
+                    const int widest = (int) std::floor (h0 * aspect * PassiveMasterEQEditor::kMaxWide);   // the panel's widest shape
+                    if (std::abs (w1 - std::min ({ w0 + 300, maxW, widest })) > 2 || h1 != h0 || p1 <= PassiveMasterEQEditor::designWidth()
+                        || std::abs (w2 - std::min ({ w1 + 200, maxW, widest })) > 2 || h2 != h0
+                        || std::abs (h3 - std::min (h2 + 60, maxH)) > 2 || w3 < w2
+                        || (double) w4 / h4 < aspect - 0.01 || h4 > maxH + 1) failCheck (failures, __LINE__);
+                };
+                const bool pretend = juce::SystemStats::getEnvironmentVariable ("PPM_TEST_SCREEN", {}).isNotEmpty();
+                if (! pretend) sideHandles ({}, "this screen");
+                sideHandles ({ 0, 25, 1024, 761 }, "1024x761 screen");
+                e->testSetScreen (pretend ? juce::Rectangle<int> (0, 25, 1024, 761) : juce::Rectangle<int>());
                 // SCROLL mode: the panel fills the width; hovering near the top / bottom edge glides it up / down (no scroll bar)
                 {
                     e->toggleScroll();
