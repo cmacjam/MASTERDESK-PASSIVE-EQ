@@ -2865,49 +2865,48 @@ UnitWindow::~UnitWindow() { clearContentComponent(); }
 UnitPresetButton::UnitPresetButton (PassiveMasterEQProcessor& p, int k) : juce::TextButton ("PRESETS"), proc (p), kind (k)
 {
     setTooltip (kind == Eq     ? "EQ PRESETS - curves for the Parametric and Passive EQs: stereo-master curves, plus track presets for instruments and drums. "
-                                 "With 'Also set the matching compressor' ticked (the first menu item), the compressor that suits the curve is set too and the other one switched out."
+                                 "With 'Set up the complete master chain' ticked (the first menu item), the curve loads its whole chain: the other EQ (neutral, or a small complementary move), the compressor(s) that suit it and the maximizer as a safety limiter."
               : kind == VariMu ? "VARI-MU PRESETS - settings for this compressor only; the EQs are left alone."
                                : "CLASS-A PRESETS - settings for this compressor only; the EQs are left alone.");
+}
+
+// The preset menu, by category: MASTER CHAINS, COMPRESSOR PRESETS, TRACK PRESETS, one sub-menu per category.
+// `ids` = the presets this menu offers (indices into the list; item id = index + 1).
+static void fillPresetMenu (juce::PopupMenu& menu, PassiveMasterEQProcessor& proc, const std::vector<int>& ids)
+{
+    using namespace ppm::presets;
+    const auto& list = all();
+    struct Section { const char* prefix; const char* header; };
+    const Section sections[] = { { "Master: ",     "MASTER CHAINS (EQ > EQ > compressors > maximizer)" },
+                                 { "Compressor: ", "COMPRESSOR PRESETS" },
+                                 { "Track: ",      "TRACK PRESETS (on that instrument's own track)" } };
+    bool first = true;
+    for (const auto& sec : sections)
+    {
+        bool headerDone = false;
+        for (const char* cat : kCategoryOrder)
+        {
+            if (juce::String (cat).startsWith (sec.prefix) == false) continue;
+            juce::PopupMenu sub;
+            for (int i : ids) if (list[(size_t) i].category == cat) sub.addItem (i + 1, proc.getProgramName (i));
+            if (sub.getNumItems() == 0) continue;
+            if (! headerDone) { if (! first) menu.addSeparator(); menu.addSectionHeader (sec.header); headerDone = true; first = false; }
+            menu.addSubMenu (juce::String (cat).fromFirstOccurrenceOf (": ", false, false), sub);
+        }
+    }
 }
 
 void UnitPresetButton::clicked()
 {
     using namespace ppm::presets;
     const auto ids = unitPresets (kind == Eq ? UnitKind::Eq : kind == VariMu ? UnitKind::VariMu : UnitKind::ClassA);
-    const auto& list = all();
     juce::PopupMenu menu;
     if (kind == Eq)
-    {   // first item: also set the compressor that matches the curve
-        menu.addItem (kLinkToggleId, "Also set the matching compressor", true, proc.linkCompWithEq());
+    {   // first item: load the complete chain (second EQ, compressors, maximizer) with the curve
+        menu.addItem (kLinkToggleId, "Set up the complete master chain (other EQ + compressors)", true, proc.linkCompWithEq());
         menu.addSeparator();
     }
-    bool anyFactory = false;
-    juce::PopupMenu manual;
-    for (int i : ids)
-    {
-        if (list[(size_t) i].full) continue;
-        if (list[(size_t) i].category == kManualCategory) manual.addItem (i + 1, proc.getProgramName (i));
-        else { menu.addItem (i + 1, proc.getProgramName (i)); anyFactory = true; }
-    }
-    if (manual.getNumItems() > 0) { menu.addSubMenu ("From the Manley manuals", manual); anyFactory = true; }
-    if (anyFactory) menu.addSeparator();
-    menu.addSectionHeader ("ENGINEER PRESETS (settings as listed)");
-    for (const char* cat : kEngineerCategories)
-    {
-        juce::PopupMenu sub;
-        for (int i : ids)
-            if (list[(size_t) i].full && list[(size_t) i].category == cat) sub.addItem (i + 1, proc.getProgramName (i));
-        if (sub.getNumItems() > 0) menu.addSubMenu (cat, sub);
-    }
-    menu.addSeparator();
-    menu.addSectionHeader ("TRACK PRESETS (on that instrument's own track)");
-    for (const char* cat : kTrackCategories)
-    {
-        juce::PopupMenu sub;
-        for (int i : ids)
-            if (list[(size_t) i].category == cat) sub.addItem (i + 1, proc.getProgramName (i));
-        if (sub.getNumItems() > 0) menu.addSubMenu (juce::String (cat).fromFirstOccurrenceOf ("Track: ", false, false), sub);
-    }
+    fillPresetMenu (menu, proc, ids);
 
     juce::Component::SafePointer<UnitPresetButton> safe (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
@@ -2925,13 +2924,9 @@ void UnitPresetButton::applied (int index)
     else if (kind == VariMu) proc.applyVariMuPreset (index);
     else                     proc.applyClassAPreset (index);
     const auto notes = proc.getProgramNotes (index);
-    juce::String comp;
-    if (kind == Eq && proc.linkCompWithEq())
-    {
-        const auto c = proc.linkedCompName (index);
-        comp = "\n\nMatching compressor: " + (c.isNotEmpty() ? (c == proc.getProgramName (index) ? juce::String ("its own settings") : c) : juce::String ("none (both compressors out)"));
-    }
-    setTooltip (proc.getProgramName (index) + (notes.isNotEmpty() ? "\n\n" + notes : juce::String()) + comp);
+    juce::String chain;
+    if (kind == Eq && proc.linkCompWithEq()) chain = "\n\nChain: " + proc.chainText (index);
+    setTooltip (proc.getProgramName (index) + (notes.isNotEmpty() ? "\n\n" + notes : juce::String()) + chain);
 }
 
 void PopOutButton::paintButton (juce::Graphics& g, bool hi, bool down)
@@ -3172,40 +3167,10 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     helpButton.setTooltip ("Open the guide that explains every part of the panel.");
 
     // presets
-    {   // factory presets first, then the engineer presets in one sub-menu per category
-        auto* root = presetBox.getRootMenu();
-        juce::StringArray cats;
-        for (int i = 0; i < proc.getNumPrograms(); ++i)
-            if (proc.getProgramCategory (i) == "Factory") root->addItem (i + 1, proc.getProgramName (i));
-            else cats.addIfNotAlreadyThere (proc.getProgramCategory (i));
-        cats.removeString (ppm::presets::kManualCategory);
-        {
-            juce::PopupMenu man;
-            for (int i = 0; i < proc.getNumPrograms(); ++i)
-                if (proc.getProgramCategory (i) == ppm::presets::kManualCategory) man.addItem (i + 1, proc.getProgramName (i));
-            if (man.getNumItems() > 0) root->addSubMenu ("From the Manley manuals", man);
-        }
-        juce::StringArray trackCats;
-        for (const auto& c : cats) if (ppm::presets::isTrackCategory (c.toStdString())) trackCats.add (c);
-        for (const auto& c : trackCats) cats.removeString (c);
-        root->addSeparator();
-        root->addSectionHeader ("ENGINEER PRESETS (settings as listed)");
-        for (const auto& cat : cats)
-        {
-            juce::PopupMenu sub;
-            for (int i = 0; i < proc.getNumPrograms(); ++i)
-                if (proc.getProgramCategory (i) == cat) sub.addItem (i + 1, proc.getProgramName (i));
-            root->addSubMenu (cat, sub);
-        }
-        root->addSeparator();
-        root->addSectionHeader ("TRACK PRESETS (on that instrument's own track)");
-        for (const auto& cat : trackCats)
-        {
-            juce::PopupMenu sub;
-            for (int i = 0; i < proc.getNumPrograms(); ++i)
-                if (proc.getProgramCategory (i) == cat) sub.addItem (i + 1, proc.getProgramName (i));
-            root->addSubMenu (cat.fromFirstOccurrenceOf ("Track: ", false, false), sub);
-        }
+    {   // every preset, by category
+        std::vector<int> ids;
+        for (int i = 0; i < proc.getNumPrograms(); ++i) ids.push_back (i);
+        fillPresetMenu (*presetBox.getRootMenu(), proc, ids);
     }
     presetBox.setTextWhenNothingSelected ("- choose a preset -");
     presetBox.onChange = [this]
@@ -3440,7 +3405,8 @@ void Faceplate::updatePresetTip()
 {
     const int idx = presetBox.getSelectedId() - 1;
     const auto notes = idx >= 0 ? proc.getProgramNotes (idx) : juce::String();
-    presetBox.setTooltip (notes.isNotEmpty() ? proc.getProgramName (idx) + "\n\n" + notes
+    const auto chain = idx >= 0 ? proc.chainText (idx) : juce::String();
+    presetBox.setTooltip (notes.isNotEmpty() ? proc.getProgramName (idx) + "\n\n" + notes + (chain.isNotEmpty() ? "\n\nChain: " + chain : juce::String())
                                              : "PRESETS - mastering starting points, plus engineer presets by category. Pick one, then adjust to taste. "
                                                "Your own settings are saved with your DAW session.");
 }

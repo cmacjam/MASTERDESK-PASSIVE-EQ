@@ -203,13 +203,36 @@ The hardware these units are modelled on stores no presets: it is all knobs. Wha
 - **Variable Mu** (Vari-Mu menu): *Mastering Limit (2-4 dB)*, *Gentle Mix Compression*, *Drums (Fast Attack)*, *Vocals & Bass (Slow Attack)* and *Tube Colour*. Where the manual gives no number (for example the amount for a drum preset), the notes say what was used.
 - **Sontec MES-432C/9** and **elysia alpha**: their makers publish no settings or presets (the alpha manual describes each control without example values), so there is nothing official to add. If you own the official plug-in versions, their factory presets can be copied in from screenshots of the settings.
 
-## EQ preset + matching compressor
+## Preset categories and master chains
 
-Choosing a preset with an EQ's **PRESETS** button also sets the compressor that suits it, and switches the other compressor out, so the EQ and compressor arrive as a pair. The first item in the EQ menu, **Also set the matching compressor**, turns this on or off (on by default; remembered with the session). After choosing, hover the button: the tooltip names the compressor it set.
+Every preset sits in one category, and the menus (footer PRESET menu and each unit's PRESETS button) list them by category:
 
-- A preset that has its own compressor settings uses them (for example *Mastering Glue*, the engineer and track presets).
-- Stereo-master curves get a mastering compressor that suits their character: a lift at both ends (smile, bright pop) gets punchy SSL-style glue (4:1, 30 ms, auto release); warm, weighty or tube-driven curves get gentle Vari-Mu compression (about 1.5:1, 3 dB); bright, airy and corrective curves get clean Class-A glue (2:1, 30 ms, auto release).
-- *Init (Flat)* switches both compressors out.
+| Section | Categories |
+|---|---|
+| **MASTER CHAINS** | Clean & Corrective · Balanced Polish · Warm & Analog · Bright & Open · Loud & Punchy |
+| **COMPRESSOR PRESETS** | Mix Bus · Vocals · Drums · Bass · Guitars & Keys |
+| **TRACK PRESETS** | Keys & Pads · Guitars · Drums |
+
+**Every EQ preset is a complete master chain.** Picking one (from the footer, or from either EQ's PRESETS button with *Set up the complete master chain* ticked, the default) sets the whole signal path:
+
+**EQ preset → second EQ → Vari-Mu → Class-A → Maximizer**
+
+- **Second EQ**: neutral (switched out) so the curve passes untouched, unless a small complementary move helps: a warm curve that lifts the lows gets −0.5 dB at 250 Hz (wide) to keep them clear; a bright curve that lifts the top gets −0.5 dB at 3.5 kHz (wide) to keep it smooth. Each only where the curve isn't already working in that range. Engineer and track curves already use both EQs as fitted.
+- **Compressors**, by the curve's character (one, or both in series when both help; the other is switched out; a preset with its own compressor keeps it):
+
+| Category | Compressor(s) |
+|---|---|
+| Clean & Corrective | Class-A clean glue: feedback 2:1, 30 ms, auto release, ~1 dB |
+| Balanced Polish | Vari-Mu gentle glue: ~1.5:1, 45 ms, 1.2 s, ~1.5 dB |
+| Warm & Analog | Vari-Mu tube glue: ~1.5:1, 35 ms, 0.8 s, ~2 dB |
+| Bright & Open | Class-A clean glue, ~1.5 dB |
+| Loud & Punchy | Both: Vari-Mu glue (25 ms, 0.6 s, ~2 dB) into Class-A punch (feed-forward 4:1, 30 ms, auto release, ~1.5 dB, soft clip at −1 dB) |
+
+- **Maximizer**: on as a safety limiter (gain 0 dB, ceiling −1 dB), so it only catches peaks; push GAIN, or use AUTO MASTER, for loudness. *Init (Flat)* switches everything out.
+- Thresholds are set for the stated gain reduction on a typical pre-master (loud passages peaking around −6 dBFS); adjust them until the meters show that amount.
+- After choosing, hover the menu or button: the tooltip shows the preset's notes and its chain.
+
+The test plays music through every master chain and checks it stays clean and never passes the −1 dB ceiling.
 
 ## Track presets (instruments and drums)
 

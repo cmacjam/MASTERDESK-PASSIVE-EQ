@@ -46,11 +46,14 @@ public:
                                                                     // optionally the matching compressor too
     bool linkCompWithEq() const { return (bool) apvts.state.getProperty ("linkComp", true); }
     void setLinkCompWithEq (bool b) { apvts.state.setProperty ("linkComp", b, nullptr); }
-    juce::String linkedCompName (int eqIndex) const
+    juce::String chainText (int index) const      // what an EQ preset's complete chain sets, in words
     {
-        const auto lc = ppm::presets::linkedCompressor (eqIndex);
-        return lc.index >= 0 ? juce::String::fromUTF8 (ppm::presets::all()[(size_t) lc.index].name.c_str()) : juce::String();
+        const auto m = ppm::presets::masterChain (index);
+        if (! m.valid) return {};
+        return "Second EQ: " + juce::String::fromUTF8 (m.secondEq.c_str()) + ". Compressors: " + juce::String::fromUTF8 (m.comps.c_str())
+             + (m.maxOn ? ". Maximizer: on as a safety limiter at -1 dB." : ".");
     }
+    void applyChain (int index);                   // the complete chain behind an EQ preset
     void applyVariMuPreset (int index);
     void applyClassAPreset (int index);
     void applyParametric (const ppm::sontec::Settings&);

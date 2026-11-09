@@ -307,13 +307,26 @@ void PassiveMasterEQProcessor::setCurrentProgram (int index)
     currentProgram = index;
     const auto& pr = list[(size_t) index];
 
+    // an EQ preset (master or track) loads its complete chain: both EQs, both compressors, maximizer
+    if (presets::masterChain (index).valid) { applyChain (index); return; }
+    // a compressor preset: its compressor, everything else neutral
     applySettings (pr.ch, pr.comp, pr.order, pr.tubeOn, pr.driveDb);
-    // a whole preset sets every unit: engineer presets carry Parametric EQ + Class-A settings,
-    // factory presets (passive EQ + vari-mu) switch those two units out
     if (pr.full) { applyParametric (pr.pq); applyClassA (pr.ca); }
     else         { setParamPlain (params::pq::in, 0.0f); setParamPlain (params::ca::in, 0.0f); }
-    setParamPlain (params::maxOn, 0.0f);          // presets are EQ + compressor only: maximizer off
+    setParamPlain (params::maxOn, 0.0f);
     setParamPlain (params::maxGain, 0.0f);
+}
+
+void PassiveMasterEQProcessor::applyChain (int index)
+{
+    const auto m = presets::masterChain (index);
+    if (! m.valid) return;
+    applySettings (m.eq, m.vm, m.order, m.tubeOn, m.driveDb);   // passive EQ, tubes, vari-mu, order
+    applyParametric (m.pq);
+    applyClassA (m.ca);
+    setParamPlain (params::maxOn, m.maxOn ? 1.0f : 0.0f);
+    setParamPlain (params::maxGain, m.maxGainDb);
+    setParamPlain (params::maxCeiling, m.maxCeilingDb);
 }
 
 void PassiveMasterEQProcessor::setParamPlain (const juce::String& id, float plain)
@@ -383,13 +396,7 @@ void PassiveMasterEQProcessor::applyEqPreset (int index, bool withLinkedComp)
     }
     setParamPlain (params::link, 1.0f);
     if (pr.full) applyParametric (pr.pq);        // engineer EQ presets use both EQs together
-    if (! withLinkedComp) return;
-    // the matching compressor: set it, switch the other one out
-    const auto lc = presets::linkedCompressor (index);
-    auto variMuOut = [this] { setParamPlain (params::chanId (0, "c_in"), 0.0f); setParamPlain (params::chanId (1, "c_in"), 0.0f); };
-    if (lc.kind == presets::UnitKind::VariMu && lc.index >= 0)      { applyVariMuPreset (lc.index); setParamPlain (params::ca::in, 0.0f); }
-    else if (lc.kind == presets::UnitKind::ClassA && lc.index >= 0) { applyClassAPreset (lc.index); variMuOut(); }
-    else                                                            { variMuOut(); setParamPlain (params::ca::in, 0.0f); }
+    if (withLinkedComp) applyChain (index);       // the complete chain: second EQ, compressors, maximizer
 }
 
 void PassiveMasterEQProcessor::applyVariMuPreset (int index)

@@ -68,6 +68,41 @@ inline const char* const kEngineerCategories[] = { "Vocals", "Drums", "Bass", "G
 inline const char* const kTrackCategories[]    = { "Track: Keys & Pads", "Track: Guitars", "Track: Drums" };
 inline bool isTrackCategory (const std::string& c) { return c.rfind ("Track: ", 0) == 0; }
 
+// ---- every preset sits in one category ----------------------------------------------------------
+//  Master: a stereo-master EQ curve that loads a complete chain (both EQs, both compressors, maximizer)
+//  Compressor: a compressor setting (vocals, drums, ... or the mix bus)
+//  Track: an EQ + compressor for one instrument on its own track
+inline const char* const kCategoryOrder[] = {
+    "Master: Clean & Corrective", "Master: Balanced Polish", "Master: Warm & Analog", "Master: Bright & Open", "Master: Loud & Punchy",
+    "Compressor: Mix Bus", "Compressor: Vocals", "Compressor: Drums", "Compressor: Bass", "Compressor: Guitars & Keys",
+    "Track: Keys & Pads", "Track: Guitars", "Track: Drums" };
+inline bool isMasterCategory (const std::string& c)     { return c.rfind ("Master: ", 0) == 0; }
+inline bool isCompressorCategory (const std::string& c) { return c.rfind ("Compressor: ", 0) == 0; }
+inline int categoryRank (const std::string& c)
+{
+    int i = 0;
+    for (const char* k : kCategoryOrder) { if (c == k) return i; ++i; }
+    return i;
+}
+// the mastering character of each stereo-master curve (chosen from its measured shape)
+inline std::string masterCategoryOf (const std::string& name)
+{
+    static const char* const clean[]  = { "De-Mud", "Smooth Top / De-Harsh", "Subsonic Clean-up Only", "Engineer Move - Mud Scoop (270 Hz)",
+                                          "Engineer Move - Box Clear (470 Hz)", "Engineer Move - Harsh Mix Tame", "Engineer Move - Boomy Mix Tighten",
+                                          "Engineer Move - Vinyl Pre-Master", "Eric Boulanger - Surgical Mastering EQ" };
+    static const char* const polish[] = { "Init (Flat)", "Gentle Polish", "Air & Weight", "Engineer Move - Streaming Translation",
+                                          "Joe Chiccarelli - Analog Mastering Baxandall Curve", "Gentle Leveler (Comp > EQ)" };
+    static const char* const warm[]   = { "Warm Tube Glue", "Pultec-Style Low End", "Engineer Move - Low-End Tuck (Pultec trick)",
+                                          "Engineer Move - Thin Mix Weight", "Engineer Move - Analog Warmth (tubes)", "Mastering Glue (EQ + Vari-Mu)",
+                                          "Greg Calbi - Mastering 'Smooth Bass' Anchor" };
+    static const char* const loud[]   = { "Bright Pop Master", "Loud & Warm Master", "Parallel Punch", "Engineer Move - Smile Curve (club / loud)" };
+    for (const char* n : clean)  if (name == n) return "Master: Clean & Corrective";
+    for (const char* n : polish) if (name == n) return "Master: Balanced Polish";
+    for (const char* n : warm)   if (name == n) return "Master: Warm & Analog";
+    for (const char* n : loud)   if (name == n) return "Master: Loud & Punchy";
+    return "Master: Bright & Open";      // Air Lift, Silk Top, Dark Mix Rescue, Vocal Presence / Forward, Calbi Clarity, Chiccarelli Air, Stacked Shelves
+}
+
 inline const std::vector<Preset>& all()
 {
     static const std::vector<Preset> list = []
@@ -197,20 +232,27 @@ inline const std::vector<Preset>& all()
           "From the Variable Mu manual: for creative distortion, raise the input, lower the outputs and use little or no compression. "
           "About 1 dB of compression with the tube stage driven +6 dB." },
     };
-    // then the engineer presets, grouped by category (each group keeps the list's order)
-    auto eng = engineerPresets();
-    for (const char* cat : kEngineerCategories)
-        for (const auto& p : eng)
-            if (p.category == cat) list.push_back (p);
-    for (const char* cat : kTrackCategories)                 // then the instrument / drum track presets
-        for (const auto& p : eng)
-            if (p.category == cat) list.push_back (p);
+    for (const auto& p : engineerPresets()) list.push_back (p);
+    // every preset into its category: stereo-master curves by character, compressor settings by source,
+    // track presets stay as they are; then the list is ordered by category (each keeps its own order)
+    for (auto& p : list)
+    {
+        if (isTrackCategory (p.category)) continue;
+        bool eq = (p.full && p.pq.in) || p.ch.hp != 0 || p.ch.lp != 0 || p.name == "Init (Flat)";
+        for (const auto& b : p.ch.band) eq = eq || (b.gainStep > 0 && b.mode != Out);
+        if (eq)                                        { p.category = masterCategoryOf (p.name); continue; }
+        const std::string n = p.name;
+        if (p.category == "Mix & Master Bus")          p.category = "Compressor: Mix Bus";
+        else if (p.category == "Manley manuals")       p.category = n.find ("Drums") != std::string::npos ? "Compressor: Drums"
+                                                                  : n.find ("Vocals") != std::string::npos ? "Compressor: Vocals" : "Compressor: Mix Bus";
+        else                                           p.category = "Compressor: " + p.category;
+    }
+    std::stable_sort (list.begin(), list.end(), [] (const Preset& a, const Preset& b) { return categoryRank (a.category) < categoryRank (b.category); });
     return list;
     }();
     return list;
 }
 
-inline const char* const kManualCategory = "Manley manuals";
 
 // ---- per-unit preset lists (indices into all()) ------------------------------------------
 inline bool presetHasEq (const Preset& p)
@@ -235,11 +277,6 @@ inline std::vector<int> unitPresets (UnitKind k)
     return out;
 }
 
-// ---- the compressor that goes with an EQ preset ---------------------------------------------
-//  Choosing an EQ preset can also set the matching compressor (and switch the other one out):
-//  a preset's own compressor if it has one; otherwise, for a stereo-master curve, a mastering
-//  compressor that suits the curve's character.
-struct LinkedComp { UnitKind kind = UnitKind::Eq; int index = -1; };   // kind Eq = no compressor
 inline int presetIndex (const char* name)
 {
     const auto& l = all();
@@ -251,21 +288,122 @@ inline double presetEqDb (const Preset& p, double f)
     ChannelSettings c = p.ch; c.hp = 0; c.lp = 0;
     return channelResponseDb (c, f) + (p.full && p.pq.in ? sontec::channelResponseDb (p.pq.ch[0], f) : 0.0);
 }
-inline LinkedComp linkedCompressor (int index)
+
+// ---- the complete master chain behind every EQ preset -------------------------------------------
+//  EQ preset -> second EQ -> Vari-Mu -> Class-A -> Maximizer.
+//  * The preset's curve is the first EQ. The other EQ stays neutral (switched out) unless a small
+//    complementary move helps the curve: a warm curve that lifts the lows gets a gentle low-mid clean-up,
+//    a bright curve that lifts the top gets a gentle 3.5 kHz smoothing (each -0.5 dB, wide, only where the
+//    curve itself isn't already working). Engineer and track curves already use both EQs as fitted.
+//  * The compressors follow the curve's character: one, or both in series when both help (Loud & Punchy);
+//    the one not used is switched out. A preset with its own compressor keeps it.
+//  * The maximizer is on as a safety limiter (gain 0 dB, ceiling -1 dB): it only catches peaks. Track presets leave it off.
+struct MasterChain
 {
-    const auto& l = all();
-    if (! (index >= 0 && index < (int) l.size())) return {};
-    const auto& p = l[(size_t) index];
-    if (p.full && p.ca.in) return { UnitKind::ClassA, index };
-    if (p.comp.compIn && p.comp.threshold > 0) return { UnitKind::VariMu, index };
-    if (isTrackCategory (p.category) || p.name == "Init (Flat)") return {};
-    // stereo-master curve: pick by character (strongest boost low and high; these shelves dip before they lift)
-    auto maxDb = [&p] (double a, double b) { double m = 0.0; for (double f = a; f <= b; f *= 1.06) m = std::max (m, presetEqDb (p, f)); return m; };
-    const double lo = maxDb (25.0, 120.0), hi = maxDb (8000.0, 20000.0);
-    if (lo > 0.8 && hi > 0.8)                                        // smile / loud: punchy bus glue
-        return { UnitKind::ClassA, presetIndex ("S\xc3\xb6ren von Malmborg - Modern Pop Master Bus Glue (SSL G)") };
-    if (p.driveDb > 0.0f || lo > hi + 0.3)                           // warm / weighty / tube colour: tube glue
-        return { UnitKind::VariMu, presetIndex ("Variable Mu manual - Gentle Mix Compression") };
-    return { UnitKind::ClassA, presetIndex ("Ian Shepherd - Safe Master Bus Glue (SSL G)") };   // bright / air / corrective: clean glue
+    bool valid = false;
+    ChannelSettings eq;            // passive EQ (both channels)
+    bool tubeOn = false; float driveDb = 0.0f; int order = 0;
+    sontec::Settings pq {};        // parametric EQ
+    CompSettings vm {};            // vari-mu
+    ClassASettings ca {};          // class-A
+    bool maxOn = false; float maxGainDb = 0.0f, maxCeilingDb = -1.0f;
+    std::string secondEq, comps;   // what the chain does, in words
+};
+
+inline int variMuThresholdFor (double grDb, int mode)
+{
+    int best = 0; double be = 1e9;
+    for (int st = 0; st < kNumThreshSteps; ++st)
+    {
+        const double e = std::abs (variMuGainReductionDb (-6.0 - compThresholdDb (st), mode) - grDb);   // loud passages peak around -6 dBFS
+        if (e < be) { be = e; best = st; }
+    }
+    return best;
 }
+inline CompSettings variMuGlue (double grDb, int attackIdx, int recoveryIdx)
+{
+    CompSettings c; c.compIn = true; c.mode = Compress; c.scHp = true; c.mix = 10;
+    c.threshold = variMuThresholdFor (grDb, Compress); c.attack = attackIdx; c.recovery = recoveryIdx;
+    c.output = std::clamp ((int) std::lround (grDb / 0.5), 0, kNumOutputSteps - 1);
+    return c;
+}
+inline ClassASettings classAGlue (bool punch, double grDb)
+{
+    ClassASettings s; s.in = true; s.mode = ClassAStereo; s.link = true;
+    for (auto& c : s.ch)
+    {
+        c.ratioPos = 7.5;                         // printed 2.0: feedback 2:1 (clean), feed-forward 4:1 (punch)
+        c.feedForward = punch;
+        c.attackMs = punch ? 15.0 : 30.0;         // feed-forward doubles it: 30 ms either way
+        c.releaseMs = 300.0; c.autoFastRelease = true;
+        c.thresholdDb = std::round ((-12.0 - grDb / (punch ? 0.75 : 0.5)) * 10.0) / 10.0;   // loud passages ~ -12 dBFS at the detector
+        c.gainDb = std::round (grDb * 10.0) / 10.0; c.mix = 1.0;
+    }
+    if (punch) { s.softClip = true; s.clipDb = -1.0; }
+    return s;
+}
+inline sontec::ChannelSettings neutralSontec()
+{
+    sontec::ChannelSettings c;
+    for (int b = 0; b < sontec::kBands; ++b) c.band[b] = { (int) sontec::bandFreqs (b).size() / 2, 2, 12 };
+    c.in = true;
+    return c;
+}
+inline int nearestFreqIdx (int band, double hz)
+{
+    const auto& f = sontec::bandFreqs (band);
+    int best = 0;
+    for (int i = 0; i < (int) f.size(); ++i) if (std::abs (std::log (f[(size_t) i] / hz)) < std::abs (std::log (f[(size_t) best] / hz))) best = i;
+    return best;
+}
+
+inline MasterChain masterChain (int index)
+{
+    MasterChain m;
+    const auto& l = all();
+    if (! (index >= 0 && index < (int) l.size())) return m;
+    const auto& p = l[(size_t) index];
+    const bool master = isMasterCategory (p.category), track = isTrackCategory (p.category);
+    if (! master && ! track) return m;                       // compressor-only presets have no chain
+    m.valid = true;
+    m.eq = p.ch; m.tubeOn = p.tubeOn; m.driveDb = p.driveDb; m.order = p.order;
+    const bool ownVm = p.comp.compIn && p.comp.threshold > 0, ownCa = p.full && p.ca.in;
+    m.vm = p.comp; if (! ownVm) m.vm.compIn = false;
+    m.ca = p.ca;   if (! ownCa) m.ca.in = false;
+
+    // second EQ
+    if (p.full) { m.pq = p.pq; m.secondEq = p.pq.in ? "both EQs as fitted" : "neutral"; }
+    else
+    {
+        m.pq.in = false; for (auto& c : m.pq.ch) c = neutralSontec();
+        m.secondEq = "neutral";
+        auto maxDb = [&p] (double a, double b) { double v = -99.0; for (double f = a; f <= b; f *= 1.06) v = std::max (v, presetEqDb (p, f)); return v; };
+        const double lo = maxDb (25.0, 150.0), hi = maxDb (6000.0, 20000.0);
+        if (p.category == "Master: Warm & Analog" && lo > 0.8 && presetEqDb (p, 250.0) > -0.2)
+        {   // lows lifted: keep the low-mids clear (-0.5 dB, wide, LO band ~250 Hz)
+            m.pq.in = true; for (auto& c : m.pq.ch) c.band[0] = { nearestFreqIdx (0, 250.0), 1, 11 };
+            m.secondEq = "-0.5 dB at 250 Hz (keeps the lifted lows clear)";
+        }
+        else if (p.category == "Master: Bright & Open" && hi > 0.8 && presetEqDb (p, 3500.0) > -0.2 && presetEqDb (p, 3500.0) < 0.5)
+        {   // top lifted: keep the presence range smooth (-0.5 dB, wide, MID band ~3.5 kHz)
+            m.pq.in = true; for (auto& c : m.pq.ch) c.band[1] = { nearestFreqIdx (1, 3500.0), 1, 11 };
+            m.secondEq = "-0.5 dB at 3.5 kHz (keeps the lifted top smooth)";
+        }
+    }
+
+    // compressors by character
+    if (master && p.name != "Init (Flat)")
+    {
+        const auto& c = p.category;
+        if (c == "Master: Clean & Corrective")   { if (! ownVm && ! ownCa) m.ca = classAGlue (false, 1.0); }
+        else if (c == "Master: Balanced Polish") { if (! ownVm && ! ownCa) m.vm = variMuGlue (1.5, 7, 4); }
+        else if (c == "Master: Warm & Analog")   { if (! ownVm && ! ownCa) m.vm = variMuGlue (2.0, 6, 3); }
+        else if (c == "Master: Bright & Open")   { if (! ownVm && ! ownCa) m.ca = classAGlue (false, 1.5); }
+        else if (c == "Master: Loud & Punchy")   { if (! ownVm) m.vm = variMuGlue (2.0, 5, 2); if (! ownCa) m.ca = classAGlue (true, 1.5); }
+        m.maxOn = true;
+    }
+    m.comps = m.vm.compIn && m.ca.in ? "Vari-Mu into Class-A" : m.vm.compIn ? "Vari-Mu" : m.ca.in ? "Class-A" : "none";
+    return m;
+}
+
 } // namespace ppm::presets

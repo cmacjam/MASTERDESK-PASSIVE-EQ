@@ -338,7 +338,10 @@ int main()
                 proc.setCurrentProgram (i);
                 const auto ca = proc.getClassASettings();
                 const auto cs = proc.getCompSettings (0);
-                if (ca.in != pr.ca.in || cs.compIn != pr.comp.compIn
+                // an EQ preset loads its complete chain: compare with the chain's compressors
+                const auto chain = ppm::presets::masterChain (i);
+                const bool wantCa = chain.valid ? chain.ca.in : pr.ca.in, wantVm = chain.valid ? chain.vm.compIn : pr.comp.compIn;
+                if (ca.in != wantCa || cs.compIn != wantVm
                     || (pr.ca.in && (std::abs (ca.ch[0].ratioPos - pr.ca.ch[0].ratioPos) > 0.011 || std::abs (ca.ch[0].thresholdDb - pr.ca.ch[0].thresholdDb) > 0.06
                                      || std::abs (ca.ch[0].attackMs - pr.ca.ch[0].attackMs) > 0.011 + 0.01 * pr.ca.ch[0].attackMs
                                      || ca.ch[0].feedForward != pr.ca.ch[0].feedForward || std::abs (ca.ch[0].mix - pr.ca.ch[0].mix) > 0.006)))
@@ -369,7 +372,7 @@ int main()
             const auto eq = unitPresets (UnitKind::Eq), vm = unitPresets (UnitKind::VariMu), ca = unitPresets (UnitKind::ClassA);
             const auto& list = all();
             auto find = [&] (const char* name) { for (int i = 0; i < (int) list.size(); ++i) if (list[(size_t) i].name == name) return i; return -1; };
-            proc.setCurrentProgram (0);
+            proc.setCurrentProgram (find ("Init (Flat)"));                // a neutral start: both compressors out
             const int cla = find ("Chris Lord-Alge - Lead Vocals (1176 Fast Stage)"), bou = find ("Eric Boulanger - Surgical Mastering EQ"),
                       schmitt = find ("Al Schmitt - Silky Tube Vocal Leveler");
             proc.applyEqPreset (bou);                                    // EQ menu: both EQs, compressors untouched
@@ -382,11 +385,17 @@ int main()
             const bool vmOk = vms.compIn && vms.threshold == list[(size_t) schmitt].comp.threshold && proc.getClassASettings().in && proc.getParametricSettings().in;
             std::printf ("  unit PRESETS buttons: EQ %d, Vari-Mu %d, Class-A %d presets; EQ only %s, Class-A only %s, Vari-Mu only %s\n",
                          (int) eq.size(), (int) vm.size(), (int) ca.size(), eqOk ? "ok" : "WRONG", caOk ? "ok" : "WRONG", vmOk ? "ok" : "WRONG");
-            bool masterOnly = true;
-            for (int i : eq) masterOnly = masterOnly && (list[(size_t) i].category == "Factory" || list[(size_t) i].category == "Mix & Master Bus"
-                                                         || list[(size_t) i].category == kManualCategory || isTrackCategory (list[(size_t) i].category));
-            for (const auto& p : list) if (p.full && p.category != "Mix & Master Bus" && ! isTrackCategory (p.category) && presetHasEq (p) && p.name != "Init (Flat)") masterOnly = false;
-            std::printf ("  EQ presets are stereo-master only: %s\n", masterOnly ? "yes" : "NO");
+            // every preset sits in one of the categories, and EQ presets only in Master or Track categories
+            bool categorized = true;
+            for (const auto& p : list)
+            {
+                const bool known = categoryRank (p.category) < (int) std::size (kCategoryOrder);
+                const bool eqOk2 = ! presetHasEq (p) || isMasterCategory (p.category) || isTrackCategory (p.category);
+                const bool compOk = presetHasEq (p) || isCompressorCategory (p.category);
+                if (! known || ! eqOk2 || ! compOk) { std::printf ("  CATEGORY WRONG: %s (%s)\n", p.name.c_str(), p.category.c_str()); categorized = false; }
+            }
+            std::printf ("  every preset in a category (EQ presets under Master or Track): %s\n", categorized ? "yes" : "NO");
+            if (! categorized) failCheck (failures, __LINE__);
             // no two presets in a unit's menu have the same settings
             auto eqKey = [&] (const Preset& p)
             {
@@ -411,38 +420,73 @@ int main()
             std::printf ("  duplicate presets: %d\n", dups);
             if (dups) failCheck (failures, __LINE__);
 
-            // EQ preset + matching compressor: every EQ preset finds its compressor, and choosing one
-            // leaves exactly one compressor running (or none for flat / track presets without one)
-            int nLinked = 0, nVm = 0, nCa = 0, bad = 0, nTrack = 0;
+            // EQ preset = complete chain: picking it (footer or EQ button) sets both EQs, both compressors and the
+            // maximizer exactly as its chain says; every master curve (but Init) runs at least one compressor;
+            // the second EQ only adds a small complementary move; and the whole chain plays cleanly
+            int nChains = 0, nBoth = 0, nSecond = 0, nTrack = 0, bad = 0;
+            double worstSecond = 0, worstPeak = -100;
             for (int i : eq)
             {
-                const auto lc = linkedCompressor (i);
                 const auto& p = list[(size_t) i];
+                const auto m = masterChain (i);
+                if (! m.valid) { std::printf ("  NO CHAIN for %s\n", p.name.c_str()); ++bad; continue; }
+                ++nChains;
                 if (isTrackCategory (p.category)) ++nTrack;
-                if (lc.kind != UnitKind::Eq && lc.index < 0) { std::printf ("  NO MATCHING COMPRESSOR FOUND for %s\n", p.name.c_str()); ++bad; continue; }
-                proc.applyEqPreset (i, true);
-                const bool vmOn = proc.getCompSettings (0).compIn, caOn = proc.getClassASettings().in;
-                const bool ok = lc.kind == UnitKind::VariMu ? (vmOn && ! caOn) : lc.kind == UnitKind::ClassA ? (caOn && ! vmOn) : (! vmOn && ! caOn);
-                if (! ok) { std::printf ("  %s: compressors after linking wrong (vari-mu %d, class-A %d)\n", p.name.c_str(), (int) vmOn, (int) caOn); ++bad; }
-                if (lc.kind == UnitKind::VariMu) ++nVm; else if (lc.kind == UnitKind::ClassA) ++nCa;
-                if (lc.kind != UnitKind::Eq) ++nLinked;
+                for (int road = 0; road < 2; ++road)
+                {
+                    if (road == 0) proc.setCurrentProgram (i); else { proc.setCurrentProgram (0); proc.applyEqPreset (i, true); }
+                    const bool vmOn = proc.getCompSettings (0).compIn && proc.getCompSettings (1).compIn, caOn = proc.getClassASettings().in;
+                    const bool pqOn = proc.getParametricSettings().in;
+                    const bool maxOn = *proc.apvts.getRawParameterValue (ppm::params::maxOn) > 0.5f;
+                    if (vmOn != m.vm.compIn || caOn != m.ca.in || pqOn != m.pq.in || maxOn != m.maxOn)
+                    { std::printf ("  %s (%s): chain not applied (vari-mu %d/%d, class-A %d/%d, parametric %d/%d, maximizer %d/%d)\n",
+                                   p.name.c_str(), road ? "EQ button" : "footer", (int) vmOn, (int) m.vm.compIn, (int) caOn, (int) m.ca.in,
+                                   (int) pqOn, (int) m.pq.in, (int) maxOn, (int) m.maxOn); ++bad; }
+                }
+                if (isMasterCategory (p.category) && p.name != "Init (Flat)" && ! m.vm.compIn && ! m.ca.in) { std::printf ("  %s: no compressor in its chain\n", p.name.c_str()); ++bad; }
+                if (m.vm.compIn && m.ca.in) ++nBoth;
+                if (! p.full && m.pq.in)
+                {   // the second EQ's move is small and complementary
+                    ++nSecond;
+                    for (double f = 20.0; f <= 20000.0; f *= 1.1) worstSecond = std::max (worstSecond, std::abs (ppm::sontec::channelResponseDb (m.pq.ch[0], f)));
+                }
+                if (isMasterCategory (p.category))
+                {   // play music through the whole chain: finite, and never past the maximizer's ceiling
+                    proc.setCurrentProgram (i);
+                    juce::AudioBuffer<float> buf (2, 512); double t = 0, peak = 0; bool finite = true;
+                    for (int blk = 0; blk < 280; ++blk)
+                    {
+                        for (int n = 0; n < 512; ++n, t += 1.0 / 48000.0)
+                        {
+                            const double tw = 2 * juce::MathConstants<double>::pi, beat = std::fmod (t, 0.5);
+                            const double v = 0.45 * (std::exp (-beat * 12.0) * std::sin (tw * 55.0 * t) + 0.3 * std::sin (tw * 220.0 * t) + 0.15 * std::sin (tw * 3300.0 * t));
+                            buf.setSample (0, n, (float) v); buf.setSample (1, n, (float) (0.9 * v));
+                        }
+                        juce::MidiBuffer mid; proc.processBlock (buf, mid);
+                        for (int c = 0; c < 2; ++c) for (int n = 0; n < 512; ++n) { const float x = buf.getSample (c, n); finite = finite && std::isfinite (x); if (blk > 40) peak = std::max (peak, (double) std::abs (x)); }
+                    }
+                    const double peakDb = 20 * std::log10 (peak + 1e-12);
+                    worstPeak = std::max (worstPeak, peakDb);
+                    if (! finite || peakDb > m.maxCeilingDb + 0.05) { std::printf ("  %s: chain output %s, peak %.2f dBFS\n", p.name.c_str(), finite ? "finite" : "NOT FINITE", peakDb); ++bad; }
+                }
             }
             const bool vmBefore = proc.getCompSettings (0).compIn, caBefore = proc.getClassASettings().in;
             const float thrBefore = proc.getClassASettings().ch[0].thresholdDb;
-            proc.applyEqPreset (find ("Eric Boulanger - Surgical Mastering EQ"), false);   // link off: compressors untouched
+            proc.applyEqPreset (find ("Eric Boulanger - Surgical Mastering EQ"), false);   // chain off: compressors untouched
             const bool untouched = proc.getCompSettings (0).compIn == vmBefore && proc.getClassASettings().in == caBefore
                                 && proc.getClassASettings().ch[0].thresholdDb == thrBefore;
-            std::printf ("  EQ + matching compressor: %d of %d EQ presets link one (%d Vari-Mu, %d Class-A); %d track presets; link off leaves the compressors: %s\n",
-                         nLinked, (int) eq.size(), nVm, nCa, nTrack, untouched ? "yes" : "NO");
-            if (bad || nTrack < 16 || ! untouched) failCheck (failures, __LINE__);
-            if (! masterOnly) failCheck (failures, __LINE__);
+            std::printf ("  master chains: %d EQ presets each load a complete chain (footer and EQ button); %d run both compressors; %d use the second EQ"
+                         " for a small move (largest %.2f dB); %d track presets; music through every master chain peaks at most %.2f dBFS; chain off leaves the compressors: %s\n",
+                         nChains, nBoth, nSecond, worstSecond, nTrack, worstPeak, untouched ? "yes" : "NO");
+            if (bad || nTrack < 16 || nBoth < 4 || worstSecond > 0.6 || ! untouched) failCheck (failures, __LINE__);
             if (eq.size() < 25 || vm.size() < 8 || ca.size() < 25 || ! eqOk || ! caOk || ! vmOk) failCheck (failures, __LINE__);
         }
         // state round-trip keeps the program and parameters
-        proc.setCurrentProgram (3);
+        const int deMud = ppm::presets::presetIndex ("De-Mud");          // a cut curve with a 30 Hz high-pass
+        proc.setCurrentProgram (deMud);
         juce::MemoryBlock mb; proc.getStateInformation (mb);
         PassiveMasterEQProcessor other; other.setStateInformation (mb.getData(), (int) mb.getSize());
-        const bool same = other.getCurrentProgram() == 3
+        const bool same = other.getCurrentProgram() == deMud
                        && other.getChannelSettings (0).band[1].mode == ppm::Cut
                        && other.getChannelSettings (0).hp == 4;
         std::printf ("  state round-trip: %s\n", same ? "ok" : "MISMATCH");
@@ -873,10 +917,10 @@ int main()
             || std::abs (measured - plan.predictedLufs) > 0.8 || std::abs (plan.predictedLufs - plan.targetLufs) > 0.5
             || 20 * std::log10 (outPeak) > plan.ceiling + 0.01) failCheck (failures, __LINE__);
 
-        // a whole factory preset (footer menu) switches the Parametric EQ and Class-A out
-        proc.setCurrentProgram (0);
+        // a whole preset (footer menu) replaces every unit: Init (Flat) switches the Parametric EQ and Class-A out
+        proc.setCurrentProgram (ppm::presets::presetIndex ("Init (Flat)"));
         const bool reset = ! proc.getParametricSettings().in && ! proc.getClassASettings().in;
-        std::printf ("  factory preset switches Parametric EQ and Class-A out: %s\n", reset ? "yes" : "NO");
+        std::printf ("  Init (Flat) switches the Parametric EQ and Class-A out: %s\n", reset ? "yes" : "NO");
         if (! reset) failCheck (failures, __LINE__);
     }
 
