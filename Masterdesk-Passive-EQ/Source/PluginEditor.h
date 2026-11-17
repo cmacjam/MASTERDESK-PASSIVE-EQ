@@ -38,6 +38,9 @@ namespace col
     const juce::Colour silkscreen { 0xffbfc1c4 };   // its engraved legends   // the vari-mu compressor's faceplate (gray brushed metal)
     const juce::Colour ashBlue    { 0xff7d94a7 };   // the M/S CLASS-A compressor's faceplate
     const juce::Colour ashBlueDark { 0xff566b7c };
+    const juce::Colour silver      { 0xffd2d4d7 };   // the AUTO MASTER's brushed silver faceplate (tube channel strip style)
+    const juce::Colour silverInk   { 0xff1d1f23 };   // its dark engraved legends
+    const juce::Colour silverInkDim { 0xff4c5058 };
 }
 
 // Shared drawing helpers --------------------------------------------------------

@@ -253,6 +253,80 @@ void MasterdeskLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     // Glossy black fluted knob (Bakelite style), white scale ticks printed on the
     // panel around it, and a cream pointer line from the centre to the rim.
     const auto area = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
+    if (s.getProperties()["silver"])
+    {   // AUTO MASTER: machined aluminium knob (tube channel strip style) - knurled silver edge, brushed
+        // silver face with concentric turning marks, black pointer; dark scale ticks on the silver panel
+        const float R = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 1.0f;
+        const auto c = area.getCentre();
+        const bool on = s.isEnabled();
+        const float a = startAngle + pos * (endAngle - startAngle);
+        auto circ = [&] (float rad) { return juce::Rectangle<float> (rad * 2, rad * 2).withCentre (c); };
+
+        // scale ticks
+        const double interval = s.getInterval() > 0 ? s.getInterval() : 1.0;
+        const int steps = juce::jlimit (2, 64, (int) std::lround ((s.getMaximum() - s.getMinimum()) / interval) + 1);
+        const int current = (int) std::lround ((s.getValue() - s.getMinimum()) / interval);
+        const bool dense = steps > 30;
+        for (int i = 0; i < steps; ++i)
+        {
+            if (dense && i % 2 != 0 && i != current) continue;
+            const float ta = startAngle + (endAngle - startAngle) * (float) i / (float) (steps - 1);
+            const bool major = (i == 0 || i == steps - 1 || (steps % 2 == 1 && i == steps / 2));
+            const auto p0 = c.getPointOnCircumference (R * (major ? 0.84f : 0.88f), ta);
+            const auto p1 = c.getPointOnCircumference (R * 0.99f, ta);
+            g.setColour (juce::Colours::white.withAlpha (0.55f));
+            g.drawLine ({ p0.translated (0, 1.0f), p1.translated (0, 1.0f) }, major ? 1.8f : 1.2f);
+            g.setColour (i == current && on ? col::blue.darker (0.3f) : col::silverInk.withAlpha (on ? 0.85f : 0.35f));
+            g.drawLine ({ p0, p1 }, i == current ? 2.4f : (major ? 1.8f : 1.2f));
+        }
+
+        const float rb = R * 0.80f;
+        // shadow on the panel
+        for (int i = 3; i >= 1; --i)
+        {
+            g.setColour (juce::Colours::black.withAlpha (0.16f));
+            g.fillEllipse (circ (rb + (float) i * 1.5f).translated (rb * 0.05f, rb * 0.10f));
+        }
+        // knurled edge
+        juce::ColourGradient edge (juce::Colour (0xfff7f7f7), c.x - rb, c.y - rb, juce::Colour (0xff6d7075), c.x + rb * 0.7f, c.y + rb, false);
+        edge.addColour (0.5, juce::Colour (0xffbfc2c6));
+        g.setGradientFill (edge); g.fillEllipse (circ (rb));
+        const int teeth = 60;
+        for (int i = 0; i < teeth; ++i)
+        {
+            const float t = juce::MathConstants<float>::twoPi * (float) i / (float) teeth + a;
+            const juce::Point<float> p0 (c.x + rb * 0.86f * std::sin (t), c.y - rb * 0.86f * std::cos (t));
+            const juce::Point<float> p1 (c.x + rb * 0.99f * std::sin (t), c.y - rb * 0.99f * std::cos (t));
+            const float shade = 0.5f + 0.5f * std::cos (t + 0.8f);
+            g.setColour (juce::Colours::black.withAlpha (0.14f + 0.22f * (1.0f - shade)));
+            g.drawLine ({ p0, p1 }, 1.0f);
+        }
+        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.drawEllipse (circ (rb), 1.0f);
+
+        // brushed face with turning marks
+        const float rf = rb * 0.82f;
+        juce::ColourGradient face (juce::Colour (0xffeef0f2), c.x - rf * 0.6f, c.y - rf, juce::Colour (0xff9a9ea4), c.x + rf * 0.5f, c.y + rf, false);
+        face.addColour (0.55, juce::Colour (0xffcfd2d6));
+        g.setGradientFill (face); g.fillEllipse (circ (rf));
+        for (float rr = rf * 0.18f; rr < rf; rr += juce::jmax (1.2f, rf * 0.06f))
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.10f)); g.drawEllipse (circ (rr), 0.6f);
+            g.setColour (juce::Colours::black.withAlpha (0.05f)); g.drawEllipse (circ (rr + 0.6f), 0.6f);
+        }
+        // light sweep across the face
+        juce::ColourGradient sweep (juce::Colours::white.withAlpha (0.45f), c.x - rf * 0.5f, c.y - rf * 0.6f,
+                                    juce::Colours::transparentWhite, c.x + rf * 0.2f, c.y + rf * 0.2f, true);
+        g.setGradientFill (sweep);
+        g.fillEllipse (circ (rf));
+        g.setColour (juce::Colours::black.withAlpha (0.35f)); g.drawEllipse (circ (rf), 0.8f);
+
+        // black pointer line
+        const juce::Point<float> pe (c.x + rf * 0.92f * std::sin (a), c.y - rf * 0.92f * std::cos (a));
+        const juce::Point<float> ps (c.x + rf * 0.30f * std::sin (a), c.y - rf * 0.30f * std::cos (a));
+        g.setColour (on ? juce::Colour (0xff111214) : juce::Colour (0xff70747a));
+        g.drawLine ({ ps, pe }, juce::jmax (2.0f, rf * 0.09f));
+        return;
+    }
     if (s.getProperties()["skirt"])
     {   // parametric EQ knob: glossy black cap, silver knurled skirt, white pointer line
         const float R = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 1.0f;
@@ -1894,7 +1968,7 @@ AutoMasterPanel::AutoMasterPanel (PassiveMasterEQProcessor& p)
     for (int s = 0; s < am::kNumStyles; ++s)
     {
         const juce::String name = am::styleName (s);
-        styleButtons[s] = std::make_unique<JewelButton> (name, name, col::amber);
+        styleButtons[s] = std::make_unique<JewelButton> (name, name, col::blue);
         styleButtons[s]->setClickingTogglesState (false);
         styleButtons[s]->textSize = 9.5f;
         styleButtons[s]->onClick = [this, s]
@@ -1929,6 +2003,12 @@ AutoMasterPanel::AutoMasterPanel (PassiveMasterEQProcessor& p)
     amount.slider.textFromValueFunction = [] (double v) { return juce::String ((int) std::lround (v)) + " %"; };
     maxGain.slider.textFromValueFunction = [] (double v) { return (v > 0 ? "+" : "") + juce::String (v, 1) + " dB"; };
     ceiling.slider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " dB"; };
+    for (auto* k : { &amount, &maxGain, &ceiling })
+    {   // machined silver knobs with dark legends on the silver faceplate
+        k->slider.getProperties().set ("silver", true);
+        k->captionColour = col::silverInk;
+        k->endLabelColour = col::silverInkDim;
+    }
     amount.refresh(); maxGain.refresh(); ceiling.refresh();
 
     amount.setTooltip ("AMOUNT - how far the EQ moves your mix toward the genre's tonal balance. 50-70 % is a natural "
@@ -2051,11 +2131,21 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     using S = PassiveMasterEQProcessor::AutoState;
     auto b = getLocalBounds().toFloat().reduced (24.0f, 8.0f);
     auto titles = b.removeFromTop (22.0f);
-    draw::engraved (g, "AUTO MASTER", titles.withTrimmedLeft (100.0f).withWidth (460.0f), 14.0f, juce::Justification::centredLeft);
-    draw::engraved (g, "PRESET", presetLabelArea, 11.0f, juce::Justification::centredLeft);
-    draw::engraved (g, "GENRE + YEAR  >  LISTEN  >  DONE", titles.withX (titles.getX() + 150.0f).withWidth (510.0f), 10.0f,
-                    juce::Justification::centredRight, col::engraveDim.brighter (0.4f));
-    draw::engraved (g, "MAXIMIZER", { maxArea.getX(), titles.getY(), maxArea.getWidth(), 22.0f }, 14.0f, juce::Justification::centred);
+    // dark legends engraved into the silver faceplate (light edge underneath)
+    auto ink = [&g] (const juce::String& text, juce::Rectangle<float> r, float h, juce::Justification j,
+                     juce::Colour c = col::silverInk, bool bold = true)
+    {
+        g.setFont (sans (h, bold));
+        g.setColour (juce::Colours::white.withAlpha (0.55f));
+        g.drawText (text, r.translated (0, 1.0f), j, false);
+        g.setColour (c);
+        g.drawText (text, r, j, false);
+    };
+    ink ("AUTO MASTER", titles.withTrimmedLeft (100.0f).withWidth (460.0f), 14.0f, juce::Justification::centredLeft);
+    ink ("PRESET", presetLabelArea, 11.0f, juce::Justification::centredLeft);
+    ink ("GENRE + YEAR  >  LISTEN  >  DONE", titles.withX (titles.getX() + 150.0f).withWidth (510.0f), 10.0f,
+         juce::Justification::centredRight, col::silverInkDim);
+    ink ("MAXIMIZER", { maxArea.getX(), titles.getY(), maxArea.getWidth(), 22.0f }, 14.0f, juce::Justification::centred);
 
     // limiter GR meter (falls downward from the top)
     {
@@ -2078,9 +2168,9 @@ void AutoMasterPanel::paint (juce::Graphics& g)
             g.setColour (col::cream);
             g.fillRect (inner.getX(), inner.getY() + inner.getHeight() * juce::jmin (1.0f, grHold / maxDb) - 1.0f, inner.getWidth(), 2.0f);
         }
-        draw::engraved (g, "GR", m.withY (m.getBottom() + 1.0f).withHeight (11.0f).expanded (6.0f, 0), 9.0f);
-        draw::engraved (g, juce::String (gr, 1), m.withY (m.getY() - 13.0f).withHeight (11.0f).expanded (8.0f, 0), 9.0f,
-                        juce::Justification::centred, col::yellow.withAlpha (0.9f));
+        ink ("GR", m.withY (m.getBottom() + 1.0f).withHeight (11.0f).expanded (6.0f, 0), 9.0f, juce::Justification::centred);
+        ink (juce::String (gr, 1), m.withY (m.getY() - 13.0f).withHeight (11.0f).expanded (8.0f, 0), 9.0f,
+             juce::Justification::centred);
     }
 
     // ---- cream display ---------------------------------------------------------
@@ -3371,7 +3461,7 @@ std::unique_ptr<UnitHost> Faceplate::createUnitHost (int u)
         {
             auto unit = std::make_unique<AutoMasterPanel> (proc); auto* raw = unit.get();
             return std::make_unique<UnitHost> (std::move (unit), W, 200, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 200 } },
-                                               juce::Colour(), [raw] (float dt) { raw->update (dt); });
+                                               col::silver, [raw] (float dt) { raw->update (dt); });
         }
     }
 }
@@ -3521,7 +3611,7 @@ void Faceplate::paint (juce::Graphics& g)
     draw::plate (g, rowPlates[0], metal);
     draw::plate (g, rowPlates[1], metal);
     draw::plate (g, compPlate, metal, true, col::steelGray);
-    draw::plate (g, autoPlate, metal);
+    draw::plate (g, autoPlate, metal, true, col::silver);
     draw::plate (g, classAPlate, metal, true, col::ashBlue);
     draw::plate (g, paraPlate, metal, true, col::blackPanel);
     {
