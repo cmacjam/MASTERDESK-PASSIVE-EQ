@@ -605,6 +605,58 @@ void PassiveMasterEQProcessor::autoReapply()
     });
 }
 
+void PassiveMasterEQProcessor::autoSelectPreset (int g)
+{
+    namespace am = automaster;
+    g = juce::jlimit (0, am::kNumGenres - 1, g);
+    if (auto* prm = apvts.getParameter (params::amGenre))
+    {
+        prm->beginChangeGesture();
+        prm->setValueNotifyingHost (prm->convertTo0to1 ((float) g));
+        prm->endChangeGesture();
+    }
+    if (autoState.load() == AutoState::Listening || solving.load()) return;   // the plan will use the new preset
+
+    if (! undoValid) { undoState = apvts.copyState(); undoValid = true; }
+    const auto& t = am::genre (g);
+
+    // tube amp
+    setParamPlain (params::tubeOn, t.tubeOn ? 1.0f : 0.0f);
+    setParamPlain (params::tubeDrive, (float) t.drive);
+
+    // both channels: filters + variable-mu compressor. The EQ bands stay as they are:
+    // LISTEN fits them to the song. Threshold / make-up start from a typical mix level.
+    const int thr = juce::jlimit (0, kNumThreshSteps - 1, (int) std::lround ((8.0 + 2.5 * t.grDb) / 1.5));
+    const int out = juce::jlimit (0, kNumOutputSteps - 1, (int) std::lround (t.grDb / 0.5));
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        setParamPlain (params::chanId (ch, "hp"), (float) t.hp);
+        setParamPlain (params::chanId (ch, "lp"), (float) t.lp);
+        setParamPlain (params::chanId (ch, "c_in"), 1.0f);
+        setParamPlain (params::chanId (ch, "c_thresh"), (float) thr);
+        setParamPlain (params::chanId (ch, "c_attack"), (float) t.attack);
+        setParamPlain (params::chanId (ch, "c_recovery"), (float) t.recovery);
+        setParamPlain (params::chanId (ch, "c_output"), (float) out);
+        setParamPlain (params::chanId (ch, "c_mix"), (float) t.mix);
+        setParamPlain (params::chanId (ch, "c_mode"), (float) t.mode);
+        setParamPlain (params::chanId (ch, "c_schp"), t.scHp ? 1.0f : 0.0f);
+    }
+
+    // maximizer: ceiling, and a gain that lands a mix of about -16 LUFS on the preset's loudness
+    setParamPlain (params::maxCeiling, (float) t.ceiling);
+    setParamPlain (params::maxGain, (float) juce::jlimit (-12.0, 18.0, std::round ((t.lufs + 16.0) * 2.0) / 2.0));
+    setParamPlain (params::maxOn, 1.0f);
+
+    if (autoHasRecording())
+        autoReapply();                     // a song has been heard: plan everything (EQ too) for this preset
+    else
+    {
+        const juce::SpinLock::ScopedLockType sl (planLock);
+        autoMessage = juce::String (t.name) + " set on the tubes, compressors and maximizer. Press LISTEN and play the "
+                      "song to fit the EQ and loudness to it.";
+    }
+}
+
 void PassiveMasterEQProcessor::autoUndo()
 {
     if (! undoValid) return;

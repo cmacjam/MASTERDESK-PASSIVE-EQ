@@ -112,6 +112,7 @@ class JewelButton : public juce::ToggleButton
 public:
     JewelButton (const juce::String& onText, const juce::String& offText, juce::Colour lamp);
     void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    float textSize = 11.0f;        // smaller for long labels (e.g. the AUTO MASTER genres)
 private:
     juce::String onText, offText;
     juce::Colour lamp;
@@ -343,7 +344,9 @@ public:
 private:
     void selectGenre (int g);
     PassiveMasterEQProcessor& proc;
-    std::unique_ptr<JewelButton> genreButtons[ppm::automaster::kNumGenres];
+    std::unique_ptr<JewelButton> styleButtons[ppm::automaster::kNumStyles];   // POP, JAZZ, R&B, HIP HOP, NEO SOUL, SOFT ROCK, HARD ROCK
+    juce::ComboBox presetList;                                                 // every preset: POP 1980 ... HARD ROCK 2026
+    juce::Rectangle<float> presetLabelArea;
     SteppedKnob amount, maxGain, ceiling;
     juce::TextButton listen { "LISTEN" }, undo { "UNDO" };
     JewelButton maxOn { "MAXIMIZER", "MAX OFF", col::red };

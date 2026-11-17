@@ -9,6 +9,7 @@
 #include "dsp/VariMu.h"
 #include "dsp/ClassAComp.h"
 #include "dsp/SontecEQ.h"
+#include "dsp/AutoMaster.h"
 
 namespace ppm::params
 {
@@ -32,7 +33,7 @@ inline const juce::String keyFormant { "key_formant" }; // keep formants while s
 inline const juce::String maxOn     { "max_on" };       // MAXIMIZER (final limiter) on/off
 inline const juce::String maxGain   { "max_gain" };     // dB pushed into the limiter
 inline const juce::String maxCeiling { "max_ceiling" }; // highest peak allowed out, dBFS
-inline const juce::String amGenre   { "am_genre" };     // AUTO MASTER genre
+inline const juce::String amGenre   { "am_preset" };    // AUTO MASTER genre preset: POP 1980 ... HARD ROCK 2026 (replaces the old 7-genre "am_genre")
 inline const juce::String amAmount  { "am_amount" };    // AUTO MASTER EQ amount, %
 inline const juce::String stereoMode { "stereo_mode" }; // MAIN STEREO / MONO switch for every unit (true = stereo)
 
@@ -156,8 +157,12 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<AudioParameterFloat> (ParameterID { maxCeiling, version }, "Maximizer Ceiling",
                                                        NormalisableRange<float> (-3.0f, 0.0f, 0.1f), -1.0f,
                                                        AudioParameterFloatAttributes().withLabel ("dBFS")));
-    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { amGenre, version }, "Auto Master Genre",
-                                                        StringArray { "Pop", "Jazz", "70's", "80's", "90's", "R&B", "Hip Hop" }, 0));
+    {
+        StringArray presetNames;
+        for (int g = 0; g < automaster::kNumGenres; ++g) presetNames.add (automaster::genre (g).name);
+        layout.add (std::make_unique<AudioParameterChoice> (ParameterID { amGenre, version }, "Auto Master Preset",
+                                                            presetNames, automaster::defaultPreset()));
+    }
     layout.add (std::make_unique<AudioParameterInt>  (ParameterID { amAmount, version }, "Auto Master Amount", 0, 100, 60,
                                                       AudioParameterIntAttributes().withLabel ("%")));
     // ---- parametric mastering EQ ----

@@ -605,7 +605,7 @@ void JewelButton::paintButton (juce::Graphics& g, bool hi, bool down)
     auto lampArea = juce::Rectangle<float> (d, d).withCentre ({ r.getX() + r.getHeight() * 0.55f, r.getCentreY() });
     draw::jewel (g, lampArea, lamp, on ? (isEnabled() ? 1.0f : 0.4f) : 0.0f);
 
-    draw::engraved (g, on ? onText : offText, r.withTrimmedLeft (r.getHeight() * 0.9f).withTrimmedRight (4.0f), 11.0f,
+    draw::engraved (g, on ? onText : offText, r.withTrimmedLeft (r.getHeight() * 0.9f).withTrimmedRight (4.0f), textSize,
                     juce::Justification::centred, isEnabled() ? (on ? col::engrave : col::engraveDim.brighter (0.2f)) : col::engraveDim.darker (0.5f));
 }
 
@@ -1891,17 +1891,41 @@ AutoMasterPanel::AutoMasterPanel (PassiveMasterEQProcessor& p)
       maxGain (p.apvts, ppm::params::maxGain,    "GAIN",    "-12", "+18"),
       ceiling (p.apvts, ppm::params::maxCeiling, "CEILING", "-3", "0")
 {
-    for (int g = 0; g < am::kNumGenres; ++g)
+    for (int s = 0; s < am::kNumStyles; ++s)
     {
-        const juce::String name = am::genre (g).name;
-        genreButtons[g] = std::make_unique<JewelButton> (name, name, col::amber);
-        genreButtons[g]->setClickingTogglesState (false);
-        genreButtons[g]->onClick = [this, g] { selectGenre (g); };
-        genreButtons[g]->setTooltip (juce::String ("GENRE: ") + name + " - " + am::genre (g).character + ". Target "
-                                     + juce::String (am::genre (g).lufs, 0) + " LUFS. Click to choose; if a song has been "
-                                     "heard already, the master is re-planned for this genre straight away.");
-        addAndMakeVisible (*genreButtons[g]);
+        const juce::String name = am::styleName (s);
+        styleButtons[s] = std::make_unique<JewelButton> (name, name, col::amber);
+        styleButtons[s]->setClickingTogglesState (false);
+        styleButtons[s]->textSize = 9.5f;
+        styleButtons[s]->onClick = [this, s]
+        {
+            const int now = (int) std::lround (proc.apvts.getRawParameterValue (ppm::params::amGenre)->load());
+            selectGenre (am::presetIndex (s, am::yearOf (now)));          // same year, new genre
+        };
+        styleButtons[s]->setTooltip ("GENRE: " + name + " - " + am::detail::styleBase (s).text + ". Keeps the year chosen in "
+                                     "PRESET. Sets the tubes, compressors, filters and maximizer straight away.");
+        addAndMakeVisible (*styleButtons[s]);
     }
+    // PRESET list: POP 1980 ... POP 2026, then JAZZ 1980 ... and so on, one section per genre
+    for (int s = 0; s < am::kNumStyles; ++s)
+    {
+        presetList.addSectionHeading (am::styleName (s));
+        for (int y = am::kFirstYear; y <= am::kLastYear; ++y)
+        {
+            const int g = am::presetIndex (s, y);
+            presetList.addItem (am::genre (g).name, g + 1);
+        }
+    }
+    presetList.setTooltip ("PRESET - every genre from 1980 to 2026 (POP 1980 ... POP 2026, JAZZ 1980 ... HARD ROCK 2026). "
+                           "Each one carries the sound of its style and year: loudness, low end, top end, tube warmth and "
+                           "compression. Choosing one sets the tube amp, both compressors, the filters and the maximizer "
+                           "straight away; press LISTEN to fit the EQ and loudness to your song. UNDO goes back.");
+    presetList.onChange = [this]
+    {
+        const int id = presetList.getSelectedId();
+        if (id > 0) selectGenre (id - 1);
+    };
+    addAndMakeVisible (presetList);
     amount.slider.textFromValueFunction = [] (double v) { return juce::String ((int) std::lround (v)) + " %"; };
     maxGain.slider.textFromValueFunction = [] (double v) { return (v > 0 ? "+" : "") + juce::String (v, 1) + " dB"; };
     ceiling.slider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " dB"; };
@@ -1933,15 +1957,7 @@ AutoMasterPanel::AutoMasterPanel (PassiveMasterEQProcessor& p)
 
 void AutoMasterPanel::selectGenre (int g)
 {
-    if (auto* prm = proc.apvts.getParameter (ppm::params::amGenre))
-    {
-        prm->beginChangeGesture();
-        prm->setValueNotifyingHost (prm->convertTo0to1 ((float) g));
-        prm->endChangeGesture();
-    }
-    const auto st = proc.getAutoState();
-    if (proc.autoHasRecording() && st != PassiveMasterEQProcessor::AutoState::Listening)
-        proc.autoReapply();
+    proc.autoSelectPreset (g);      // sets the preset, the tube amp, both compressors, filters and maximizer
     repaint();
 }
 
@@ -1950,7 +1966,9 @@ void AutoMasterPanel::update (float dt)
     using S = PassiveMasterEQProcessor::AutoState;
     const auto st = proc.getAutoState();
     const int genreNow = (int) std::lround (proc.apvts.getRawParameterValue (ppm::params::amGenre)->load());
-    for (int g = 0; g < am::kNumGenres; ++g) genreButtons[g]->setToggleState (g == genreNow, juce::dontSendNotification);
+    for (int s = 0; s < am::kNumStyles; ++s) styleButtons[s]->setToggleState (s == am::styleOf (genreNow), juce::dontSendNotification);
+    if (presetList.getSelectedId() != genreNow + 1 && ! presetList.isPopupActive())
+        presetList.setSelectedId (genreNow + 1, juce::dontSendNotification);
 
     listen.setButtonText (st == S::Listening ? "STOP" : (proc.autoHasRecording() ? "LISTEN AGAIN" : "LISTEN"));
     listen.setEnabled (st != S::Analysing);
@@ -1983,7 +2001,7 @@ void AutoMasterPanel::resized()
 {
     auto r = getLocalBounds().reduced (24, 8);
     r.removeFromTop (24);                                       // titles
-    auto left = r.removeFromLeft (560);
+    auto left = r.removeFromLeft (660);              // room for 7 genre buttons (NEO SOUL, SOFT ROCK, HARD ROCK)
     r.removeFromLeft (16);
     auto right = r.removeFromRight (300);
     r.removeFromRight (16);
@@ -1991,15 +2009,18 @@ void AutoMasterPanel::resized()
 
     auto genres = left.removeFromTop (32);
     genreArea = genres.toFloat();
-    const int gw = genres.getWidth() / am::kNumGenres;
-    for (int g = 0; g < am::kNumGenres; ++g)
-        genreButtons[g]->setBounds (genres.removeFromLeft (gw).reduced (2, 0));
+    const int gw = genres.getWidth() / am::kNumStyles;
+    for (int s = 0; s < am::kNumStyles; ++s)
+        styleButtons[s]->setBounds (genres.removeFromLeft (gw).reduced (2, 0));
     left.removeFromTop (6);
     amount.setBounds (left.removeFromLeft (118));
     left.removeFromLeft (14);
     auto btns = left.removeFromLeft (170);
     listen.setBounds (btns.removeFromTop (btns.getHeight() / 2).withSizeKeepingCentre (164, 44).translated (0, 6));
     undo.setBounds (btns.withSizeKeepingCentre (120, 30));
+    left.removeFromLeft (14);
+    presetLabelArea = left.removeFromTop (22).toFloat().translated (0.0f, 6.0f);
+    presetList.setBounds (left.removeFromTop (34).withSizeKeepingCentre (left.getWidth(), 30).translated (0, 4));
 
     maxArea = right.toFloat();
     auto mr = right;
@@ -2021,7 +2042,7 @@ juce::String AutoMasterPanel::getTooltip()
         return "AUTO MASTER DISPLAY - steel blue: the tonal balance of your mix (octave bands, relative to the mids). White dashes: "
                "the genre's target. Aqua: your mix after the EQ AUTO MASTER chose. Underneath: the moves it made, and the "
                "loudness before -> after (LUFS).";
-    return "AUTO MASTER - choose a genre, press LISTEN and play the song. It measures your mix's tonal balance and loudness, "
+    return "AUTO MASTER - choose a genre and year (PRESET), press LISTEN and play the song. It measures your mix's tonal balance and loudness, "
            "then sets the EQ, tubes, compressor and MAXIMIZER for that style. Everything it sets stays adjustable. Your Parametric EQ and Class-A settings stay as they are and are included in the plan.";
 }
 
@@ -2031,7 +2052,8 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     auto b = getLocalBounds().toFloat().reduced (24.0f, 8.0f);
     auto titles = b.removeFromTop (22.0f);
     draw::engraved (g, "AUTO MASTER", titles.withTrimmedLeft (100.0f).withWidth (460.0f), 14.0f, juce::Justification::centredLeft);
-    draw::engraved (g, "GENRE  >  LISTEN  >  DONE", titles.withX (titles.getX() + 150.0f).withWidth (410.0f), 10.0f,
+    draw::engraved (g, "PRESET", presetLabelArea, 11.0f, juce::Justification::centredLeft);
+    draw::engraved (g, "GENRE + YEAR  >  LISTEN  >  DONE", titles.withX (titles.getX() + 150.0f).withWidth (510.0f), 10.0f,
                     juce::Justification::centredRight, col::engraveDim.brighter (0.4f));
     draw::engraved (g, "MAXIMIZER", { maxArea.getX(), titles.getY(), maxArea.getWidth(), 22.0f }, 14.0f, juce::Justification::centred);
 
@@ -2084,7 +2106,7 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     juce::String msg = proc.getAutoMessage();
     juce::Colour msgCol = juce::Colours::white;
     if (st == S::Idle && msg.isEmpty())
-        msg = "Choose a GENRE, press LISTEN, then play your song.";
+        msg = "Choose a GENRE and YEAR in PRESET, press LISTEN, then play your song.";
     if (st == S::Listening)
         msg = "LISTENING...  " + juce::String (proc.autoListenSecondsDone(), 1) + " / " + juce::String (proc.listenSeconds, 0)
             + " s of music  (play the fullest part of the song)";
@@ -2128,7 +2150,7 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     else
     {
         g.drawFittedText (juce::String (tg.name) + ":  " + tg.character, lines.removeFromTop (16.0f).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
-        g.drawFittedText ("Target " + juce::String (tg.lufs, 0) + " LUFS  |  ceiling " + juce::String (tg.ceiling, 1)
+        g.drawFittedText ("Target " + juce::String (tg.lufs, 1) + " LUFS  |  ceiling " + juce::String (tg.ceiling, 1)
                           + " dBFS  |  tube drive " + sgn (tg.drive) + " dB",
                           lines.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
     }
@@ -3578,13 +3600,16 @@ void Faceplate::resized()
         vuR.setBounds (t.removeFromLeft (vuW));
         t.removeFromLeft (gap);
         {
-            // HARMONICS meter with the main STEREO / MONO switch right under it:
-            // it sets every unit below the top plate (both EQs, the tube amps and all the compressors)
+            // HARMONICS meter with the two main switches right under it: LINK (left + right channels
+            // move together) and STEREO / MONO. They set every unit below the top plate.
             auto harmCol = t.removeFromLeft (harmW);
             const int btnH = 30, btnGap = 6;
             harm.setBounds (harmCol.removeFromTop (juce::jmin (172, harmCol.getHeight() - btnH - btnGap)));
             harmCol.removeFromTop (btnGap);
-            stereoButton.setBounds (harmCol.removeFromTop (btnH).withSizeKeepingCentre (juce::jmin (150, harmW), btnH));
+            auto btnRow = harmCol.removeFromTop (btnH).withSizeKeepingCentre (juce::jmin (232, harmW), btnH);
+            const int bw = (btnRow.getWidth() - 8) / 2;
+            linkButton.setBounds (btnRow.removeFromLeft (bw));
+            stereoButton.setBounds (btnRow.removeFromRight (bw));
         }
         t.removeFromLeft (gap);
 
@@ -3632,7 +3657,6 @@ void Faceplate::resized()
     {
         auto f = footerPlate.reduced (30.0f, 12.0f);
         auto bar = f.toNearestInt();
-        linkButton.setBounds (bar.removeFromLeft (130)); bar.removeFromLeft (10);
         copyLR.setBounds (bar.removeFromLeft (76));      bar.removeFromLeft (8);
         copyRL.setBounds (bar.removeFromLeft (76));      bar.removeFromLeft (18);
         helpButton.setBounds (bar.removeFromLeft (92));  bar.removeFromLeft (8);
@@ -3665,10 +3689,10 @@ void Faceplate::resized()
     for (auto& b : presetButtons) if (b != nullptr) b->setVisible (! compact);
     if (compact) { help.setBounds (getLocalBounds()); return; }
 
-    // ---------------- AUTO MASTER + MAXIMIZER (above the footer) --------------------
-    autoPlate = r.removeFromBottom (200.0f);
+    // ---------------- AUTO MASTER + MAXIMIZER (under the meters, above every EQ, amp and compressor) ----
+    autoPlate = r.removeFromTop (200.0f);
     autoPanel.setBounds (autoPlate.toNearestInt());
-    r.removeFromBottom (10.0f);
+    r.removeFromTop (10.0f);
 
     // ---------------- M/S CLASS-A compressor (ash-blue unit) ---------------------------
     classAPlate = r.removeFromBottom (380.0f);

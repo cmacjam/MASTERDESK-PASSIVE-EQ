@@ -157,6 +157,8 @@ public:
     void autoListen();                      // start recording the song (message thread)
     void autoCancel();
     void autoReapply();                     // plan again from the recording with the current genre / AMOUNT
+    void autoSelectPreset (int presetIndex);  // choose a genre preset: sets the tubes, compressors, filters and maximizer
+                                              // straight away (UNDO-able); re-plans with LISTEN's recording if there is one
     void autoUndo();                        // back to the settings from before AUTO MASTER
     bool autoCanUndo() const               { return undoValid; }
     bool autoHasRecording() const          { return capLen > 0 && capPos.load() >= capLen; }
