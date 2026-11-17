@@ -504,6 +504,35 @@ int main()
         if (! same) failCheck (failures, __LINE__);
     }
 
+    // ---- INSTRUMENT presets: tube amp, then a compressor, for what is on the track ----
+    {
+        using namespace ppm::presets;
+        std::printf ("instrument presets (tube amp -> compressor):\n");
+        PassiveMasterEQProcessor proc;
+        proc.setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc.prepareToPlay (48000.0, 512);
+        const auto& list = all();
+        int n = 0, bad = 0;
+        const char* wanted[] = { "Lead Vocal - Up Front (Pop / R&B)", "Background Vocals - Soft & Wide", "Live Bass - Round & Fingered",
+                                 "Synth Bass - Sub & Punch", "Grand Piano - Concert Clear", "Electric Piano - Tine Bark (Rhodes style)",
+                                 "Organ - Tonewheel Drive", "Clavinet - Funk Bite", "Synth Lead - Cut Through", "Strings - Silky Section",
+                                 "Horns - Punchy Brass Section" };
+        for (const char* w : wanted) if (presetIndex (w) < 0) { std::printf ("  MISSING: %s\n", w); ++bad; }
+        for (int i = 0; i < (int) list.size(); ++i)
+        {
+            if (! isTrackCategory (list[(size_t) i].category)) continue;
+            ++n;
+            proc.setCurrentProgram (i);
+            const bool tube = *proc.apvts.getRawParameterValue (ppm::params::tubeOn) > 0.5f;
+            const bool order = (int) *proc.apvts.getRawParameterValue (ppm::params::compOrder) == 0;
+            const bool comp = (proc.getCompSettings (0).compIn && proc.getCompSettings (0).threshold > 0) || proc.getClassASettings().in;
+            if (! tube || ! order || ! comp)
+            { std::printf ("  %s: tube %d, tube->comp order %d, compressor %d\n", list[(size_t) i].name.c_str(), (int) tube, (int) order, (int) comp); ++bad; }
+        }
+        std::printf ("  %d track presets, every one: tube amp on, compressor right after it: %s\n", n, bad ? "NO" : "yes");
+        if (bad || n < 30) failCheck (failures, __LINE__);
+    }
+
     // ---- AUTO MASTER genre presets (POP 1980 ... HARD ROCK 2026) --------------------
     {
         namespace am = ppm::automaster;
