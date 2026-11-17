@@ -84,18 +84,19 @@ void draw::screw (juce::Graphics& g, juce::Point<float> c, float d, float slotAn
     auto r = juce::Rectangle<float> (d, d).withCentre (c);
     g.setColour (juce::Colours::black.withAlpha (0.7f));
     g.fillEllipse (r.expanded (1.5f).translated (0.6f, 1.0f));
-    juce::ColourGradient grad (juce::Colour (0xffeaeaea), r.getX(), r.getY(), juce::Colour (0xff4b4b4b), r.getRight(), r.getBottom(), false);
+    // brass slotted screw head
+    juce::ColourGradient grad (col::brassLight, r.getX(), r.getY(), col::brassDark, r.getRight(), r.getBottom(), false);
+    grad.addColour (0.5, juce::Colour (0xffcfae68));
     g.setGradientFill (grad);
     g.fillEllipse (r);
-    g.setColour (juce::Colours::black.withAlpha (0.55f));
+    g.setColour (juce::Colour (0xff4a3614).withAlpha (0.7f));
     g.drawEllipse (r, 0.8f);
-    // Phillips slot
-    g.setColour (juce::Colour (0xff1a1a1a));
-    for (float a : { slotAngle, slotAngle + kPiF * 0.5f })
-    {
-        const auto dx = std::cos (a) * d * 0.32f, dy = std::sin (a) * d * 0.32f;
-        g.drawLine (c.x - dx, c.y - dy, c.x + dx, c.y + dy, juce::jmax (1.2f, d * 0.12f));
-    }
+    // single slot
+    const auto dx = std::cos (slotAngle) * d * 0.36f, dy = std::sin (slotAngle) * d * 0.36f;
+    g.setColour (juce::Colour (0xff3b2a10));
+    g.drawLine (c.x - dx, c.y - dy, c.x + dx, c.y + dy, juce::jmax (1.4f, d * 0.16f));
+    g.setColour (col::brassLight.withAlpha (0.6f));
+    g.drawLine (c.x - dx, c.y - dy + 1.0f, c.x + dx, c.y + dy + 1.0f, 0.6f);
 }
 
 void draw::chromeRing (juce::Graphics& g, juce::Rectangle<float> r, float t)
@@ -111,6 +112,7 @@ void draw::chromeRing (juce::Graphics& g, juce::Rectangle<float> r, float t)
 
 void draw::plate (juce::Graphics& g, juce::Rectangle<float> r, const juce::Image& texture, bool screws, juce::Colour tint)
 {
+    tint = col::brassPlate;          // every faceplate is brushed brass
     const float corner = 6.0f;
     // drop shadow
     g.setColour (juce::Colours::black.withAlpha (0.6f));
@@ -126,19 +128,30 @@ void draw::plate (juce::Graphics& g, juce::Rectangle<float> r, const juce::Image
         g.fillRect (r);
         if (! tint.isTransparent())
         {   // anodised colour over the brushed metal, then the grain again on top
-            juce::ColourGradient anod (tint.brighter (0.12f), r.getX(), r.getY(), tint.darker (0.45f), r.getX(), r.getBottom(), false);
+            // polished brass: light falls diagonally, with bright reflections running across the plate
+            juce::ColourGradient anod (tint.darker (0.18f), r.getX(), r.getY(), tint.darker (0.22f), r.getRight(), r.getBottom(), false);
+            anod.addColour (0.18, tint.brighter (0.22f));
+            anod.addColour (0.32, juce::Colour (0xfff7e3a8));      // main highlight
+            anod.addColour (0.46, tint.brighter (0.05f));
+            anod.addColour (0.62, tint.darker (0.08f));
+            anod.addColour (0.76, juce::Colour (0xffe8cf8a));      // second, softer reflection
+            anod.addColour (0.90, tint.darker (0.12f));
             g.setGradientFill (anod);
             g.fillRect (r);
-            g.setOpacity (0.22f);
+            g.setOpacity (0.14f);      // a faint brushed grain under the polish
             g.drawImage (texture, r, juce::RectanglePlacement::fillDestination);
             g.setOpacity (1.0f);
-            juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.10f), r.getX(), r.getY(), juce::Colours::transparentWhite, r.getX(), r.getY() + r.getHeight() * 0.4f, false);
+            // glossy top light and a darker lower edge
+            juce::ColourGradient sheen (juce::Colours::white.withAlpha (0.22f), r.getX(), r.getY(), juce::Colours::transparentWhite, r.getX(), r.getY() + juce::jmin (60.0f, r.getHeight() * 0.35f), false);
             g.setGradientFill (sheen);
+            g.fillRect (r);
+            juce::ColourGradient foot (juce::Colours::transparentBlack, r.getX(), r.getBottom() - juce::jmin (40.0f, r.getHeight() * 0.3f), juce::Colours::black.withAlpha (0.12f), r.getX(), r.getBottom(), false);
+            g.setGradientFill (foot);
             g.fillRect (r);
         }
     }
     // bevel
-    juce::ColourGradient bevel (juce::Colours::white.withAlpha (0.35f), r.getX(), r.getY(),
+    juce::ColourGradient bevel (juce::Colours::white.withAlpha (0.65f), r.getX(), r.getY(),
                                 juce::Colours::black.withAlpha (0.8f), r.getX(), r.getBottom(), false);
     g.setGradientFill (bevel);
     g.drawRoundedRectangle (r.reduced (0.5f), corner, 1.6f);
@@ -192,6 +205,24 @@ void draw::engraved (juce::Graphics& g, const juce::String& text, juce::Rectangl
     g.setColour (juce::Colours::black.withAlpha (0.85f));
     g.drawText (text, r.translated (0, 1.0f), j, false);
     g.setColour (c);
+    g.drawText (text, r, j, false);
+}
+
+juce::Colour draw::onBrass (juce::Colour c)
+{
+    const float a = c.getFloatAlpha();
+    if (c.getSaturation() < 0.30f || c.getPerceivedBrightness() < 0.35f)
+        return (c.getPerceivedBrightness() > 0.62f || c.getPerceivedBrightness() < 0.35f ? col::brassInk : col::brassInkDim).withAlpha (a);
+    return c.withBrightness (0.38f).withSaturation (juce::jmin (1.0f, c.getSaturation() + 0.15f)).withAlpha (a);
+}
+
+void draw::legend (juce::Graphics& g, const juce::String& text, juce::Rectangle<float> r, float h,
+                   juce::Justification j, juce::Colour c, bool bold)
+{
+    g.setFont (sans (h, bold));
+    g.setColour (col::brassLight.withAlpha (0.55f * c.getFloatAlpha()));
+    g.drawText (text, r.translated (0, 1.0f), j, false);
+    g.setColour (onBrass (c));
     g.drawText (text, r, j, false);
 }
 
@@ -257,6 +288,85 @@ void MasterdeskLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     // Glossy black fluted knob (Bakelite style), white scale ticks printed on the
     // panel around it, and a cream pointer line from the centre to the rim.
     const auto area = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
+    {   // Machined brass knob (every knob): knurled brass edge, spun / brushed brass face with the
+        // light catching across it, a fine engraved pointer; scale ticks printed on the brass plate
+        const float R = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 1.0f;
+        const auto c = area.getCentre();
+        const bool on = s.isEnabled();
+        const bool dark = (bool) s.getProperties()["onDark"];
+        const float a = startAngle + pos * (endAngle - startAngle);
+        auto circ = [&] (float rad) { return juce::Rectangle<float> (rad * 2, rad * 2).withCentre (c); };
+
+        // scale ticks
+        const double interval = s.getInterval() > 0 ? s.getInterval() : 1.0;
+        const int steps = juce::jlimit (2, 64, (int) std::lround ((s.getMaximum() - s.getMinimum()) / interval) + 1);
+        const int current = (int) std::lround ((s.getValue() - s.getMinimum()) / interval);
+        const bool dense = steps > 30;
+        const auto tickInk = dark ? juce::Colour (0xffeeeeee) : col::brassInk;
+        for (int i = 0; i < steps; ++i)
+        {
+            if (dense && i % 2 != 0 && i != current) continue;
+            const float ta = startAngle + (endAngle - startAngle) * (float) i / (float) (steps - 1);
+            const bool major = (i == 0 || i == steps - 1 || (steps % 2 == 1 && i == steps / 2));
+            const auto p0 = c.getPointOnCircumference (R * (major ? 0.84f : 0.88f), ta);
+            const auto p1 = c.getPointOnCircumference (R * 0.99f, ta);
+            g.setColour ((dark ? juce::Colours::black : col::brassLight).withAlpha (0.55f));
+            g.drawLine ({ p0.translated (0, 1.0f), p1.translated (0, 1.0f) }, major ? 1.8f : 1.2f);
+            g.setColour (i == current && on ? (dark ? col::amber : juce::Colour (0xff8a2a10)) : tickInk.withAlpha (on ? 0.85f : 0.35f));
+            g.drawLine ({ p0, p1 }, i == current ? 2.4f : (major ? 1.8f : 1.2f));
+        }
+
+        const float rb = R * 0.80f;
+        // shadow on the plate
+        for (int i = 3; i >= 1; --i)
+        {
+            g.setColour (juce::Colours::black.withAlpha (0.16f));
+            g.fillEllipse (circ (rb + (float) i * 1.5f).translated (rb * 0.05f, rb * 0.10f));
+        }
+        // knurled brass edge
+        juce::ColourGradient edge (col::brassLight, c.x - rb, c.y - rb, juce::Colour (0xff5e4316), c.x + rb * 0.7f, c.y + rb, false);
+        edge.addColour (0.5, juce::Colour (0xffc39c52));
+        g.setGradientFill (edge); g.fillEllipse (circ (rb));
+        const int teeth = 72;
+        for (int i = 0; i < teeth; ++i)
+        {
+            const float t = juce::MathConstants<float>::twoPi * (float) i / (float) teeth + a;
+            const juce::Point<float> p0 (c.x + rb * 0.86f * std::sin (t), c.y - rb * 0.86f * std::cos (t));
+            const juce::Point<float> p1 (c.x + rb * 0.99f * std::sin (t + 0.05f), c.y - rb * 0.99f * std::cos (t + 0.05f));
+            const float shade = 0.5f + 0.5f * std::cos (t + 0.8f);
+            g.setColour (juce::Colour (0xff3b2a10).withAlpha (0.18f + 0.28f * (1.0f - shade)));
+            g.drawLine ({ p0, p1 }, 1.0f);
+        }
+        g.setColour (juce::Colour (0xff2e2008).withAlpha (0.7f)); g.drawEllipse (circ (rb), 1.0f);
+
+        // spun brass face: the light makes a soft bow-tie across it, as on turned metal
+        const float rf = rb * 0.84f;
+        const int wedges = 72;
+        for (int i = 0; i < wedges; ++i)
+        {
+            const float t0 = juce::MathConstants<float>::twoPi * (float) i / (float) wedges;
+            const float t1 = juce::MathConstants<float>::twoPi * (float) (i + 1) / (float) wedges;
+            const float lit = 0.5f + 0.5f * std::cos (2.0f * (t0 + 0.4f));
+            juce::Path w; w.addPieSegment (circ (rf), t0, t1 + 0.01f, 0.0f);
+            g.setColour (juce::Colour (0xff9c7838).interpolatedWith (col::brassLight, 0.15f + 0.75f * lit * lit));
+            g.fillPath (w);
+        }
+        for (float rr = rf * 0.12f; rr < rf; rr += juce::jmax (1.2f, rf * 0.05f))
+        {   // fine turning rings
+            g.setColour (juce::Colours::white.withAlpha (0.07f)); g.drawEllipse (circ (rr), 0.5f);
+            g.setColour (juce::Colours::black.withAlpha (0.04f)); g.drawEllipse (circ (rr + 0.5f), 0.5f);
+        }
+        g.setColour (juce::Colour (0xff3b2a10).withAlpha (0.45f)); g.drawEllipse (circ (rf), 0.8f);
+
+        // engraved pointer
+        const juce::Point<float> pe (c.x + rf * 0.92f * std::sin (a), c.y - rf * 0.92f * std::cos (a));
+        const juce::Point<float> ps (c.x + rf * 0.38f * std::sin (a), c.y - rf * 0.38f * std::cos (a));
+        g.setColour (col::brassLight.withAlpha (0.7f));
+        g.drawLine ({ ps.translated (0.7f, 0.7f), pe.translated (0.7f, 0.7f) }, juce::jmax (1.2f, rf * 0.05f));
+        g.setColour (on ? juce::Colour (0xff1c1408) : juce::Colour (0xff6e5a38));
+        g.drawLine ({ ps, pe }, juce::jmax (1.8f, rf * 0.08f));
+        return;
+    }
     if (s.getProperties()["silver"])
     {   // AUTO MASTER: machined aluminium knob (tube channel strip style) - knurled silver edge, brushed
         // silver face with concentric turning marks, black pointer; dark scale ticks on the silver panel
@@ -584,7 +694,12 @@ void SteppedKnob::paint (juce::Graphics& g)
     const float ts = textScale;
     auto legend = [&g, this] (const juce::String& t, juce::Rectangle<float> r, float h, juce::Colour c)
     {
-        if (! darkLegends) { draw::engraved (g, t, r, h, juce::Justification::centred, c); return; }
+        if (! darkLegends)
+        {
+            if (getProperties()["onDark"]) draw::engraved (g, t, r, h, juce::Justification::centred, c);   // on a dark screen
+            else                           draw::legend (g, t, r, h, juce::Justification::centred, c);     // on the brass plate
+            return;
+        }
         g.setFont (sans (h, true));
         g.setColour (juce::Colours::white.withAlpha (0.55f)); g.drawText (t, r.translated (0, 1.0f), juce::Justification::centred, false);
         g.setColour (c);                                       g.drawText (t, r, juce::Justification::centred, false);
@@ -705,7 +820,7 @@ void JewelLamp::paint (juce::Graphics& g)
     auto text = r.removeFromBottom (13.0f);
     const float d = juce::jmin (r.getWidth(), r.getHeight()) * 0.62f;
     draw::jewel (g, juce::Rectangle<float> (d, d).withCentre (r.getCentre()), colour, brightness);
-    draw::engraved (g, label, text, 9.5f, juce::Justification::centred, col::engraveDim.brighter (0.5f));
+    draw::legend (g, label, text, 9.5f, juce::Justification::centred, col::engraveDim.brighter (0.5f));
 }
 
 // =============================================================================
@@ -1504,6 +1619,11 @@ KeyPanel::KeyPanel (PassiveMasterEQProcessor& p, const AudioHistory& h)
     semis.slider.textFromValueFunction = [] (double v) { const int i = (int) std::lround (v); return (i > 0 ? "+" : "") + juce::String (i) + " st"; };
     cents.slider.textFromValueFunction = [] (double v) { const int i = (int) std::lround (v); return (i > 0 ? "+" : "") + juce::String (i) + " ct"; };
     semis.refresh(); cents.refresh();
+    for (auto* k : { &semis, &cents })
+    {   // these two sit on the dark SONG KEY screen: light legends and ticks
+        k->getProperties().set ("onDark", true);
+        k->slider.getProperties().set ("onDark", true);
+    }
     semis.setTooltip ("SEMITONES - move the whole song up or down, -12 to +12 semitones (12 = one octave). "
                       "Switch KEY SHIFT on to hear it. +2 turns A minor into B minor.");
     cents.setTooltip ("FINE - fine tuning in cents (100 cents = 1 semitone), e.g. to match a track that isn't tuned to A = 440 Hz.");
@@ -1762,7 +1882,7 @@ void BandStrip::paint (juce::Graphics& g)
         g.setColour (juce::Colours::white.withAlpha (0.08f));
         g.drawVerticalLine (getWidth() - 1, r.getY() + 14, r.getBottom() - 14);
     }
-    draw::engraved (g, kBandNames[band], r.removeFromTop (22).translated (0, 4), 13.5f, juce::Justification::centred,
+    draw::legend (g, kBandNames[band], r.removeFromTop (22).translated (0, 4), 13.5f, juce::Justification::centred,
                     isEnabled() ? col::engrave : col::engraveDim);
 }
 
@@ -1808,7 +1928,7 @@ void CenterStrip::paint (juce::Graphics& g)
     g.drawVerticalLine (1, r.getY() + 14, r.getBottom() - 14);
     g.setColour (juce::Colours::white.withAlpha (0.08f));
     g.drawVerticalLine (2, r.getY() + 14, r.getBottom() - 14);
-    draw::engraved (g, "FILTERS / TRIM", r.removeFromTop (22).translated (0, 4), 13.5f, juce::Justification::centred,
+    draw::legend (g, "FILTERS / TRIM", r.removeFromTop (22).translated (0, 4), 13.5f, juce::Justification::centred,
                     isEnabled() ? col::engrave : col::engraveDim);
 }
 
@@ -1848,8 +1968,8 @@ void MetalToggle::paint (juce::Graphics& g)
     const bool up = isUp(), on = isEnabled();
     const auto lc = on ? labelColour : labelColour.withAlpha (0.4f);
     auto top = r.removeFromTop (13.0f), bottom = r.removeFromBottom (13.0f);
-    draw::engraved (g, upLabel,   top,    10.0f, juce::Justification::centred, up ? lc : lc.withAlpha (on ? 0.55f : 0.3f));
-    draw::engraved (g, downLabel, bottom, 10.0f, juce::Justification::centred, up ? lc.withAlpha (on ? 0.55f : 0.3f) : lc);
+    draw::legend (g, upLabel,   top,    10.0f, juce::Justification::centred, up ? lc : lc.withAlpha (on ? 0.72f : 0.45f));
+    draw::legend (g, downLabel, bottom, 10.0f, juce::Justification::centred, up ? lc.withAlpha (on ? 0.72f : 0.45f) : lc);
 
     const auto c = r.getCentre();
     const float R = juce::jmin (r.getHeight() * 0.26f, 9.0f);
@@ -1911,6 +2031,11 @@ CompStrip::CompStrip (juce::AudioProcessorValueTreeState& s, int channel)
       scHp     (s, params::chanId (channel, "c_schp"), "HP SC IN", "OFF", 1.0f, 0.0f),
       compIn   (s, params::chanId (channel, "c_in"),   "IN", "BYPASS", 1.0f, 0.0f)
 {
+    for (auto* k : { &thresh, &attack, &recovery, &output, &mix })
+    {   // these knobs sit in the black inset: light legends and ticks
+        k->getProperties().set ("onDark", true);
+        k->slider.getProperties().set ("onDark", true);
+    }
     for (auto* c : std::initializer_list<juce::Component*> { &meter, &thresh, &attack, &recovery, &output, &mix, &mode, &scHp, &compIn })
         addAndMakeVisible (c);
 
@@ -1937,7 +2062,7 @@ void CompStrip::paint (juce::Graphics& g)
             draw::screw (g, pt, 7.0f, 0.4f);
     }
     const auto c = ch == 0 ? col::amber : (isEnabled() ? col::blue : col::engraveDim);
-    draw::engraved (g, ch == 0 ? "LEFT CHANNEL" : (isEnabled() ? "RIGHT CHANNEL" : "RIGHT  (LINKED)"),
+    draw::legend (g, ch == 0 ? "LEFT CHANNEL" : (isEnabled() ? "RIGHT CHANNEL" : "RIGHT  (LINKED)"),
                     meter.getBounds().toFloat().withHeight (14.0f).translated (0, -17.0f), 11.0f, juce::Justification::centred, c);
 }
 
@@ -2453,10 +2578,10 @@ void ClassAStrip::setCompressorEnabled (bool e)
 
 void ClassAStrip::paint (juce::Graphics& g)
 {
-    draw::engraved (g, title, meter.getBounds().toFloat().withHeight (14.0f).translated (0, -17.0f), 11.0f, juce::Justification::centred, titleColour);
+    draw::legend (g, title, meter.getBounds().toFloat().withHeight (14.0f).translated (0, -17.0f), 11.0f, juce::Justification::centred, titleColour);
     // section legends on the lower row
     auto legend = [&] (juce::Rectangle<int> r, const char* t)
-    { draw::engraved (g, t, r.toFloat().withHeight (12.0f).translated (0, -13.0f), 9.5f, juce::Justification::centred, juce::Colours::white.withAlpha (0.75f)); };
+    { draw::legend (g, t, r.toFloat().withHeight (12.0f).translated (0, -13.0f), 9.5f, juce::Justification::centred, juce::Colours::white.withAlpha (0.75f)); };
     legend (scGain.getBounds().getUnion (scFreq.getBounds()).getUnion (scOn.getBounds()), "SIDECHAIN FILTER");
     legend (eqGain.getBounds().getUnion (eqFreq.getBounds()).getUnion (eqX10.getBounds()), "NIVEAU FILTER");
     g.setColour (juce::Colours::black.withAlpha (0.25f));
@@ -2550,8 +2675,8 @@ void ClassAPanel::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat().reduced (22.0f, 8.0f);
     auto head = r.withHeight (26.0f);
-    draw::engraved (g, "M/S CLASS-A COMPRESSOR", head, 14.0f, juce::Justification::centred, juce::Colours::white);
-    draw::engraved (g, "FEEDBACK / FEED FWD  -  MID/SIDE  -  SOFT CLIP", head.withTrimmedLeft (214.0f).withWidth (420.0f), 9.5f, juce::Justification::centredLeft,
+    draw::legend (g, "M/S CLASS-A COMPRESSOR", head, 14.0f, juce::Justification::centred, juce::Colours::white);
+    draw::legend (g, "FEEDBACK / FEED FWD  -  MID/SIDE  -  SOFT CLIP", head.withTrimmedLeft (214.0f).withWidth (420.0f), 9.5f, juce::Justification::centredLeft,
                     juce::Colours::white.withAlpha (0.6f));
     for (float x : { (float) centre.getX() - 10.0f, (float) centre.getRight() + 10.0f })
     {
@@ -2794,7 +2919,7 @@ void ParametricPanel::paint (juce::Graphics& g)
 {
     const auto ink = col::silkscreen;
     auto engrave = [&] (const juce::String& t, juce::Rectangle<float> r, float h, juce::Justification j = juce::Justification::centred, float alpha = 1.0f)
-    { draw::engraved (g, t, r, h, j, ink.withAlpha (alpha), false); };
+    { draw::legend (g, t, r, h, j, ink.withAlpha (alpha), false); };
     // engraved double divider lines between the columns (like the hardware)
     auto divider = [&] (int x)
     {
@@ -2916,7 +3041,7 @@ void PassiveEqUnit::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState ss (g);
         g.addTransform (juce::AffineTransform::rotation (-kPiF * 0.5f, r.getCentreX(), r.getCentreY()));
         const auto c = ch == 0 ? col::amber : (proc.isLinked() ? col::engraveDim : col::blue);
-        draw::engraved (g, ch == 0 ? "LEFT CHANNEL" : (proc.isLinked() ? "RIGHT  (LINKED)" : "RIGHT CHANNEL"),
+        draw::legend (g, ch == 0 ? "LEFT CHANNEL" : (proc.isLinked() ? "RIGHT  (LINKED)" : "RIGHT CHANNEL"),
                         juce::Rectangle<float> (180, 20).withCentre (r.getCentre()), 12.0f, juce::Justification::centred, c);
     }
 }
@@ -2957,8 +3082,8 @@ void VariMuUnit::resized()
 void VariMuUnit::paint (juce::Graphics& g)
 {
     auto head = getLocalBounds().toFloat().reduced (30.0f, 10.0f).withHeight (22.0f);
-    draw::engraved (g, "STEREO VARIABLE MU  LIMITER COMPRESSOR", head, 15.0f, juce::Justification::centred, juce::Colours::white);
-    draw::engraved (g, "ORDER", head.withX ((float) orderSwitch.getX() - 60.0f).withWidth (52.0f), 11.0f, juce::Justification::centredRight, juce::Colours::white);
+    draw::legend (g, "STEREO VARIABLE MU  LIMITER COMPRESSOR", head, 15.0f, juce::Justification::centred, juce::Colours::white);
+    draw::legend (g, "ORDER", head.withX ((float) orderSwitch.getX() - 60.0f).withWidth (52.0f), 11.0f, juce::Justification::centredRight, juce::Colours::white);
     const float x = (float) getWidth() * 0.5f;
     g.setColour (juce::Colours::black.withAlpha (0.8f));
     g.drawVerticalLine ((int) x, 40.0f, (float) getHeight() - 14.0f);
@@ -3045,7 +3170,11 @@ UnitPresetButton::UnitPresetButton (PassiveMasterEQProcessor& p, int k) : juce::
     setTooltip (kind == Eq     ? "EQ PRESETS - curves for the Parametric and Passive EQs: stereo-master curves, plus track presets for instruments and drums. "
                                  "With 'Set up the complete master chain' ticked (the first menu item), the curve loads its whole chain: the other EQ (neutral, or a small complementary move), the compressor(s) that suit it and the maximizer as a safety limiter."
               : kind == VariMu ? "VARI-MU PRESETS - settings for this compressor only; the EQs are left alone."
-                               : "CLASS-A PRESETS - settings for this compressor only; the EQs are left alone.");
+              : kind == ClassA ? "CLASS-A PRESETS - settings for this compressor only; the EQs are left alone."
+                               : "AMP PRESETS - presets for one instrument or voice on its own track: lead and background vocals, live and "
+                                 "synth bass, grand and electric piano, organ, clavinet, synths, strings, horns, guitars and drums. "
+                                 "Each sets the tube amp, then a compressor right after it (EQ > COMP order), plus EQ for that source. "
+                                 "Set the compressor thresholds for your level.");
 }
 
 // The preset menu, by category: MASTER CHAINS, COMPRESSOR PRESETS, TRACK PRESETS, one sub-menu per category.
@@ -3077,6 +3206,24 @@ static void fillPresetMenu (juce::PopupMenu& menu, PassiveMasterEQProcessor& pro
 void UnitPresetButton::clicked()
 {
     using namespace ppm::presets;
+    if (kind == Amp)
+    {   // one sub-menu per source: Vocals, Bass, Keys, Synths, Strings & Horns, Guitars, Drums
+        juce::PopupMenu menu;
+        menu.addSectionHeader ("AMP PRESETS  (tube amp + compressor)");
+        const auto& list = all();
+        for (const char* cat : kTrackCategories)
+        {
+            juce::PopupMenu sub;
+            for (int i = 0; i < (int) list.size(); ++i)
+                if (list[(size_t) i].category == cat)
+                    sub.addItem (i + 1, list[(size_t) i].name, true, proc.getCurrentProgram() == i);
+            menu.addSubMenu (juce::String (cat).fromFirstOccurrenceOf (": ", false, false).toUpperCase(), sub);
+        }
+        juce::Component::SafePointer<UnitPresetButton> safe (this);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                            [safe] (int r) { if (safe != nullptr && r > 0) safe->applied (r - 1); });
+        return;
+    }
     const auto ids = unitPresets (kind == Eq ? UnitKind::Eq : kind == VariMu ? UnitKind::VariMu : UnitKind::ClassA);
     juce::PopupMenu menu;
     if (kind == Eq)
@@ -3098,6 +3245,15 @@ void UnitPresetButton::clicked()
 
 void UnitPresetButton::applied (int index)
 {
+    if (kind == Amp)
+    {
+        proc.setCurrentProgram (index);
+        const auto notes = proc.getProgramNotes (index);
+        setButtonText (proc.getProgramName (index).toUpperCase());
+        setTooltip (proc.getProgramName (index) + (notes.isNotEmpty() ? "\n\n" + notes : juce::String())
+                    + "\n\nChain: " + proc.chainText (index));
+        return;
+    }
     if (kind == Eq)          proc.applyEqPreset (index, proc.linkCompWithEq());
     else if (kind == VariMu) proc.applyVariMuPreset (index);
     else                     proc.applyClassAPreset (index);
@@ -3347,31 +3503,8 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     linkAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::link, linkButton);
     tubeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::tubeOn, tubeButton);
     stereoAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::stereoMode, stereoButton);
-    {   // INSTRUMENT: every track preset, one section per source (Vocals, Bass, Keys, Synths, Strings & Horns, Guitars, Drums)
-        using namespace ppm::presets;
-        const auto& list = all();
-        for (const char* cat : kTrackCategories)
-        {
-            instrumentBox.addSectionHeading (juce::String (cat).fromFirstOccurrenceOf (": ", false, false).toUpperCase());
-            for (int i = 0; i < (int) list.size(); ++i)
-                if (list[(size_t) i].category == cat) instrumentBox.addItem (list[(size_t) i].name, i + 1);
-        }
-        instrumentBox.setTextWhenNothingSelected ("INSTRUMENT...");
-        instrumentBox.getProperties().set ("textSize", 13.0f);
-        instrumentBox.setTooltip ("INSTRUMENT - presets for one instrument or voice on its own track: lead and background vocals, live and "
-                                  "synth bass, grand and electric piano, organ, clavinet, synths, strings, horns, guitars and drums. "
-                                  "Each sets the tube amp, then a compressor right after it (EQ > COMP order), plus EQ for that source. "
-                                  "Set the compressor thresholds for your level.");
-        instrumentBox.onChange = [this]
-        {
-            const int id = instrumentBox.getSelectedId();
-            if (id <= 0) return;
-            proc.setCurrentProgram (id - 1);
-            const auto notes = proc.getProgramNotes (id - 1);
-            instrumentBox.setTooltip (proc.getProgramName (id - 1) + (notes.isNotEmpty() ? "\n\n" + notes : juce::String())
-                                      + "\n\nChain: " + proc.chainText (id - 1));
-        };
-    }
+    ampPresets.setButtonText ("AMP PRESETS");
+    ampPresets.getProperties().set ("textSize", 13.0f);
     stereoButton.setTooltip ("STEREO / MONO - the main switch for the whole suite. STEREO: every EQ, tube amp and compressor "
                              "works on left and right separately. MONO: left and right are combined and everything runs once, "
                              "then plays on both speakers (check how the master sounds in mono). It sets every unit below it.");
@@ -3444,7 +3577,7 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     hoverButton.setClickingTogglesState (false);
     hoverButton.onClick = [this] { if (onToggleHover) onToggleHover(); };
     addAndMakeVisible (hoverButton);
-    for (auto* c : std::initializer_list<juce::Component*> { &instrumentBox, &stereoButton, &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
+    for (auto* c : std::initializer_list<juce::Component*> { &ampPresets, &stereoButton, &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
         addAndMakeVisible (c);
     for (int u = 0; u < kNumUnits; ++u)
     {
@@ -3671,8 +3804,8 @@ void Faceplate::paint (juce::Graphics& g)
     draw::plate (g, paraPlate, metal, true, col::blackPanel);
     {
         auto head = compPlate.reduced (30.0f, 10.0f).withHeight (22.0f);
-        draw::engraved (g, "STEREO VARIABLE MU  LIMITER COMPRESSOR", head, 15.0f, juce::Justification::centred, juce::Colours::white);
-        draw::engraved (g, "ORDER", head.withX ((float) orderSwitch.getX() - 60.0f).withWidth (52.0f), 11.0f, juce::Justification::centredRight, juce::Colours::white);
+        draw::legend (g, "STEREO VARIABLE MU  LIMITER COMPRESSOR", head, 15.0f, juce::Justification::centred, juce::Colours::white);
+        draw::legend (g, "ORDER", head.withX ((float) orderSwitch.getX() - 60.0f).withWidth (52.0f), 11.0f, juce::Justification::centredRight, juce::Colours::white);
         // divider between the two channels
         const float x = compPlate.getCentreX();
         g.setColour (juce::Colours::black.withAlpha (0.8f));
@@ -3688,16 +3821,16 @@ void Faceplate::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState s (g);
         g.addTransform (juce::AffineTransform::rotation (-kPiF * 0.5f, r.getCentreX(), r.getCentreY()));
         const auto c = ch == 0 ? col::amber : (proc.isLinked() ? col::engraveDim : col::blue);
-        draw::engraved (g, ch == 0 ? "LEFT CHANNEL" : (proc.isLinked() ? "RIGHT  (LINKED)" : "RIGHT CHANNEL"),
+        draw::legend (g, ch == 0 ? "LEFT CHANNEL" : (proc.isLinked() ? "RIGHT  (LINKED)" : "RIGHT CHANNEL"),
                         juce::Rectangle<float> (180, 20).withCentre (r.getCentre()), 12.0f, juce::Justification::centred, c);
     }
     }   // ! compact
 
     // lamp + tube legends on the top plate
-    draw::engraved (g, "TUBE STAGE", tube1.getBounds().getUnion (tube2.getBounds()).toFloat().withHeight (14).translated (0, -16), 10.0f);
+    draw::legend (g, "TUBE STAGE", tube1.getBounds().getUnion (tube2.getBounds()).toFloat().withHeight (14).translated (0, -16), 10.0f);
 
-    draw::engraved (g, "PRESET", presetLabel, 11.0f, juce::Justification::centredRight);
-    draw::engraved (g, "SIZE", presetLabel.withX (sizeBox.getX() - presetLabel.getWidth() - 6.0f), 11.0f, juce::Justification::centredRight);
+    draw::legend (g, "PRESET", presetLabel, 11.0f, juce::Justification::centredRight);
+    draw::legend (g, "SIZE", presetLabel.withX (sizeBox.getX() - presetLabel.getWidth() - 6.0f), 11.0f, juce::Justification::centredRight);
 
     // brass nameplate
     {
@@ -3770,7 +3903,7 @@ void Faceplate::resized()
             lamp->setBounds (lampCol.removeFromTop (lampH));
 
         // INSTRUMENT presets under the tubes (the tube amp + the compressor after it)
-        instrumentBox.setBounds (t.removeFromBottom (32).withSizeKeepingCentre (juce::jmax (180, t.getWidth()), 32));
+        ampPresets.setBounds (t.removeFromBottom (32).withSizeKeepingCentre (juce::jmax (180, t.getWidth()), 32));
         t.removeFromBottom (6);
         // the two tubes stay together as a pair, centred in the space between the meters and the lamps
         auto tubes = t.withTrimmedTop (22);

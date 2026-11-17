@@ -35,12 +35,18 @@ namespace col
     const juce::Colour meterInk   { 0xfff2f2f2 };   // white scale on the black meter faces
     const juce::Colour steelGray  { 0xff7c838f };
     const juce::Colour blackPanel { 0xff232426 };   // the parametric EQ's black anodised faceplate
-    const juce::Colour silkscreen { 0xffbfc1c4 };   // its engraved legends   // the vari-mu compressor's faceplate (gray brushed metal)
+    const juce::Colour silkscreen { 0xff2a2014 };   // parametric EQ legends (dark, on the brass faceplate)   // its engraved legends   // the vari-mu compressor's faceplate (gray brushed metal)
     const juce::Colour ashBlue    { 0xff7d94a7 };   // the M/S CLASS-A compressor's faceplate
     const juce::Colour ashBlueDark { 0xff566b7c };
     const juce::Colour silver      { 0xffd2d4d7 };   // the AUTO MASTER's brushed silver faceplate (tube channel strip style)
     const juce::Colour silverInk   { 0xff1d1f23 };   // its dark engraved legends
     const juce::Colour silverInkDim { 0xff4c5058 };
+    // brushed brass faceplates (every unit), slotted brass screws, machined brass knobs
+    const juce::Colour brassPlate  { 0xffc9a560 };
+    const juce::Colour brassLight  { 0xfff4dc9c };
+    const juce::Colour brassDark   { 0xff7a5a24 };
+    const juce::Colour brassInk    { 0xff2a2014 };   // legends printed on the brass
+    const juce::Colour brassInkDim { 0xff5e4a2c };
 }
 
 // Shared drawing helpers --------------------------------------------------------
@@ -54,6 +60,11 @@ namespace draw
     void jewel (juce::Graphics&, juce::Rectangle<float>, juce::Colour, float brightness);
     void engraved (juce::Graphics&, const juce::String&, juce::Rectangle<float>, float height,
                    juce::Justification = juce::Justification::centred, juce::Colour = col::engrave, bool bold = true);
+    // a legend printed on the brass faceplate: dark ink with a light edge under it.
+    // Light / white colours turn into dark ink; coloured ones (amber, blue) into a deep shade of the same colour.
+    juce::Colour onBrass (juce::Colour);
+    void legend (juce::Graphics&, const juce::String&, juce::Rectangle<float>, float height,
+                 juce::Justification = juce::Justification::centred, juce::Colour = col::brassInk, bool bold = true);
 }
 
 class MasterdeskLookAndFeel : public juce::LookAndFeel_V4
@@ -505,7 +516,7 @@ private:
 class UnitPresetButton : public juce::TextButton
 {
 public:
-    enum Kind { Eq = 0, VariMu, ClassA };
+    enum Kind { Eq = 0, VariMu, ClassA, Amp };   // Amp: the tube amp's instrument presets
     UnitPresetButton (PassiveMasterEQProcessor& p, int kind);
     void clicked() override;
     static constexpr int kW = 104, kH = 24;
@@ -634,7 +645,7 @@ private:
     ModeSwitch orderSwitch;
 
     JewelButton stereoButton { "STEREO", "MONO", col::blue };      // MAIN: every EQ, tube amp and compressor
-    juce::ComboBox instrumentBox;   // TUBE STAGE: INSTRUMENT presets - tube amp, then a compressor, for what is on the track
+    UnitPresetButton ampPresets { proc, UnitPresetButton::Amp };    // TUBE STAGE: AMP PRESETS - tube amp, then a compressor, for what is on the track
     JewelButton linkButton { "LINK", "UNLINKED", col::yellow };
     JewelButton tubeButton { "TUBE ON", "TUBE OFF", col::amber };
     juce::TextButton copyLR { "L > R" }, copyRL { "R > L" }, helpButton { "HELP  ?" };
