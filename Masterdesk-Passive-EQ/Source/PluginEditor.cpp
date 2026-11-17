@@ -230,7 +230,11 @@ void MasterdeskLookAndFeel::drawComboBox (juce::Graphics& g, int w, int h, bool,
     g.fillPath (tri);
 }
 
-juce::Font MasterdeskLookAndFeel::getComboBoxFont (juce::ComboBox&) { return juce::Font (sans (13.0f)); }
+juce::Font MasterdeskLookAndFeel::getComboBoxFont (juce::ComboBox& box)
+{
+    const auto ts = box.getProperties()["textSize"];          // optional bigger text (AUTO MASTER PRESET list)
+    return juce::Font (sans (ts.isVoid() ? 13.0f : (float) ts));
+}
 
 void MasterdeskLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
@@ -503,7 +507,8 @@ void MasterdeskLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Butto
 
 void MasterdeskLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool)
 {
-    draw::engraved (g, b.getButtonText(), b.getLocalBounds().toFloat(), 12.5f, juce::Justification::centred,
+    const auto ts = b.getProperties()["textSize"];            // optional bigger text (AUTO MASTER LISTEN / UNDO)
+    draw::engraved (g, b.getButtonText(), b.getLocalBounds().toFloat(), ts.isVoid() ? 12.5f : (float) ts, juce::Justification::centred,
                     b.isEnabled() ? col::engrave : col::engraveDim);
 }
 
@@ -562,19 +567,30 @@ void SteppedKnob::refresh()
 
 void SteppedKnob::resized()
 {
+    const float ts = textScale;
     auto r = getLocalBounds();
-    r.removeFromTop (15);                                     // caption
-    auto box = r.removeFromBottom (19);
-    valueBox.setBounds (box.withSizeKeepingCentre (juce::jmin (box.getWidth() - 8, 76), 19));
-    r.removeFromBottom (11);                                  // end labels
+    r.removeFromTop (juce::roundToInt (15 * ts));                         // caption
+    const int boxH = juce::roundToInt (19 * ts);
+    auto box = r.removeFromBottom (boxH);
+    valueBox.setBounds (box.withSizeKeepingCentre (juce::jmin (box.getWidth() - 8, juce::roundToInt (76 * ts)), boxH));
+    valueBox.setFont (sans (12.5f * ts));
+    r.removeFromBottom (juce::roundToInt (11 * ts));                      // end labels
     slider.setBounds (r);
 }
 
 void SteppedKnob::paint (juce::Graphics& g)
 {
     const auto on = isEnabled();
-    draw::engraved (g, caption, getLocalBounds().removeFromTop (15).toFloat(), 11.0f,
-                    juce::Justification::centred, on ? captionColour : col::engraveDim);
+    const float ts = textScale;
+    auto legend = [&g, this] (const juce::String& t, juce::Rectangle<float> r, float h, juce::Colour c)
+    {
+        if (! darkLegends) { draw::engraved (g, t, r, h, juce::Justification::centred, c); return; }
+        g.setFont (sans (h, true));
+        g.setColour (juce::Colours::white.withAlpha (0.55f)); g.drawText (t, r.translated (0, 1.0f), juce::Justification::centred, false);
+        g.setColour (c);                                       g.drawText (t, r, juce::Justification::centred, false);
+    };
+    legend (caption, getLocalBounds().removeFromTop (juce::roundToInt (15 * ts)).toFloat(), 11.0f * ts,
+            on ? captionColour : col::engraveDim);
 
     // end labels in the strip just under the knob, below the 7:30 / 4:30 ticks
     const auto sb = slider.getBounds().toFloat();
@@ -583,8 +599,8 @@ void SteppedKnob::paint (juce::Graphics& g)
     const float y  = sb.getBottom() - 1.0f;
     const float off = juce::jmin (R * 0.72f, sb.getWidth() * 0.5f - 15.0f);
     const auto lc = on ? endLabelColour : col::engraveDim.darker (0.4f);
-    draw::engraved (g, minLabel, { cx - off - 16.0f, y, 32.0f, 11.0f }, 9.0f, juce::Justification::centred, lc);
-    draw::engraved (g, maxLabel, { cx + off - 16.0f, y, 32.0f, 11.0f }, 9.0f, juce::Justification::centred, lc);
+    legend (minLabel, { cx - off - 16.0f * ts, y, 32.0f * ts, 11.0f * ts }, 9.0f * ts, lc);
+    legend (maxLabel, { cx + off - 16.0f * ts, y, 32.0f * ts, 11.0f * ts }, 9.0f * ts, lc);
 
     // cream value window
     auto box = valueBox.getBounds().toFloat();
@@ -1970,7 +1986,7 @@ AutoMasterPanel::AutoMasterPanel (PassiveMasterEQProcessor& p)
         const juce::String name = am::styleName (s);
         styleButtons[s] = std::make_unique<JewelButton> (name, name, col::blue);
         styleButtons[s]->setClickingTogglesState (false);
-        styleButtons[s]->textSize = 9.5f;
+        styleButtons[s]->textSize = 12.0f;
         styleButtons[s]->onClick = [this, s]
         {
             const int now = (int) std::lround (proc.apvts.getRawParameterValue (ppm::params::amGenre)->load());
@@ -2008,6 +2024,8 @@ AutoMasterPanel::AutoMasterPanel (PassiveMasterEQProcessor& p)
         k->slider.getProperties().set ("silver", true);
         k->captionColour = col::silverInk;
         k->endLabelColour = col::silverInkDim;
+        k->textScale = 1.35f;
+        k->darkLegends = true;
     }
     amount.refresh(); maxGain.refresh(); ceiling.refresh();
 
@@ -2023,6 +2041,10 @@ AutoMasterPanel::AutoMasterPanel (PassiveMasterEQProcessor& p)
                        "music, AUTO MASTER sets the EQ, tubes, compressor and maximizer for the chosen genre. Press again to stop.");
     undo.setTooltip ("UNDO - go back to your settings from before AUTO MASTER (good for a before/after comparison).");
 
+    maxOn.textSize = 12.5f;
+    listen.getProperties().set ("textSize", 17.0f);
+    undo.getProperties().set ("textSize", 15.0f);
+    presetList.getProperties().set ("textSize", 16.0f);
     maxOnAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::maxOn, maxOn);
     listen.onClick = [this]
     {
@@ -2079,37 +2101,45 @@ void AutoMasterPanel::update (float dt)
 
 void AutoMasterPanel::resized()
 {
+    // 280 high: title row, two rows of genre buttons, then big knobs; display in the middle; MAXIMIZER on the right
     auto r = getLocalBounds().reduced (24, 8);
-    r.removeFromTop (24);                                       // titles
-    auto left = r.removeFromLeft (660);              // room for 7 genre buttons (NEO SOUL, SOFT ROCK, HARD ROCK)
+    r.removeFromTop (28);                                       // titles
+    auto left = r.removeFromLeft (640);
     r.removeFromLeft (16);
-    auto right = r.removeFromRight (300);
+    auto right = r.removeFromRight (330);
     r.removeFromRight (16);
     display = r.toFloat();
 
-    auto genres = left.removeFromTop (32);
-    genreArea = genres.toFloat();
-    const int gw = genres.getWidth() / am::kNumStyles;
-    for (int s = 0; s < am::kNumStyles; ++s)
-        styleButtons[s]->setBounds (genres.removeFromLeft (gw).reduced (2, 0));
+    // AMOUNT: a big knob in its own full-height column
+    amount.setBounds (left.removeFromLeft (170));
+    left.removeFromLeft (10);
+
+    auto row1 = left.removeFromTop (36);
     left.removeFromTop (6);
-    amount.setBounds (left.removeFromLeft (118));
-    left.removeFromLeft (14);
+    auto row2 = left.removeFromTop (36);
+    left.removeFromTop (12);
+    genreArea = row1.getUnion (row2).toFloat();
+    const int gw = row1.getWidth() / 4;
+    for (int s = 0; s < am::kNumStyles; ++s)
+        styleButtons[s]->setBounds ((s < 4 ? row1 : row2).removeFromLeft (gw).reduced (3, 0));
+
     auto btns = left.removeFromLeft (170);
-    listen.setBounds (btns.removeFromTop (btns.getHeight() / 2).withSizeKeepingCentre (164, 44).translated (0, 6));
-    undo.setBounds (btns.withSizeKeepingCentre (120, 30));
-    left.removeFromLeft (14);
-    presetLabelArea = left.removeFromTop (22).toFloat().translated (0.0f, 6.0f);
-    presetList.setBounds (left.removeFromTop (34).withSizeKeepingCentre (left.getWidth(), 30).translated (0, 4));
+    listen.setBounds (btns.removeFromTop (btns.getHeight() / 2).withSizeKeepingCentre (164, 54).translated (0, 2));
+    undo.setBounds (btns.withSizeKeepingCentre (130, 38).translated (0, 2));
+    left.removeFromLeft (16);
+    left.removeFromTop (10);
+    presetLabelArea = left.removeFromTop (24).toFloat();
+    left.removeFromTop (6);
+    presetList.setBounds (left.removeFromTop (42));
 
     maxArea = right.toFloat();
     auto mr = right;
-    grMeter = mr.removeFromRight (30).reduced (4, 2).toFloat();
+    grMeter = mr.removeFromRight (34).reduced (4, 4).withTrimmedTop (12).withTrimmedBottom (12).toFloat();
     mr.removeFromRight (8);
-    maxOn.setBounds (mr.removeFromTop (30).withSizeKeepingCentre (150, 30));
-    mr.removeFromTop (4);
+    maxOn.setBounds (mr.removeFromTop (36).withSizeKeepingCentre (170, 36));
+    mr.removeFromTop (6);
     maxGain.setBounds (mr.removeFromLeft (mr.getWidth() * 55 / 100));
-    ceiling.setBounds (mr.withTrimmedTop (22));
+    ceiling.setBounds (mr.withTrimmedTop (24));
 }
 
 juce::String AutoMasterPanel::getTooltip()
@@ -2130,7 +2160,7 @@ void AutoMasterPanel::paint (juce::Graphics& g)
 {
     using S = PassiveMasterEQProcessor::AutoState;
     auto b = getLocalBounds().toFloat().reduced (24.0f, 8.0f);
-    auto titles = b.removeFromTop (22.0f);
+    auto titles = b.removeFromTop (26.0f);
     // dark legends engraved into the silver faceplate (light edge underneath)
     auto ink = [&g] (const juce::String& text, juce::Rectangle<float> r, float h, juce::Justification j,
                      juce::Colour c = col::silverInk, bool bold = true)
@@ -2141,11 +2171,11 @@ void AutoMasterPanel::paint (juce::Graphics& g)
         g.setColour (c);
         g.drawText (text, r, j, false);
     };
-    ink ("AUTO MASTER", titles.withTrimmedLeft (100.0f).withWidth (460.0f), 14.0f, juce::Justification::centredLeft);
-    ink ("PRESET", presetLabelArea, 11.0f, juce::Justification::centredLeft);
-    ink ("GENRE + YEAR  >  LISTEN  >  DONE", titles.withX (titles.getX() + 150.0f).withWidth (510.0f), 10.0f,
+    ink ("AUTO MASTER", titles.withTrimmedLeft (100.0f).withWidth (300.0f), 17.0f, juce::Justification::centredLeft);
+    ink ("PRESET  (GENRE + YEAR)", presetLabelArea, 14.0f, juce::Justification::centredLeft);
+    ink ("GENRE + YEAR  >  LISTEN  >  DONE", titles.withX (titles.getX() + 300.0f).withWidth (340.0f), 13.0f,
          juce::Justification::centredRight, col::silverInkDim);
-    ink ("MAXIMIZER", { maxArea.getX(), titles.getY(), maxArea.getWidth(), 22.0f }, 14.0f, juce::Justification::centred);
+    ink ("MAXIMIZER", { maxArea.getX(), titles.getY(), maxArea.getWidth(), 26.0f }, 17.0f, juce::Justification::centred);
 
     // limiter GR meter (falls downward from the top)
     {
@@ -2168,8 +2198,8 @@ void AutoMasterPanel::paint (juce::Graphics& g)
             g.setColour (col::cream);
             g.fillRect (inner.getX(), inner.getY() + inner.getHeight() * juce::jmin (1.0f, grHold / maxDb) - 1.0f, inner.getWidth(), 2.0f);
         }
-        ink ("GR", m.withY (m.getBottom() + 1.0f).withHeight (11.0f).expanded (6.0f, 0), 9.0f, juce::Justification::centred);
-        ink (juce::String (gr, 1), m.withY (m.getY() - 13.0f).withHeight (11.0f).expanded (8.0f, 0), 9.0f,
+        ink ("GR", m.withY (m.getBottom() + 1.0f).withHeight (13.0f).expanded (8.0f, 0), 12.0f, juce::Justification::centred);
+        ink (juce::String (gr, 1), m.withY (m.getY() - 14.0f).withHeight (13.0f).expanded (10.0f, 0), 12.0f,
              juce::Justification::centred);
     }
 
@@ -2191,8 +2221,8 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     const bool showPlan = plan.ok && plan.genre == genreNow && st != S::Listening;
 
     // status line
-    auto status = inner.removeFromTop (16.0f);
-    g.setFont (sans (11.5f));
+    auto status = inner.removeFromTop (34.0f);
+    g.setFont (sans (13.5f));
     juce::String msg = proc.getAutoMessage();
     juce::Colour msgCol = juce::Colours::white;
     if (st == S::Idle && msg.isEmpty())
@@ -2211,7 +2241,7 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     if (st == S::Done) msgCol = col::aqua;
     if (st == S::Failed) msgCol = juce::Colour (0xffff6a5a);
     g.setColour (msgCol);
-    g.drawFittedText (msg, status.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+    g.drawFittedText (msg, status.toNearestInt(), juce::Justification::centredLeft, 2, 0.9f);
 
     if (st == S::Listening || st == S::Analysing)
     {
@@ -2225,13 +2255,13 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     else inner.removeFromTop (8.0f);
 
     // text lines at the bottom
-    auto lines = inner.removeFromBottom (32.0f);
-    g.setFont (sans (10.5f, false));
+    auto lines = inner.removeFromBottom (54.0f);
+    g.setFont (sans (12.5f, false));
     g.setColour (col::aquaDim);
     auto sgn = [] (double v) { return (v >= 0 ? "+" : "") + juce::String (v, 1); };
     if (showPlan)
     {
-        g.drawFittedText ("EQ:  " + plan.eqText, lines.removeFromTop (16.0f).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+        g.drawFittedText ("EQ:  " + plan.eqText, lines.removeFromTop (34.0f).toNearestInt(), juce::Justification::centredLeft, 2, 0.9f);
         g.drawFittedText ("INPUT " + sgn (plan.inputGainDb) + " dB  |  COMP " + juce::String (ppm::compThresholdDb (plan.comp.threshold), 1)
                           + " dB (" + juce::String (plan.compGrDb, 1) + " GR)  |  MAX " + sgn (plan.maxGain) + " dB  |  "
                           + juce::String (plan.inputLufs, 1) + " -> " + juce::String (plan.predictedLufs, 1) + " LUFS",
@@ -2239,7 +2269,7 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     }
     else
     {
-        g.drawFittedText (juce::String (tg.name) + ":  " + tg.character, lines.removeFromTop (16.0f).toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
+        g.drawFittedText (juce::String (tg.name) + ":  " + tg.character, lines.removeFromTop (34.0f).toNearestInt(), juce::Justification::centredLeft, 2, 0.9f);
         g.drawFittedText ("Target " + juce::String (tg.lufs, 1) + " LUFS  |  ceiling " + juce::String (tg.ceiling, 1)
                           + " dBFS  |  tube drive " + sgn (tg.drive) + " dB",
                           lines.toNearestInt(), juce::Justification::centredLeft, 1, 0.7f);
@@ -2247,25 +2277,25 @@ void AutoMasterPanel::paint (juce::Graphics& g)
 
     // ---- chart: octave bands ---------------------------------------------------
     chart = inner.reduced (0.0f, 2.0f);
-    auto legendRow = chart.removeFromTop (12.0f);
-    auto c = chart.withTrimmedLeft (26.0f).withTrimmedBottom (12.0f);
+    auto legendRow = chart.removeFromTop (15.0f);
+    auto c = chart.withTrimmedLeft (32.0f).withTrimmedBottom (15.0f);
     const float range = 15.0f;
     auto yOf = [&] (double db) { return c.getCentreY() - (float) juce::jlimit (-1.0, 1.0, db / range) * c.getHeight() * 0.5f; };
     auto xOf = [&] (int band) { return c.getX() + c.getWidth() * ((float) band + 0.5f) / (float) am::kOct; };
     g.setColour (juce::Colours::black.withAlpha (0.25f));
     g.fillRect (c);
-    g.setFont (sans (8.5f, false));
+    g.setFont (sans (11.0f, false));
     for (double db : { -10.0, 0.0, 10.0 })
     {
         g.setColour (col::aqua.withAlpha (std::abs (db) < 0.1 ? 0.40f : 0.16f));
         g.drawHorizontalLine ((int) yOf (db), c.getX(), c.getRight());
         g.setColour (col::aquaDim.withAlpha (0.8f));
-        g.drawText ((db > 0 ? "+" : "") + juce::String ((int) db), juce::Rectangle<float> (chart.getX(), yOf (db) - 6.0f, 22.0f, 12.0f),
+        g.drawText ((db > 0 ? "+" : "") + juce::String ((int) db), juce::Rectangle<float> (chart.getX(), yOf (db) - 7.0f, 28.0f, 14.0f),
                     juce::Justification::centredRight);
     }
     static const char* labels[am::kOct] = { "31", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k" };
     for (int i = 0; i < am::kOct; ++i)
-        g.drawText (labels[i], juce::Rectangle<float> (xOf (i) - 16.0f, c.getBottom() + 1.0f, 32.0f, 11.0f), juce::Justification::centred);
+        g.drawText (labels[i], juce::Rectangle<float> (xOf (i) - 17.0f, c.getBottom() + 1.0f, 34.0f, 14.0f), juce::Justification::centred);
 
     auto drawCurve = [&] (const double* v, juce::Colour colr, float thick, bool dashed, bool dots)
     {
@@ -2299,8 +2329,8 @@ void AutoMasterPanel::paint (juce::Graphics& g)
     else drawCurve (target, juce::Colours::white.withAlpha (0.85f), 1.8f, true, false);
 
     // legend
-    auto lg = legendRow.withTrimmedLeft (26.0f);
-    g.setFont (sans (9.0f));
+    auto lg = legendRow.withTrimmedLeft (32.0f);
+    g.setFont (sans (11.5f));
     auto key = [&] (juce::Colour colr, const char* text)
     {
         g.setColour (colr); g.fillRect (lg.getX(), lg.getCentreY() - 1.0f, 12.0f, 2.5f);
@@ -3460,7 +3490,7 @@ std::unique_ptr<UnitHost> Faceplate::createUnitHost (int u)
         default:
         {
             auto unit = std::make_unique<AutoMasterPanel> (proc); auto* raw = unit.get();
-            return std::make_unique<UnitHost> (std::move (unit), W, 200, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 200 } },
+            return std::make_unique<UnitHost> (std::move (unit), W, 280, std::vector<juce::Rectangle<float>> { { 0, 0, (float) W, 280 } },
                                                col::silver, [raw] (float dt) { raw->update (dt); });
         }
     }
@@ -3780,7 +3810,7 @@ void Faceplate::resized()
     if (compact) { help.setBounds (getLocalBounds()); return; }
 
     // ---------------- AUTO MASTER + MAXIMIZER (under the meters, above every EQ, amp and compressor) ----
-    autoPlate = r.removeFromTop (200.0f);
+    autoPlate = r.removeFromTop (280.0f);
     autoPanel.setBounds (autoPlate.toNearestInt());
     r.removeFromTop (10.0f);
 

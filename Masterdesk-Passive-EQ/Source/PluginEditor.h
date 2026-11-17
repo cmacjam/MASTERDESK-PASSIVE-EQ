@@ -87,6 +87,8 @@ public:
     std::function<juce::String()> valueText;            // custom readout (e.g. realised dB)
     juce::Colour valueColour = col::ink;
     juce::Colour captionColour = col::engrave, endLabelColour = col::engraveDim.brighter (0.5f);   // engraved legends
+    float textScale = 1.0f;        // bigger caption / end labels / value window (AUTO MASTER)
+    bool darkLegends = false;      // dark text with a light edge, for silver faceplates
 private:
     juce::String caption, minLabel, maxLabel;
     juce::Label valueBox;
@@ -574,7 +576,7 @@ private:
 class Faceplate : public juce::Component, private juce::Timer
 {
 public:
-    static constexpr int kW = 1440, kH = 2380;
+    static constexpr int kW = 1440, kH = 2460;   // +80 for the taller AUTO MASTER
     static constexpr int kHCompact = 594;        // MINI view: meters, displays and footer only
 
     explicit Faceplate (PassiveMasterEQProcessor&);
