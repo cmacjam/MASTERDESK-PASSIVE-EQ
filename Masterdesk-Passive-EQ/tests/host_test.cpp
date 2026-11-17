@@ -504,6 +504,52 @@ int main()
         if (! same) failCheck (failures, __LINE__);
     }
 
+    // ---- AUTO MASTER genre presets (POP 1980 ... HARD ROCK 2026) --------------------
+    {
+        namespace am = ppm::automaster;
+        std::printf ("auto master genre presets:\n");
+        PassiveMasterEQProcessor proc;
+        proc.setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc.prepareToPlay (48000.0, 512);
+        auto& s = proc.apvts;
+        auto val = [&s] (const juce::String& id) { return s.getRawParameterValue (id)->load(); };
+        bool namesOk = am::kNumGenres == 7 * 47
+                    && juce::String (am::genre (0).name) == "POP 1980"
+                    && juce::String (am::genre (am::presetIndex (am::Pop, 2026)).name) == "POP 2026"
+                    && juce::String (am::genre (am::presetIndex (am::Jazz, 1980)).name) == "JAZZ 1980"
+                    && juce::String (am::genre (am::kNumGenres - 1).name) == "HARD ROCK 2026"
+                    && (int) val (ppm::params::amGenre) == am::presetIndex (am::Pop, 2026);
+        // loudness follows the eras: 1980 gentle, 2005 loudest, today in between
+        const double l80 = am::genre (am::presetIndex (am::Pop, 1980)).lufs, l05 = am::genre (am::presetIndex (am::Pop, 2005)).lufs,
+                     l26 = am::genre (am::presetIndex (am::Pop, 2026)).lufs;
+        const bool erasOk = l80 < l26 && l26 < l05;
+        std::printf ("  %d presets; POP loudness 1980 %.1f / 2005 %.1f / 2026 %.1f LUFS\n", am::kNumGenres, l80, l05, l26);
+
+        const float eqBefore = val (ppm::params::bandId (0, 1, "gain"));
+        const float driveBefore = val (ppm::params::tubeDrive);
+        const int hr87 = am::presetIndex (am::HardRock, 1987);
+        const auto& t = am::genre (hr87);
+        proc.autoSelectPreset (hr87);
+        const bool applied = (int) val (ppm::params::amGenre) == hr87
+                          && std::abs (val (ppm::params::tubeDrive) - (float) t.drive) < 0.01f
+                          && (int) val (ppm::params::chanId (0, "c_attack")) == t.attack
+                          && (int) val (ppm::params::chanId (1, "c_attack")) == t.attack
+                          && (int) val (ppm::params::chanId (1, "c_recovery")) == t.recovery
+                          && (int) val (ppm::params::chanId (0, "lp")) == t.lp
+                          && val (ppm::params::chanId (0, "c_in")) > 0.5f
+                          && val (ppm::params::maxOn) > 0.5f
+                          && std::abs (val (ppm::params::maxCeiling) - (float) t.ceiling) < 0.01f
+                          && val (ppm::params::bandId (0, 1, "gain")) == eqBefore;      // EQ left for LISTEN
+        std::printf ("  %s -> tube drive %+.1f dB, attack step %d, recovery step %d, maximizer %+.1f dB, ceiling %.1f: %s\n",
+                     t.name, val (ppm::params::tubeDrive), (int) val (ppm::params::chanId (0, "c_attack")),
+                     (int) val (ppm::params::chanId (0, "c_recovery")), val (ppm::params::maxGain), val (ppm::params::maxCeiling),
+                     applied ? "applied" : "NOT applied");
+        proc.autoUndo();
+        const bool undone = std::abs (val (ppm::params::tubeDrive) - driveBefore) < 0.01f;
+        std::printf ("  UNDO restores the earlier settings: %s\n", undone ? "yes" : "no");
+        if (! namesOk || ! erasOk || ! applied || ! undone) failCheck (failures, __LINE__);
+    }
+
     // ---- MAIN STEREO / MONO switch ---------------------------------------------------
     {
         std::printf ("main STEREO / MONO switch:\n");
@@ -918,7 +964,7 @@ int main()
         };
         play (60, false);
         const float lat = (float) proc.getLatencySamples();
-        setParam (s, ppm::params::amGenre, (float) ppm::automaster::HipHop);
+        setParam (s, ppm::params::amGenre, (float) ppm::automaster::presetIndex (ppm::automaster::HipHop, 2026));
         proc.autoListen();
         int guard = 0;
         while (! proc.autoHasRecording() && ++guard < 2000) play (1, true);
@@ -951,7 +997,7 @@ int main()
         { juce::FileOutputStream fos (file); juce::PNGImageFormat().writeImageToStream (img, fos); }
 
         // genre change re-plans from the same recording
-        setParam (s, ppm::params::amGenre, (float) ppm::automaster::Jazz);
+        setParam (s, ppm::params::amGenre, (float) ppm::automaster::presetIndex (ppm::automaster::Jazz, 1995));
         proc.autoReapply();
         while (proc.autoBusy()) juce::Thread::sleep (20);
         proc.autoMasterTick();
@@ -982,7 +1028,7 @@ int main()
         ppm::ClassASettings ca; ca.in = true; ca.link = true;
         for (auto& c : ca.ch) { c.thresholdDb = -20; c.ratioPos = 7.5; c.feedForward = true; c.attackMs = 10; c.releaseMs = 200; c.gainDb = 3; c.mix = 1; }
         proc.applyClassA (ca);
-        setParam (s, ppm::params::amGenre, (float) ppm::automaster::Pop);
+        setParam (s, ppm::params::amGenre, (float) ppm::automaster::presetIndex (ppm::automaster::Pop, 2026));
 
         juce::AudioBuffer<float> buf (2, 1600);
         double t = 0; juce::Random rnd (3); double outPeak = 0;
