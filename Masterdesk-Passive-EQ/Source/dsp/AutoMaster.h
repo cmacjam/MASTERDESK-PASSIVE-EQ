@@ -34,13 +34,40 @@ namespace ppm::automaster
 constexpr int kOct = 10;
 inline constexpr double kOctHz[kOct] = { 31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 };
 
-constexpr int kNumGenres = 7;
-enum Genre { Pop = 0, Jazz, Seventies, Eighties, Nineties, RnB, HipHop };
+// ---------------------------------------------------------------------------
+//  GENRE PRESETS: 7 styles x every year 1980 - 2026  (POP 1980 ... POP 2026, JAZZ 1980 ... HARD ROCK 2026)
+//
+//  Each preset = the style's own sound (tonal balance, compressor feel, tube drive, filters)
+//              + how mastering changed over the years:
+//                - loudness: gentle early 80s -> loud CD era (late 90s - 2000s) -> streaming level (2015+)
+//                - sub bass: lighter in the 80s, bigger from the 90s, deepest today
+//                - top end: bright 80s "digital" sheen, softer early 90s, clean modern air
+//                - tubes: more analog/tape warmth in the early years
+//  They are stylistic starting points, not measurements of particular records.
+// ---------------------------------------------------------------------------
+constexpr int kFirstYear = 1980, kLastYear = 2026;
+constexpr int kNumYears  = kLastYear - kFirstYear + 1;            // 47
+enum Style { Pop = 0, Jazz, RnB, HipHop, NeoSoul, SoftRock, HardRock };
+constexpr int kNumStyles = 7;
+constexpr int kNumGenres = kNumStyles * kNumYears;                // 329 presets
+
+inline const char* styleName (int s)
+{
+    static const char* n[kNumStyles] = { "POP", "JAZZ", "R&B", "HIP HOP", "NEO SOUL", "SOFT ROCK", "HARD ROCK" };
+    return n[std::clamp (s, 0, kNumStyles - 1)];
+}
+inline int presetIndex (int style, int year)
+{
+    return std::clamp (style, 0, kNumStyles - 1) * kNumYears + std::clamp (year, kFirstYear, kLastYear) - kFirstYear;
+}
+inline int styleOf (int g) { return std::clamp (g, 0, kNumGenres - 1) / kNumYears; }
+inline int yearOf  (int g) { return kFirstYear + std::clamp (g, 0, kNumGenres - 1) % kNumYears; }
+inline int defaultPreset() { return presetIndex (Pop, kLastYear); }   // POP 2026
 
 struct GenreTarget
 {
-    const char* name;
-    const char* shortName;
+    const char* name;       // "POP 1987"
+    const char* shortName;  // "POP '87"
     double curve[kOct];     // octave-band level, dB relative to the mids (250 Hz - 4 kHz average)
     double lufs;            // integrated loudness target
     double grDb;            // average compressor gain reduction on the loud parts
@@ -53,26 +80,130 @@ struct GenreTarget
     const char* character;  // one line for the display
 };
 
+namespace detail
+{
+    // straight lines between (year, value) points
+    inline double eraCurve (double y, const std::vector<std::pair<double, double>>& pts)
+    {
+        if (y <= pts.front().first) return pts.front().second;
+        for (size_t i = 1; i < pts.size(); ++i)
+            if (y <= pts[i].first)
+            {
+                const double t = (y - pts[i - 1].first) / (pts[i].first - pts[i - 1].first);
+                return pts[i - 1].second + t * (pts[i].second - pts[i - 1].second);
+            }
+        return pts.back().second;
+    }
+    inline double eraLoudness (double y)   // integrated LUFS of a typical (pop) master that year
+    {
+        return eraCurve (y, { {1980,-16.0}, {1988,-14.5}, {1994,-12.0}, {1998,-10.0}, {2004,-8.5}, {2010,-8.5},
+                              {2015,-9.5}, {2020,-10.0}, {2026,-10.0} });
+    }
+    inline double eraSub (double y)        // extra sub / low bass, dB
+    {
+        return eraCurve (y, { {1980,-3.0}, {1987,-2.5}, {1992,-0.5}, {2000,0.0}, {2010,0.8}, {2026,1.2} });
+    }
+    inline double eraTop (double y)        // extra top-end sheen, dB
+    {
+        return eraCurve (y, { {1980,-0.6}, {1983,0.6}, {1987,1.0}, {1991,0.0}, {1995,-0.3}, {2003,0.3}, {2012,0.6}, {2026,0.6} });
+    }
+    inline double eraTape (double y)       // extra tube drive for analog/tape warmth, dB
+    {
+        return eraCurve (y, { {1980,3.0}, {1990,1.5}, {2000,0.0}, {2026,0.0} });
+    }
+    inline const char* eraText (int y)
+    {
+        if (y < 1984) return "early-80s analog warmth, gentle level";
+        if (y < 1990) return "bright, punchy 80s top end";
+        if (y < 1995) return "early-90s, fuller low end";
+        if (y < 2000) return "late-90s, the loud CD era begins";
+        if (y < 2010) return "loudness-war era: dense and loud";
+        if (y < 2018) return "streaming era: controlled loudness";
+        return "modern streaming sound: deep sub, clean top";
+    }
+
+    struct StyleBase
+    {
+        double curve[kOct];
+        double lufsOffset;      // vs the era's typical pop loudness
+        double grDb;
+        int attack, recovery, mix, mode;
+        bool scHp;
+        double drive;
+        int hp, lp;
+        double subWeight;       // how much the era's sub-bass trend applies to this style
+        const char* text;
+    };
+    //                               31    63   125  250  500   1k   2k   4k   8k   16k
+    inline const StyleBase& styleBase (int s)
+    {
+        static const StyleBase b[kNumStyles] = {
+            { { 2.0,  6.0, 6.0, 4.0, 2.0, 0.0,-2.0,-3.5,-5.5,-11.0 },  0.0, 2.0, 5, 2, 10, Compress, true, 0.0, 2, 0, 1.0,
+              "bright, forward vocals, tight full low end" },                                                     // POP
+            { {-4.0,  1.0, 4.0, 4.0, 3.0, 0.0,-2.5,-5.5,-8.5,-15.0 }, -5.0, 0.8, 7, 4, 10, Compress, true, 2.0, 1, 3, 0.4,
+              "natural and open, warm mids, full dynamics" },                                                     // JAZZ
+            { { 4.0,  8.0, 6.0, 4.0, 2.0, 0.0,-2.0,-4.0,-6.0,-12.5 },  0.0, 2.0, 6, 3, 10, Compress, true, 2.0, 1, 0, 1.0,
+              "deep smooth bass, silky top, warm vocals" },                                                       // R&B
+            { { 6.0, 10.0, 7.0, 3.0, 1.0, 0.0,-2.0,-4.0,-6.0,-12.0 },  0.5, 2.5, 7, 2, 10, Compress, true, 3.0, 1, 0, 1.0,
+              "heavy sub and kick, punchy" },                                                                     // HIP HOP
+            { { 2.0,  6.0, 6.0, 4.5, 3.0, 0.0,-2.0,-4.5,-7.0,-13.5 }, -2.0, 1.5, 6, 4, 10, Compress, true, 4.0, 1, 0, 0.8,
+              "warm and round, smooth low end, soft vintage top" },                                               // NEO SOUL
+            { {-3.0,  2.0, 4.0, 4.0, 2.5, 0.0,-1.5,-3.5,-6.0,-12.5 }, -1.5, 1.5, 5, 3, 10, Compress, true, 4.0, 2, 0, 0.5,
+              "warm guitars, clear vocals, relaxed dynamics" },                                                   // SOFT ROCK
+            { {-2.0,  3.0, 4.0, 3.0, 1.5, 0.0,-1.0,-2.5,-5.0,-11.0 },  0.5, 3.0, 3, 2, 10, Compress, true, 5.0, 2, 0, 0.6,
+              "big guitars, punchy drums, bright mids, aggressive" },                                             // HARD ROCK
+        };
+        return b[std::clamp (s, 0, kNumStyles - 1)];
+    }
+
+    struct PresetTable
+    {
+        std::vector<GenreTarget> t;
+        std::vector<std::string> names, shorts, texts;
+        PresetTable()
+        {
+            t.resize (kNumGenres); names.resize (kNumGenres); shorts.resize (kNumGenres); texts.resize (kNumGenres);
+            for (int g = 0; g < kNumGenres; ++g)
+            {
+                const int s = styleOf (g), y = yearOf (g);
+                const auto& b = styleBase (s);
+                auto& o = t[(size_t) g];
+                char yy[8]; std::snprintf (yy, sizeof (yy), "'%02d", y % 100);
+                names[(size_t) g]  = std::string (styleName (s)) + " " + std::to_string (y);
+                shorts[(size_t) g] = std::string (styleName (s)) + " " + yy;
+                texts[(size_t) g]  = std::string (b.text) + "; " + eraText (y);
+
+                const double sub = eraSub (y) * b.subWeight, top = eraTop (y);
+                for (int k = 0; k < kOct; ++k) o.curve[k] = b.curve[k];
+                o.curve[0] += sub;        o.curve[1] += sub * 0.6;
+                o.curve[7] += top * 0.4;  o.curve[8] += top * 0.7;  o.curve[9] += top;
+
+                const double loud = eraLoudness (y);
+                o.lufs = std::clamp (std::round ((loud + b.lufsOffset) * 2.0) / 2.0, -20.0, -7.0);
+                o.grDb = std::clamp (b.grDb + (loud + 16.0) * 0.08, 0.5, 4.0);           // a little more glue in the loud years
+                o.attack = b.attack;
+                o.recovery = std::clamp (b.recovery - (loud > -10.5 ? 1 : 0), 0, kNumRecoverySteps - 1);   // faster in the loud years
+                o.mix = b.mix; o.mode = b.mode; o.scHp = b.scHp;
+                o.tubeOn = true;
+                o.drive = std::clamp (std::round ((b.drive + eraTape (y)) * 2.0) / 2.0, -6.0, 18.0);
+                o.hp = b.hp;
+                o.lp = (b.lp == 0 && y < 1985) ? 4 : b.lp;                               // early-80s: soft 20 kHz top
+                o.ceiling = -1.0;
+            }
+            for (int g = 0; g < kNumGenres; ++g)
+            {
+                t[(size_t) g].name = names[(size_t) g].c_str();
+                t[(size_t) g].shortName = shorts[(size_t) g].c_str();
+                t[(size_t) g].character = texts[(size_t) g].c_str();
+            }
+        }
+    };
+}
+
 inline const GenreTarget& genre (int g)
 {
-    //                       31    63   125  250  500   1k   2k   4k   8k   16k
-    static const GenreTarget t[kNumGenres] = {
-        { "POP", "POP",     { 2.0,  6.0, 6.0, 4.0, 2.0, 0.0,-2.0,-3.5,-5.5,-11.0 }, -10.0, 2.0, 5, 2, 10, Compress, true,  true, 0.0, 2, 0, -1.0,
-          "bright, forward vocals, tight full low end, loud" },
-        { "JAZZ", "JAZZ",   {-4.0,  1.0, 4.0, 4.0, 3.0, 0.0,-2.5,-5.5,-8.5,-15.0 }, -16.0, 0.8, 7, 4, 10, Compress, true,  true, 2.0, 1, 3, -1.0,
-          "natural and open, warm mids, full dynamics" },
-        { "70'S", "70s",    {-6.0,  0.0, 3.5, 4.5, 3.0, 0.0,-2.0,-5.0,-9.0,-17.0 }, -14.0, 1.5, 6, 4, 10, Compress, true,  true, 6.0, 3, 4, -1.0,
-          "warm tape-style tone, rich low mids, soft top" },
-        { "80'S", "80s",    {-4.0,  2.0, 4.0, 3.0, 2.0, 0.0,-1.5,-3.0,-5.0,-11.5 }, -12.0, 2.0, 4, 3, 10, Compress, true,  true, 3.0, 3, 0, -1.0,
-          "bright and punchy, crisp top, lighter sub bass" },
-        { "90'S", "90s",    { 1.0,  5.0, 5.0, 4.0, 2.0, 0.0,-2.0,-4.0,-6.0,-12.5 }, -10.5, 2.5, 4, 2, 10, Compress, true,  true, 2.0, 2, 0, -1.0,
-          "big low end, present mids, getting loud" },
-        { "R&B", "R&B",     { 4.0,  8.0, 6.0, 4.0, 2.0, 0.0,-2.0,-4.0,-6.0,-12.5 }, -10.0, 2.0, 6, 3, 10, Compress, true,  true, 2.0, 1, 0, -1.0,
-          "deep smooth bass, silky top, warm vocals" },
-        { "HIP HOP", "HIP HOP", { 6.0, 10.0, 7.0, 3.0, 1.0, 0.0,-2.0,-4.0,-6.0,-12.0 }, -9.0, 2.5, 7, 2, 10, Compress, true, true, 3.0, 1, 0, -1.0,
-          "heavy sub and kick, punchy, loud" },
-    };
-    return t[std::clamp (g, 0, kNumGenres - 1)];
+    static const detail::PresetTable table;
+    return table.t[(size_t) std::clamp (g, 0, kNumGenres - 1)];
 }
 
 // ---------------------------------------------------------------------------
