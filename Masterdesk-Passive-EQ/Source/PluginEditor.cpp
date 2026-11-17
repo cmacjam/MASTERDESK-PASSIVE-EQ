@@ -288,199 +288,6 @@ void MasterdeskLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     // Glossy black fluted knob (Bakelite style), white scale ticks printed on the
     // panel around it, and a cream pointer line from the centre to the rim.
     const auto area = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
-    {   // Machined brass knob (every knob): knurled brass edge, spun / brushed brass face with the
-        // light catching across it, a fine engraved pointer; scale ticks printed on the brass plate
-        const float R = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 1.0f;
-        const auto c = area.getCentre();
-        const bool on = s.isEnabled();
-        const bool dark = (bool) s.getProperties()["onDark"];
-        const float a = startAngle + pos * (endAngle - startAngle);
-        auto circ = [&] (float rad) { return juce::Rectangle<float> (rad * 2, rad * 2).withCentre (c); };
-
-        // scale ticks
-        const double interval = s.getInterval() > 0 ? s.getInterval() : 1.0;
-        const int steps = juce::jlimit (2, 64, (int) std::lround ((s.getMaximum() - s.getMinimum()) / interval) + 1);
-        const int current = (int) std::lround ((s.getValue() - s.getMinimum()) / interval);
-        const bool dense = steps > 30;
-        const auto tickInk = dark ? juce::Colour (0xffeeeeee) : col::brassInk;
-        for (int i = 0; i < steps; ++i)
-        {
-            if (dense && i % 2 != 0 && i != current) continue;
-            const float ta = startAngle + (endAngle - startAngle) * (float) i / (float) (steps - 1);
-            const bool major = (i == 0 || i == steps - 1 || (steps % 2 == 1 && i == steps / 2));
-            const auto p0 = c.getPointOnCircumference (R * (major ? 0.84f : 0.88f), ta);
-            const auto p1 = c.getPointOnCircumference (R * 0.99f, ta);
-            g.setColour ((dark ? juce::Colours::black : col::brassLight).withAlpha (0.55f));
-            g.drawLine ({ p0.translated (0, 1.0f), p1.translated (0, 1.0f) }, major ? 1.8f : 1.2f);
-            g.setColour (i == current && on ? (dark ? col::amber : juce::Colour (0xff8a2a10)) : tickInk.withAlpha (on ? 0.85f : 0.35f));
-            g.drawLine ({ p0, p1 }, i == current ? 2.4f : (major ? 1.8f : 1.2f));
-        }
-
-        const float rb = R * 0.80f;
-        // shadow on the plate
-        for (int i = 3; i >= 1; --i)
-        {
-            g.setColour (juce::Colours::black.withAlpha (0.16f));
-            g.fillEllipse (circ (rb + (float) i * 1.5f).translated (rb * 0.05f, rb * 0.10f));
-        }
-        // knurled brass edge
-        juce::ColourGradient edge (col::brassLight, c.x - rb, c.y - rb, juce::Colour (0xff5e4316), c.x + rb * 0.7f, c.y + rb, false);
-        edge.addColour (0.5, juce::Colour (0xffc39c52));
-        g.setGradientFill (edge); g.fillEllipse (circ (rb));
-        const int teeth = 72;
-        for (int i = 0; i < teeth; ++i)
-        {
-            const float t = juce::MathConstants<float>::twoPi * (float) i / (float) teeth + a;
-            const juce::Point<float> p0 (c.x + rb * 0.86f * std::sin (t), c.y - rb * 0.86f * std::cos (t));
-            const juce::Point<float> p1 (c.x + rb * 0.99f * std::sin (t + 0.05f), c.y - rb * 0.99f * std::cos (t + 0.05f));
-            const float shade = 0.5f + 0.5f * std::cos (t + 0.8f);
-            g.setColour (juce::Colour (0xff3b2a10).withAlpha (0.18f + 0.28f * (1.0f - shade)));
-            g.drawLine ({ p0, p1 }, 1.0f);
-        }
-        g.setColour (juce::Colour (0xff2e2008).withAlpha (0.7f)); g.drawEllipse (circ (rb), 1.0f);
-
-        // spun brass face: the light makes a soft bow-tie across it, as on turned metal
-        const float rf = rb * 0.84f;
-        const int wedges = 72;
-        for (int i = 0; i < wedges; ++i)
-        {
-            const float t0 = juce::MathConstants<float>::twoPi * (float) i / (float) wedges;
-            const float t1 = juce::MathConstants<float>::twoPi * (float) (i + 1) / (float) wedges;
-            const float lit = 0.5f + 0.5f * std::cos (2.0f * (t0 + 0.4f));
-            juce::Path w; w.addPieSegment (circ (rf), t0, t1 + 0.01f, 0.0f);
-            g.setColour (juce::Colour (0xff9c7838).interpolatedWith (col::brassLight, 0.15f + 0.75f * lit * lit));
-            g.fillPath (w);
-        }
-        for (float rr = rf * 0.12f; rr < rf; rr += juce::jmax (1.2f, rf * 0.05f))
-        {   // fine turning rings
-            g.setColour (juce::Colours::white.withAlpha (0.07f)); g.drawEllipse (circ (rr), 0.5f);
-            g.setColour (juce::Colours::black.withAlpha (0.04f)); g.drawEllipse (circ (rr + 0.5f), 0.5f);
-        }
-        g.setColour (juce::Colour (0xff3b2a10).withAlpha (0.45f)); g.drawEllipse (circ (rf), 0.8f);
-
-        // engraved pointer
-        const juce::Point<float> pe (c.x + rf * 0.92f * std::sin (a), c.y - rf * 0.92f * std::cos (a));
-        const juce::Point<float> ps (c.x + rf * 0.38f * std::sin (a), c.y - rf * 0.38f * std::cos (a));
-        g.setColour (col::brassLight.withAlpha (0.7f));
-        g.drawLine ({ ps.translated (0.7f, 0.7f), pe.translated (0.7f, 0.7f) }, juce::jmax (1.2f, rf * 0.05f));
-        g.setColour (on ? juce::Colour (0xff1c1408) : juce::Colour (0xff6e5a38));
-        g.drawLine ({ ps, pe }, juce::jmax (1.8f, rf * 0.08f));
-        return;
-    }
-    if (s.getProperties()["silver"])
-    {   // AUTO MASTER: machined aluminium knob (tube channel strip style) - knurled silver edge, brushed
-        // silver face with concentric turning marks, black pointer; dark scale ticks on the silver panel
-        const float R = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 1.0f;
-        const auto c = area.getCentre();
-        const bool on = s.isEnabled();
-        const float a = startAngle + pos * (endAngle - startAngle);
-        auto circ = [&] (float rad) { return juce::Rectangle<float> (rad * 2, rad * 2).withCentre (c); };
-
-        // scale ticks
-        const double interval = s.getInterval() > 0 ? s.getInterval() : 1.0;
-        const int steps = juce::jlimit (2, 64, (int) std::lround ((s.getMaximum() - s.getMinimum()) / interval) + 1);
-        const int current = (int) std::lround ((s.getValue() - s.getMinimum()) / interval);
-        const bool dense = steps > 30;
-        for (int i = 0; i < steps; ++i)
-        {
-            if (dense && i % 2 != 0 && i != current) continue;
-            const float ta = startAngle + (endAngle - startAngle) * (float) i / (float) (steps - 1);
-            const bool major = (i == 0 || i == steps - 1 || (steps % 2 == 1 && i == steps / 2));
-            const auto p0 = c.getPointOnCircumference (R * (major ? 0.84f : 0.88f), ta);
-            const auto p1 = c.getPointOnCircumference (R * 0.99f, ta);
-            g.setColour (juce::Colours::white.withAlpha (0.55f));
-            g.drawLine ({ p0.translated (0, 1.0f), p1.translated (0, 1.0f) }, major ? 1.8f : 1.2f);
-            g.setColour (i == current && on ? col::blue.darker (0.3f) : col::silverInk.withAlpha (on ? 0.85f : 0.35f));
-            g.drawLine ({ p0, p1 }, i == current ? 2.4f : (major ? 1.8f : 1.2f));
-        }
-
-        const float rb = R * 0.80f;
-        // shadow on the panel
-        for (int i = 3; i >= 1; --i)
-        {
-            g.setColour (juce::Colours::black.withAlpha (0.16f));
-            g.fillEllipse (circ (rb + (float) i * 1.5f).translated (rb * 0.05f, rb * 0.10f));
-        }
-        // knurled edge
-        juce::ColourGradient edge (juce::Colour (0xfff7f7f7), c.x - rb, c.y - rb, juce::Colour (0xff6d7075), c.x + rb * 0.7f, c.y + rb, false);
-        edge.addColour (0.5, juce::Colour (0xffbfc2c6));
-        g.setGradientFill (edge); g.fillEllipse (circ (rb));
-        const int teeth = 60;
-        for (int i = 0; i < teeth; ++i)
-        {
-            const float t = juce::MathConstants<float>::twoPi * (float) i / (float) teeth + a;
-            const juce::Point<float> p0 (c.x + rb * 0.86f * std::sin (t), c.y - rb * 0.86f * std::cos (t));
-            const juce::Point<float> p1 (c.x + rb * 0.99f * std::sin (t), c.y - rb * 0.99f * std::cos (t));
-            const float shade = 0.5f + 0.5f * std::cos (t + 0.8f);
-            g.setColour (juce::Colours::black.withAlpha (0.14f + 0.22f * (1.0f - shade)));
-            g.drawLine ({ p0, p1 }, 1.0f);
-        }
-        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.drawEllipse (circ (rb), 1.0f);
-
-        // brushed face with turning marks
-        const float rf = rb * 0.82f;
-        juce::ColourGradient face (juce::Colour (0xffeef0f2), c.x - rf * 0.6f, c.y - rf, juce::Colour (0xff9a9ea4), c.x + rf * 0.5f, c.y + rf, false);
-        face.addColour (0.55, juce::Colour (0xffcfd2d6));
-        g.setGradientFill (face); g.fillEllipse (circ (rf));
-        for (float rr = rf * 0.18f; rr < rf; rr += juce::jmax (1.2f, rf * 0.06f))
-        {
-            g.setColour (juce::Colours::white.withAlpha (0.10f)); g.drawEllipse (circ (rr), 0.6f);
-            g.setColour (juce::Colours::black.withAlpha (0.05f)); g.drawEllipse (circ (rr + 0.6f), 0.6f);
-        }
-        // light sweep across the face
-        juce::ColourGradient sweep (juce::Colours::white.withAlpha (0.45f), c.x - rf * 0.5f, c.y - rf * 0.6f,
-                                    juce::Colours::transparentWhite, c.x + rf * 0.2f, c.y + rf * 0.2f, true);
-        g.setGradientFill (sweep);
-        g.fillEllipse (circ (rf));
-        g.setColour (juce::Colours::black.withAlpha (0.35f)); g.drawEllipse (circ (rf), 0.8f);
-
-        // black pointer line
-        const juce::Point<float> pe (c.x + rf * 0.92f * std::sin (a), c.y - rf * 0.92f * std::cos (a));
-        const juce::Point<float> ps (c.x + rf * 0.30f * std::sin (a), c.y - rf * 0.30f * std::cos (a));
-        g.setColour (on ? juce::Colour (0xff111214) : juce::Colour (0xff70747a));
-        g.drawLine ({ ps, pe }, juce::jmax (2.0f, rf * 0.09f));
-        return;
-    }
-    if (s.getProperties()["skirt"])
-    {   // parametric EQ knob: glossy black cap, silver knurled skirt, white pointer line
-        const float R = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 1.0f;
-        const auto c = area.getCentre();
-        const float a = startAngle + pos * (endAngle - startAngle);
-        auto circ = [&] (float rad) { return juce::Rectangle<float> (rad * 2, rad * 2).withCentre (c); };
-        g.setColour (juce::Colours::black.withAlpha (0.6f));
-        g.fillEllipse (circ (R).translated (1.5f, 3.0f));
-        // skirt
-        juce::ColourGradient sk (juce::Colour (0xfff2f2f2), c.x - R, c.y - R, juce::Colour (0xff5c5c5c), c.x + R * 0.6f, c.y + R, false);
-        sk.addColour (0.45, juce::Colour (0xffb8b8b8));
-        g.setGradientFill (sk); g.fillEllipse (circ (R));
-        // knurling around the skirt edge
-        const int teeth = 56;
-        for (int i = 0; i < teeth; ++i)
-        {
-            const float t = juce::MathConstants<float>::twoPi * (float) i / (float) teeth + a;
-            const juce::Point<float> p0 (c.x + R * 0.80f * std::sin (t), c.y - R * 0.80f * std::cos (t));
-            const juce::Point<float> p1 (c.x + R * 0.98f * std::sin (t), c.y - R * 0.98f * std::cos (t));
-            const float shade = 0.5f + 0.5f * std::cos (t + 0.8f);
-            g.setColour (juce::Colours::black.withAlpha (0.18f + 0.2f * (1.0f - shade)));
-            g.drawLine ({ p0, p1 }, 1.1f);
-        }
-        g.setColour (juce::Colours::black.withAlpha (0.6f)); g.drawEllipse (circ (R), 1.0f);
-        // glossy black cap
-        const float rc = R * 0.72f;
-        g.setColour (juce::Colours::black); g.fillEllipse (circ (rc + 1.0f));
-        juce::ColourGradient cap (juce::Colour (0xff3a3a3c), c.x, c.y - rc, juce::Colour (0xff050505), c.x, c.y + rc, false);
-        g.setGradientFill (cap); g.fillEllipse (circ (rc));
-        juce::ColourGradient gloss (juce::Colours::white.withAlpha (0.35f), c.x - rc * 0.3f, c.y - rc * 0.7f,
-                                    juce::Colours::transparentWhite, c.x, c.y, true);
-        g.setGradientFill (gloss);
-        g.fillEllipse (juce::Rectangle<float> (rc * 1.3f, rc * 0.8f).withCentre ({ c.x - rc * 0.15f, c.y - rc * 0.45f }));
-        // white pointer line
-        const juce::Point<float> pe (c.x + rc * 0.92f * std::sin (a), c.y - rc * 0.92f * std::cos (a));
-        const juce::Point<float> ps (c.x + rc * 0.05f * std::sin (a), c.y - rc * 0.05f * std::cos (a));
-        g.setColour (s.isEnabled() ? juce::Colour (0xfff4f4f4) : juce::Colour (0xff8a8a8a));
-        g.drawLine ({ ps, pe }, juce::jmax (2.0f, R * 0.07f));
-        return;
-    }
     const float R   = juce::jmin (area.getWidth(), area.getHeight()) * 0.5f - 1.0f;   // tick radius
     const auto  c   = area.getCentre();
     const bool  on  = s.isEnabled();
@@ -493,6 +300,7 @@ void MasterdeskLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     const int current = (int) std::lround ((s.getValue() - s.getMinimum()) / interval);
     const bool dense  = steps > 30;
     const float tickAlpha = on ? 0.9f : 0.35f;
+    const bool dark = (bool) s.getProperties()["onDark"];      // on a black screen / inset: white ticks; on the brass: dark ticks
     for (int i = 0; i < steps; ++i)
     {
         if (dense && i % 2 != 0 && i != current) continue;
@@ -500,9 +308,10 @@ void MasterdeskLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
         const bool major = (i == 0 || i == steps - 1 || (steps % 2 == 1 && i == steps / 2));
         const auto p0 = c.getPointOnCircumference (R * (major ? 0.84f : 0.88f), a);
         const auto p1 = c.getPointOnCircumference (R * 0.99f, a);
-        g.setColour (juce::Colours::black.withAlpha (0.6f * tickAlpha));
+        g.setColour ((dark ? juce::Colours::black : col::brassLight).withAlpha (0.6f * tickAlpha));
         g.drawLine ({ p0.translated (0, 1.0f), p1.translated (0, 1.0f) }, major ? 2.0f : 1.4f);
-        g.setColour (i == current && on ? col::amber : juce::Colour (0xffeeeeee).withAlpha (tickAlpha));
+        g.setColour (i == current && on ? (dark ? col::amber : juce::Colour (0xff9a2a0c))
+                                        : (dark ? juce::Colour (0xffeeeeee) : col::brassInk).withAlpha (tickAlpha));
         g.drawLine ({ p0, p1 }, i == current ? 2.2f : (major ? 1.8f : 1.2f));
     }
 
