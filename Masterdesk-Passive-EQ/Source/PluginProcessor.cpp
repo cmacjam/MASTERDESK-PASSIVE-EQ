@@ -15,6 +15,8 @@ PassiveMasterEQProcessor::PassiveMasterEQProcessor()
     keySemisParam = apvts.getRawParameterValue (params::keySemis);
     keyCentsParam = apvts.getRawParameterValue (params::keyCents);
     linkParam   = apvts.getRawParameterValue (params::link);
+    stereoParam = apvts.getRawParameterValue (params::stereoMode);
+    monoActive.store (! isStereoMode());
     tubeOnParam = apvts.getRawParameterValue (params::tubeOn);
     driveParam  = apvts.getRawParameterValue (params::tubeDrive);
     maxOnParam   = apvts.getRawParameterValue (params::maxOn);
@@ -37,7 +39,9 @@ bool PassiveMasterEQProcessor::isBusesLayoutSupported (const BusesLayout& layout
 {
     const auto out = layouts.getMainOutputChannelSet();
     if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo()) return false;
-    return layouts.getMainInputChannelSet() == out;
+    const auto in = layouts.getMainInputChannelSet();
+    // mono -> mono, stereo -> stereo, and mono -> stereo (a mono track comes out in stereo)
+    return in == out || (in == juce::AudioChannelSet::mono() && out == juce::AudioChannelSet::stereo());
 }
 
 void PassiveMasterEQProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -54,6 +58,8 @@ void PassiveMasterEQProcessor::prepareToPlay (double sampleRate, int samplesPerB
     maximizer.prepare (sampleRate);
     maximizer.setParams (maxOnParam->load() > 0.5f, maxGainParam->load(), maxCeilParam->load());
     maximizer.reset();
+    monoActive.store (! isStereoMode() && getTotalNumOutputChannels() == 2);
+    monoFadeIn = false;
     verifyMeter.prepare (sampleRate);
     // the maximizer's 1.5 ms look-ahead is always in the path, so latency doesn't change when it's switched
     baseLatency = (osLog2 > 0 ? (int) std::lround (oversampler->getLatencyInSamples()) : 0) + maximizer.latency();
@@ -106,10 +112,13 @@ ChannelSettings PassiveMasterEQProcessor::getChannelSettings (int ch) const
 void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
-    const int numCh = juce::jmin (buffer.getNumChannels(), 2, getTotalNumOutputChannels());
+    const int ioCh = juce::jmin (buffer.getNumChannels(), 2, getTotalNumOutputChannels());
     for (int ch = getTotalNumInputChannels(); ch < buffer.getNumChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
-    if (numCh == 0 || oversampler == nullptr) return;
+    if (ioCh == 0 || oversampler == nullptr) return;
+    // mono track into a stereo output: feed the mono signal to both sides
+    if (getTotalNumInputChannels() == 1 && ioCh == 2)
+        buffer.copyFrom (1, 0, buffer, 0, 0, buffer.getNumSamples());
 
     auto holdMax = [] (std::atomic<float>& a, float v)
     {
@@ -118,17 +127,28 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     };
     // INPUT gain: ramped across the block so moving it never clicks
     const float inGain = juce::Decibels::decibelsToGain (inputParam->load());
-    for (int ch = 0; ch < numCh; ++ch)
+    for (int ch = 0; ch < ioCh; ++ch)
         buffer.applyGainRamp (ch, 0, buffer.getNumSamples(), lastInputGain, inGain);
     lastInputGain = inGain;
 
-    meters.numChannels.store (numCh);
-    for (int ch = 0; ch < numCh; ++ch)
+    meters.numChannels.store (ioCh);
+    for (int ch = 0; ch < ioCh; ++ch)
     {
         const float pk = buffer.getMagnitude (ch, 0, buffer.getNumSamples());
         holdMax (meters.inPeak, pk);
         holdMax (meters.inLevel[ch], pk);
     }
+
+    // MAIN STEREO / MONO: in MONO, left + right are summed (averaged, so the level doesn't jump) and the
+    // whole chain - both EQs, the tube amps and all the compressors - runs once on that signal.
+    // It is sent to both sides again just before the maximizer.
+    const bool mono = monoActive.load() && ioCh == 2;
+    if (mono)
+    {
+        buffer.addFrom (0, 0, buffer, 1, 0, buffer.getNumSamples());
+        buffer.applyGain (0, 0, buffer.getNumSamples(), 0.5f);
+    }
+    int numCh = mono ? 1 : ioCh;
 
     // KEY SHIFT: switching fades the old path out over this block and the new one in afterwards,
     // so turning it on/off never clicks (the reported latency changes with it)
@@ -183,9 +203,10 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     for (int ch = 0; ch < numCh; ++ch)
         engines[ch].setSettings (getChannelSettings (ch), tubeOn, drive);
 
-    comp.setSettings (getCompSettings (0), getCompSettings (1), isLinked());
+    if (mono) comp.setSettings (getCompSettings (0), getCompSettings (0), true);   // one signal: the left settings run it
+    else      comp.setSettings (getCompSettings (0), getCompSettings (1), isLinked());
     classA.setSettings (classAParams.read());
-    const auto pqNow = pqParams.read (isLinked());
+    const auto pqNow = pqParams.read (isLinked() || mono);
     paraEq.setSettings (pqNow);
     const bool pqOn = pqNow.in;                       // INPUT / OUTPUT are part of the unit: bypassed with PUSH EQ
     if (pqInGainParam != nullptr)
@@ -257,6 +278,10 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     holdMax (meters.pqLevel[0], (float) pqPeak[0]);
     holdMax (meters.pqLevel[1], (float) (numCh > 1 ? pqPeak[1] : pqPeak[0]));
 
+    // MONO: the processed signal goes to both sides; everything after this works on the real outputs
+    if (mono) buffer.copyFrom (1, 0, buffer, 0, 0, buffer.getNumSamples());
+    numCh = ioCh;
+
     // MAXIMIZER: final look-ahead brickwall limiter
     maximizer.setParams (maxOnParam->load() > 0.5f, maxGainParam->load(), maxCeilParam->load());
     maximizer.process (buffer.getWritePointer (0), numCh > 1 ? buffer.getWritePointer (1) : nullptr, buffer.getNumSamples());
@@ -264,6 +289,23 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         const float g = (float) maximizer.takeGainReductionDb();
         float prev = maxGr.load();
         while (g > prev && ! maxGr.compare_exchange_weak (prev, g)) {}
+    }
+
+    // switching STEREO <-> MONO: fade this block out, swap, fade the next one in (no click)
+    {
+        const int n = buffer.getNumSamples();
+        const bool wantMono = ! isStereoMode() && ioCh == 2;
+        if (monoFadeIn)
+        {
+            for (int ch = 0; ch < ioCh; ++ch) buffer.applyGainRamp (ch, 0, n, 0.0f, 1.0f);
+            monoFadeIn = false;
+        }
+        else if (wantMono != monoActive.load())
+        {
+            for (int ch = 0; ch < ioCh; ++ch) buffer.applyGainRamp (ch, 0, n, 1.0f, 0.0f);
+            monoActive.store (wantMono);
+            monoFadeIn = true;
+        }
     }
 
     // AUTO MASTER loudness check after the settings were applied
@@ -284,7 +326,7 @@ void PassiveMasterEQProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     {
         meters.outRms[ch].store (buffer.getRMSLevel (ch, 0, buffer.getNumSamples()));
         holdMax (meters.outPeak[ch], buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
-        meters.thd[ch].store ((float) engines[ch].takeDistortionRatio());
+        meters.thd[ch].store ((float) engines[mono ? 0 : ch].takeDistortionRatio());   // MONO runs one tube amp
         meters.gr[ch].store ((float) comp.takeGainReductionDb (ch));
         meters.grA[ch].store ((float) classA.takeGainReductionDb (ch));
     }

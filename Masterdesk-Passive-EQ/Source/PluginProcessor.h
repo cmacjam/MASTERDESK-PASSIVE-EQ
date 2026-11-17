@@ -75,6 +75,8 @@ public:
     bool   isKeyShiftOn() const      { return keyOnParam->load() > 0.5f; }
     double getKeyShiftSemitones() const { return (double) std::lround (keySemisParam->load()) + std::lround (keyCentsParam->load()) / 100.0; }
     bool isLinked() const { return linkParam->load() > 0.5f; }
+    bool isStereoMode() const { return stereoParam == nullptr || stereoParam->load() > 0.5f; }   // MAIN STEREO / MONO
+    bool isMonoActive() const { return monoActive.load(); }    // what the audio path is doing right now
     ppm::ClassASettings getClassASettings() const { return classAParams.read(); }
     ppm::sontec::Settings getParametricSettings() const { return pqParams.read (isLinked()); }
     void copyChannel (int fromCh, int toCh);
@@ -211,6 +213,9 @@ private:
     void updateLatency();
     float lastInputGain = 1.0f;
     std::atomic<float>* linkParam  = nullptr;
+    std::atomic<float>* stereoParam = nullptr;
+    std::atomic<bool> monoActive { false };   // MONO path running (switches with a short fade)
+    bool monoFadeIn = false;
     std::atomic<float>* tubeOnParam = nullptr;
     std::atomic<float>* driveParam  = nullptr;
 

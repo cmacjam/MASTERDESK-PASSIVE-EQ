@@ -34,6 +34,7 @@ inline const juce::String maxGain   { "max_gain" };     // dB pushed into the li
 inline const juce::String maxCeiling { "max_ceiling" }; // highest peak allowed out, dBFS
 inline const juce::String amGenre   { "am_genre" };     // AUTO MASTER genre
 inline const juce::String amAmount  { "am_amount" };    // AUTO MASTER EQ amount, %
+inline const juce::String stereoMode { "stereo_mode" }; // MAIN STEREO / MONO switch for every unit (true = stereo)
 
 // Parametric mastering EQ (black unit, in front of the passive EQ)
 namespace pq
@@ -230,6 +231,11 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     }
     layout.add (std::make_unique<AudioParameterChoice> (ParameterID { compOrder, version }, "Comp Order",
                                                         StringArray { "EQ > COMP", "COMP > EQ" }, 0));
+    // MAIN STEREO / MONO: Mono sums left + right and runs every EQ, tube amp and compressor once,
+    // then sends the result to both sides. Stereo processes left and right separately.
+    layout.add (std::make_unique<AudioParameterBool> (ParameterID { stereoMode, version }, "Stereo / Mono", true,
+                                                      AudioParameterBoolAttributes().withStringFromValueFunction (
+                                                          [] (bool st, int) { return st ? String ("Stereo") : String ("Mono"); })));
     return layout;
 }
 

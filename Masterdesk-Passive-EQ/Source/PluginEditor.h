@@ -625,6 +625,7 @@ private:
     std::unique_ptr<CompStrip>   comps[2];
     ModeSwitch orderSwitch;
 
+    JewelButton stereoButton { "STEREO", "MONO", col::blue };      // MAIN: every EQ, tube amp and compressor
     JewelButton linkButton { "LINK", "UNLINKED", col::yellow };
     JewelButton tubeButton { "TUBE ON", "TUBE OFF", col::amber };
     juce::TextButton copyLR { "L > R" }, copyRL { "R > L" }, helpButton { "HELP  ?" };
@@ -633,7 +634,7 @@ private:
     InputMeter inputMeter;
     juce::TextButton fullButton { "FULL SCREEN" }, miniButton { "MINI" }, scrollButton { "SCROLL" }, hoverButton { "HOVER ON" };
     HelpOverlay help;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linkAtt, tubeAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> linkAtt, tubeAtt, stereoAtt;
 
     juce::Rectangle<float> topPlate, curvePlate, analyzerScreen, scopeScreen, rowPlates[2], compPlate, classAPlate, autoPlate, paraPlate, footerPlate, nameplate, presetLabel;
     bool lastLinked = true, compact = false;

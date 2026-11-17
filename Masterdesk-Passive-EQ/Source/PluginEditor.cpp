@@ -3204,6 +3204,10 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
 
     linkAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::link, linkButton);
     tubeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::tubeOn, tubeButton);
+    stereoAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::stereoMode, stereoButton);
+    stereoButton.setTooltip ("STEREO / MONO - the main switch for the whole suite. STEREO: every EQ, tube amp and compressor "
+                             "works on left and right separately. MONO: left and right are combined and everything runs once, "
+                             "then plays on both speakers (check how the master sounds in mono).");
     linkButton.onClick = [this] { if (! linkButton.getToggleState()) proc.copyChannel (0, 1); };
     copyLR.onClick = [this] { proc.copyChannel (0, 1); };
     copyRL.onClick = [this] { proc.copyChannel (1, 0); };
@@ -3273,7 +3277,7 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     hoverButton.setClickingTogglesState (false);
     hoverButton.onClick = [this] { if (onToggleHover) onToggleHover(); };
     addAndMakeVisible (hoverButton);
-    for (auto* c : std::initializer_list<juce::Component*> { &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
+    for (auto* c : std::initializer_list<juce::Component*> { &stereoButton, &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
         addAndMakeVisible (c);
     for (int u = 0; u < kNumUnits; ++u)
     {
@@ -3620,14 +3624,16 @@ void Faceplate::resized()
     {
         auto f = footerPlate.reduced (30.0f, 12.0f);
         auto bar = f.toNearestInt();
-        linkButton.setBounds (bar.removeFromLeft (130)); bar.removeFromLeft (10);
-        copyLR.setBounds (bar.removeFromLeft (76));      bar.removeFromLeft (8);
-        copyRL.setBounds (bar.removeFromLeft (76));      bar.removeFromLeft (18);
-        helpButton.setBounds (bar.removeFromLeft (92));  bar.removeFromLeft (8);
-        miniButton.setBounds (bar.removeFromLeft (70));  bar.removeFromLeft (8);
-        fullButton.setBounds (bar.removeFromLeft (114)); bar.removeFromLeft (8);
-        scrollButton.setBounds (bar.removeFromLeft (98)); bar.removeFromLeft (8);
-        hoverButton.setBounds (bar.removeFromLeft (100));
+        // STEREO / MONO is the main switch for the whole suite, so it comes first
+        stereoButton.setBounds (bar.removeFromLeft (104)); bar.removeFromLeft (8);
+        linkButton.setBounds (bar.removeFromLeft (108)); bar.removeFromLeft (8);
+        copyLR.setBounds (bar.removeFromLeft (58));      bar.removeFromLeft (6);
+        copyRL.setBounds (bar.removeFromLeft (58));      bar.removeFromLeft (12);
+        helpButton.setBounds (bar.removeFromLeft (76));  bar.removeFromLeft (6);
+        miniButton.setBounds (bar.removeFromLeft (70));  bar.removeFromLeft (6);
+        fullButton.setBounds (bar.removeFromLeft (104)); bar.removeFromLeft (6);
+        scrollButton.setBounds (bar.removeFromLeft (82)); bar.removeFromLeft (6);
+        hoverButton.setBounds (bar.removeFromLeft (88));
         nameplate  = f.removeFromRight (270.0f).withSizeKeepingCentre (270.0f, 48.0f);
         auto mid = f.withTrimmedLeft ((float) (hoverButton.getRight() - f.getX() + 14)).withTrimmedRight (16.0f).toNearestInt();
         sizeBox.setBounds (mid.removeFromRight (84).withSizeKeepingCentre (84, 30));

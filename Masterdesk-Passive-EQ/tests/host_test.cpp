@@ -504,6 +504,66 @@ int main()
         if (! same) failCheck (failures, __LINE__);
     }
 
+    // ---- MAIN STEREO / MONO switch ---------------------------------------------------
+    {
+        std::printf ("main STEREO / MONO switch:\n");
+        auto run = [] (PassiveMasterEQProcessor& p, int inCh, int blocks, double& ph, float& peak, double& diffRms, double& level)
+        {
+            juce::AudioBuffer<float> buf (2, 512);
+            peak = 0.0f; double d2 = 0.0, l2 = 0.0; long n = 0;
+            for (int b = 0; b < blocks; ++b)
+            {
+                buf.clear();
+                for (int i = 0; i < 512; ++i, ph += 1.0)
+                {
+                    buf.setSample (0, i, (float) (0.4 * std::sin (ph * 2 * juce::MathConstants<double>::pi * 1000.0 / 48000.0)));
+                    if (inCh > 1) buf.setSample (1, i, (float) (0.2 * std::sin (ph * 2 * juce::MathConstants<double>::pi * 300.0 / 48000.0)));
+                }
+                juce::MidiBuffer m; p.processBlock (buf, m);
+                peak = juce::jmax (peak, buf.getMagnitude (0, 0, 512), buf.getMagnitude (1, 0, 512));
+                if (b >= blocks / 2)
+                    for (int i = 0; i < 512; ++i)
+                    {
+                        const double l = buf.getSample (0, i), r = buf.getSample (1, i);
+                        d2 += (l - r) * (l - r); l2 += l * l + r * r; ++n;
+                    }
+            }
+            diffRms = std::sqrt (d2 / juce::jmax (1L, n)); level = std::sqrt (l2 / juce::jmax (1L, 2 * n));
+        };
+
+        PassiveMasterEQProcessor proc;
+        auto& s = proc.apvts;
+        setParam (s, ppm::params::link, 0.0f);                  // left and right set differently
+        setParam (s, "R_trim", 0.0f);
+        proc.setPlayConfigDetails (2, 2, 48000.0, 512);
+        proc.prepareToPlay (48000.0, 512);
+        double ph = 0.0, diffSt = 0, diffMono = 0, diffBack = 0, lvSt = 0, lvMono = 0, lvBack = 0;
+        float pkSt = 0, pkSwitch = 0, pkBack = 0;
+        run (proc, 2, 40, ph, pkSt, diffSt, lvSt);
+        setParam (s, ppm::params::stereoMode, 0.0f);            // MONO
+        run (proc, 2, 40, ph, pkSwitch, diffMono, lvMono);
+        const bool monoNow = proc.isMonoActive();
+        setParam (s, ppm::params::stereoMode, 1.0f);            // back to STEREO
+        run (proc, 2, 40, ph, pkBack, diffBack, lvBack);
+        std::printf ("  STEREO: L-R difference %.4f (level %.3f)\n", diffSt, lvSt);
+        std::printf ("  MONO:   L-R difference %.6f (level %.3f), mono path on: %s\n", diffMono, lvMono, monoNow ? "yes" : "no");
+        std::printf ("  back to STEREO: L-R difference %.4f, peaks while switching %.2f / %.2f\n", diffBack, pkSwitch, pkBack);
+        if (diffSt < 0.01 || diffMono > 1.0e-6 || ! monoNow || lvMono < 0.02 || diffBack < 0.01
+            || pkSwitch > 1.05f || pkBack > 1.05f || proc.isMonoActive()) failCheck (failures, __LINE__);
+
+        // a mono track: mono in, stereo out -> the same signal on both sides
+        PassiveMasterEQProcessor monoProc;
+        juce::AudioProcessor::BusesLayout lay;
+        lay.inputBuses.add (juce::AudioChannelSet::mono()); lay.outputBuses.add (juce::AudioChannelSet::stereo());
+        const bool layoutOk = monoProc.checkBusesLayoutSupported (lay) && monoProc.setBusesLayout (lay);
+        monoProc.setPlayConfigDetails (1, 2, 48000.0, 512);
+        monoProc.prepareToPlay (48000.0, 512);
+        double ph2 = 0.0, d = 0, lv = 0; float pk = 0;
+        run (monoProc, 1, 30, ph2, pk, d, lv);
+        std::printf ("  mono track -> stereo output: layout accepted %s, L-R difference %.6f, level %.3f\n", layoutOk ? "yes" : "no", d, lv);
+        if (! layoutOk || d > 1.0e-6 || lv < 0.02) failCheck (failures, __LINE__);
+    }
+
     // ---- spectrum analyzer reads a known tone correctly -------------------------
     {
         PassiveMasterEQProcessor proc;
