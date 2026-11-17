@@ -3347,6 +3347,31 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     linkAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::link, linkButton);
     tubeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::tubeOn, tubeButton);
     stereoAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, ppm::params::stereoMode, stereoButton);
+    {   // INSTRUMENT: every track preset, one section per source (Vocals, Bass, Keys, Synths, Strings & Horns, Guitars, Drums)
+        using namespace ppm::presets;
+        const auto& list = all();
+        for (const char* cat : kTrackCategories)
+        {
+            instrumentBox.addSectionHeading (juce::String (cat).fromFirstOccurrenceOf (": ", false, false).toUpperCase());
+            for (int i = 0; i < (int) list.size(); ++i)
+                if (list[(size_t) i].category == cat) instrumentBox.addItem (list[(size_t) i].name, i + 1);
+        }
+        instrumentBox.setTextWhenNothingSelected ("INSTRUMENT...");
+        instrumentBox.getProperties().set ("textSize", 13.0f);
+        instrumentBox.setTooltip ("INSTRUMENT - presets for one instrument or voice on its own track: lead and background vocals, live and "
+                                  "synth bass, grand and electric piano, organ, clavinet, synths, strings, horns, guitars and drums. "
+                                  "Each sets the tube amp, then a compressor right after it (EQ > COMP order), plus EQ for that source. "
+                                  "Set the compressor thresholds for your level.");
+        instrumentBox.onChange = [this]
+        {
+            const int id = instrumentBox.getSelectedId();
+            if (id <= 0) return;
+            proc.setCurrentProgram (id - 1);
+            const auto notes = proc.getProgramNotes (id - 1);
+            instrumentBox.setTooltip (proc.getProgramName (id - 1) + (notes.isNotEmpty() ? "\n\n" + notes : juce::String())
+                                      + "\n\nChain: " + proc.chainText (id - 1));
+        };
+    }
     stereoButton.setTooltip ("STEREO / MONO - the main switch for the whole suite. STEREO: every EQ, tube amp and compressor "
                              "works on left and right separately. MONO: left and right are combined and everything runs once, "
                              "then plays on both speakers (check how the master sounds in mono). It sets every unit below it.");
@@ -3419,7 +3444,7 @@ Faceplate::Faceplate (PassiveMasterEQProcessor& p)
     hoverButton.setClickingTogglesState (false);
     hoverButton.onClick = [this] { if (onToggleHover) onToggleHover(); };
     addAndMakeVisible (hoverButton);
-    for (auto* c : std::initializer_list<juce::Component*> { &stereoButton, &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
+    for (auto* c : std::initializer_list<juce::Component*> { &instrumentBox, &stereoButton, &linkButton, &tubeButton, &copyLR, &copyRL, &helpButton, &drive, &presetBox, &sizeBox, &orderSwitch, &inputKnob, &inputMeter, &fullButton, &miniButton })
         addAndMakeVisible (c);
     for (int u = 0; u < kNumUnits; ++u)
     {
@@ -3744,6 +3769,9 @@ void Faceplate::resized()
         for (auto* lamp : { &lampSignal, &lampLink, &lampClip, &lampTube })
             lamp->setBounds (lampCol.removeFromTop (lampH));
 
+        // INSTRUMENT presets under the tubes (the tube amp + the compressor after it)
+        instrumentBox.setBounds (t.removeFromBottom (32).withSizeKeepingCentre (juce::jmax (180, t.getWidth()), 32));
+        t.removeFromBottom (6);
         // the two tubes stay together as a pair, centred in the space between the meters and the lamps
         auto tubes = t.withTrimmedTop (22);
         const int tw = juce::jlimit (30, tubeW, tubes.getWidth() / 2 - 8);

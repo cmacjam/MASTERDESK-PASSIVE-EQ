@@ -634,6 +634,7 @@ private:
     ModeSwitch orderSwitch;
 
     JewelButton stereoButton { "STEREO", "MONO", col::blue };      // MAIN: every EQ, tube amp and compressor
+    juce::ComboBox instrumentBox;   // TUBE STAGE: INSTRUMENT presets - tube amp, then a compressor, for what is on the track
     JewelButton linkButton { "LINK", "UNLINKED", col::yellow };
     JewelButton tubeButton { "TUBE ON", "TUBE OFF", col::amber };
     juce::TextButton copyLR { "L > R" }, copyRL { "R > L" }, helpButton { "HELP  ?" };

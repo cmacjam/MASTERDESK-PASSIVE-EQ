@@ -65,17 +65,18 @@ inline ChannelSettings channel (BandSettings low, BandSettings lowMid, BandSetti
 namespace ppm::presets
 {
 inline const char* const kEngineerCategories[] = { "Vocals", "Drums", "Bass", "Guitars & Keys", "Mix & Master Bus" };
-inline const char* const kTrackCategories[]    = { "Track: Keys & Pads", "Track: Guitars", "Track: Drums" };
+inline const char* const kTrackCategories[]    = { "Track: Vocals", "Track: Bass", "Track: Keys", "Track: Synths", "Track: Strings & Horns",
+                                                   "Track: Guitars", "Track: Drums" };
 inline bool isTrackCategory (const std::string& c) { return c.rfind ("Track: ", 0) == 0; }
 
 // ---- every preset sits in one category ----------------------------------------------------------
 //  Master: a stereo-master EQ curve that loads a complete chain (both EQs, both compressors, maximizer)
 //  Compressor: a compressor setting (vocals, drums, ... or the mix bus)
-//  Track: an EQ + compressor for one instrument on its own track
+//  Track: one instrument on its own track - tube amp, then a compressor right after it, plus EQ
 inline const char* const kCategoryOrder[] = {
     "Master: Clean & Corrective", "Master: Balanced Polish", "Master: Warm & Analog", "Master: Bright & Open", "Master: Loud & Punchy",
     "Compressor: Mix Bus", "Compressor: Vocals", "Compressor: Drums", "Compressor: Bass", "Compressor: Guitars & Keys",
-    "Track: Keys & Pads", "Track: Guitars", "Track: Drums" };
+    "Track: Vocals", "Track: Bass", "Track: Keys", "Track: Synths", "Track: Strings & Horns", "Track: Guitars", "Track: Drums" };
 inline bool isMasterCategory (const std::string& c)     { return c.rfind ("Master: ", 0) == 0; }
 inline bool isCompressorCategory (const std::string& c) { return c.rfind ("Compressor: ", 0) == 0; }
 inline int categoryRank (const std::string& c)
@@ -102,6 +103,8 @@ inline std::string masterCategoryOf (const std::string& name)
     for (const char* n : loud)   if (name == n) return "Master: Loud & Punchy";
     return "Master: Bright & Open";      // Air Lift, Silk Top, Dark Mix Rescue, Vocal Presence / Forward, Calbi Clarity, Chiccarelli Air, Stacked Shelves
 }
+
+inline std::vector<Preset> instrumentPresets();   // the INSTRUMENT presets (below)
 
 inline const std::vector<Preset>& all()
 {
@@ -233,6 +236,11 @@ inline const std::vector<Preset>& all()
           "About 1 dB of compression with the tube stage driven +6 dB." },
     };
     for (const auto& p : engineerPresets()) list.push_back (p);
+    // the older "Keys & Pads" track presets split into Keys and Synths
+    for (auto& p : list)
+        if (p.category == "Track: Keys & Pads")
+            p.category = (p.name.rfind ("Synth", 0) == 0 || p.name.find ("Synth Keys") != std::string::npos) ? "Track: Synths" : "Track: Keys";
+    for (const auto& p : instrumentPresets()) list.push_back (p);
     // every preset into its category: stereo-master curves by character, compressor settings by source,
     // track presets stay as they are; then the list is ordered by category (each keeps its own order)
     for (auto& p : list)
@@ -357,6 +365,126 @@ inline int nearestFreqIdx (int band, double hz)
     return best;
 }
 
+// ---- INSTRUMENT presets: tube amp -> compressor (-> second compressor) + passive EQ, one per source ----------
+//  Built from long-standing studio practice for each source (the usual moves engineers reach for),
+//  not copied from any one engineer. EQ indices as listed at the top of this file.
+inline ClassASettings classAComp (bool feedForward, double grDb, double attackMs, double releaseMs, double ratioPos = 7.5)
+{
+    ClassASettings s; s.in = true; s.mode = ClassAStereo; s.link = true;
+    for (auto& c : s.ch)
+    {
+        c.ratioPos = ratioPos; c.feedForward = feedForward;
+        c.attackMs = attackMs; c.releaseMs = releaseMs;
+        c.thresholdDb = std::round ((-12.0 - grDb / (feedForward ? 0.75 : 0.5)) * 10.0) / 10.0;   // loud parts ~ -12 dBFS
+        c.gainDb = std::round (grDb * 10.0) / 10.0; c.mix = 1.0;
+    }
+    return s;
+}
+inline Preset instrument (const char* name, const char* category, ChannelSettings ch, float driveDb,
+                          CompSettings vm, ClassASettings ca, const char* notes)
+{
+    Preset p; p.name = name; p.category = category; p.full = true; p.notes = notes;
+    p.ch = ch; p.tubeOn = true; p.driveDb = driveDb; p.order = 0;     // tube amp first, compressor right after it
+    p.comp = vm; p.ca = ca;
+    p.pq.in = false; for (auto& c : p.pq.ch) c = neutralSontec();
+    return p;
+}
+inline std::vector<Preset> instrumentPresets()
+{
+    const CompSettings noVm {};                   // vari-mu out
+    ClassASettings noCa; noCa.in = false;         // class-A out
+    const char* V = "Track: Vocals"; const char* B = "Track: Bass"; const char* K = "Track: Keys";
+    const char* S = "Track: Synths"; const char* SH = "Track: Strings & Horns";
+    return {
+        // ---- vocals ----
+        instrument ("Lead Vocal - Up Front (Pop / R&B)", V,
+                    channel (band (5, 7, 0, Cut, true), band (3, 4, 8, Cut), band (7, 5, 6), band (8, 6, 0, Boost, true), 5), 3.0f,
+                    variMuGlue (4.0, 1, 2), classAComp (true, 3.0, 5.0, 120.0),
+                    "Lead vocal that sits on top of a busy mix. Tube amp +3 dB for density, then two compressors in series - the classic "
+                    "vocal chain: Vari-Mu levels the phrases (about 4 dB, 5 ms, 0.6 s), Class-A catches the peaks (about 3 dB, feed-forward). "
+                    "EQ: low end cleaned below 150 Hz, -mud at 270 Hz, presence at 3.3 kHz, air shelf at 12 kHz. Set the thresholds for your level."),
+        instrument ("Lead Vocal - Warm & Smooth (Ballad / Soul)", V,
+                    channel (band (4, 6, 0, Cut, true), band (2, 3, 4), band (8, 3, 8, Cut), band (9, 4, 0, Boost, true), 5), 5.0f,
+                    variMuGlue (3.0, 6, 3), noCa,
+                    "Intimate, warm lead vocal. Tube amp pushed +5 dB, then the Vari-Mu alone for slow, smooth leveling (about 3 dB, 25 ms, 0.8 s). "
+                    "EQ: low cut at 100 Hz, a little chest at 180 Hz, harshness eased at 4.7 kHz, soft air at 16 kHz."),
+        instrument ("Background Vocals - Soft & Wide", V,
+                    channel (band (6, 8, 0, Cut, true), band (4, 4, 6, Cut), band (7, 3, 6, Cut), band (8, 5, 0, Boost, true), 5), 2.0f,
+                    variMuGlue (5.0, 7, 4), noCa,
+                    "Background vocals that sit behind the lead. Low end thinned below 220 Hz and 390 Hz cleared so the stack doesn't get thick, "
+                    "presence dipped at 3.3 kHz to leave room for the lead, airy top. Heavier, slower leveling (about 5 dB) so the stack stays even."),
+        instrument ("Background Vocals - Stacked Gang / Choir", V,
+                    channel (band (5, 6, 0, Cut, true), band (4, 5, 8, Cut), band (6, 3, 4), band (9, 4, 0, Boost, true), 5), 3.0f,
+                    variMuGlue (4.0, 5, 3), classAComp (false, 2.0, 30.0, 300.0),
+                    "Big stacked or gang vocals. Low end cleaned at 150 Hz, boxiness out at 390 Hz, a little 2.2 kHz diction, open top. "
+                    "Vari-Mu levels the stack, then Class-A (feedback, gentle) glues it into one sound."),
+        // ---- bass ----
+        instrument ("Live Bass - Round & Fingered", B,
+                    channel (band (3, 5, 4), band (3, 4, 8, Cut), band (4, 3, 6), flat(), 2, 5), 4.0f,
+                    variMuGlue (4.0, 4, 1), classAComp (true, 2.0, 3.0, 100.0),
+                    "Fingered electric bass, round and steady. Tube amp +4 dB, Vari-Mu evens the notes (about 4 dB, 20 ms, 0.4 s), then Class-A "
+                    "catches the odd loud note. EQ: 68 Hz weight, 270 Hz mud out, a touch of 1 kHz so it reads on small speakers; top rolled at 15 kHz."),
+        instrument ("Live Bass - Picked Growl (Rock)", B,
+                    channel (band (4, 4, 6), band (6, 4, 6), band (6, 3, 8), flat(), 2, 5), 7.0f,
+                    variMuGlue (5.0, 3, 1), classAComp (true, 2.0, 2.0, 80.0),
+                    "Picked bass with grit. Tube amp driven +7 dB for growl, Vari-Mu holds it steady (about 5 dB, 15 ms, 0.4 s), Class-A on the peaks. "
+                    "EQ: 100 Hz punch, 820 Hz growl, 2.2 kHz pick click."),
+        instrument ("Synth Bass - Sub & Punch", B,
+                    channel (band (2, 4, 4, Boost, true), band (3, 5, 8, Cut), band (4, 2, 6), flat(), 3), 3.0f,
+                    noVm, classAComp (true, 3.0, 10.0, 150.0),
+                    "Synth / 808-style bass. Sub shelf at 47 Hz, 270 Hz cleared, a little 1 kHz for definition; subsonic cut at 23 Hz. "
+                    "Tube amp +3 dB, then Class-A feed-forward to keep the sub level solid (about 3 dB)."),
+        // ---- keys ----
+        instrument ("Grand Piano - Concert Clear", K,
+                    channel (band (3, 2, 2), band (3, 3, 6, Cut), band (8, 2, 4), band (8, 3, 0, Boost, true), 2), 2.0f,
+                    variMuGlue (2.0, 7, 4), noCa,
+                    "Natural grand piano (solo, jazz, ballad). Gentle: a little 68 Hz body, 270 Hz eased, soft 4.7 kHz definition, light 12 kHz air. "
+                    "Tube amp +2 dB, Vari-Mu slow and light (about 2 dB, 45 ms, 1.2 s) to keep the dynamics."),
+        instrument ("Grand Piano - Pop Bright", K,
+                    channel (band (4, 5, 0, Cut, true), band (4, 4, 6, Cut), band (7, 4, 4), band (8, 5, 0, Boost, true), 4), 3.0f,
+                    noVm, classAComp (true, 3.0, 20.0, 200.0),
+                    "Piano that cuts through a pop / rock mix. Low end trimmed below 100 Hz, 390 Hz boxiness out, 3.3 kHz attack, bright 12 kHz top. "
+                    "Tube amp +3 dB, Class-A feed-forward for an even, forward level (about 3 dB)."),
+        instrument ("Electric Piano - Tine Bark (Rhodes style)", K,
+                    channel (band (4, 4, 0, Cut, true), band (3, 3, 6, Cut), band (5, 4, 4), band (7, 2, 0, Cut, true), 4), 7.0f,
+                    variMuGlue (3.0, 5, 2), noCa,
+                    "Tine electric piano with bark, like it's played through an amp. Tube amp driven +7 dB, Vari-Mu (about 3 dB, 25 ms, 0.6 s). "
+                    "EQ: low end trimmed at 100 Hz, 270 Hz mud out, 1.5 kHz bark, top softened from 8.2 kHz."),
+        instrument ("Organ - Tonewheel Drive", K,
+                    channel (band (3, 4, 0, Cut, true), band (4, 3, 6, Cut), band (6, 3, 4), flat(), 2, 5), 10.0f,
+                    variMuGlue (3.0, 4, 2), noCa,
+                    "Tonewheel organ with overdrive. Tube amp driven hard (+10 dB) for the growl, Vari-Mu (about 3 dB) to hold it. "
+                    "EQ: low end tidied at 68 Hz, 390 Hz box out, 2.2 kHz bite; top rolled at 15 kHz to keep the drive smooth."),
+        instrument ("Clavinet - Funk Bite", K,
+                    channel (band (5, 7, 0, Cut, true), band (4, 3, 6, Cut), band (6, 5, 6), band (6, 3, 0, Boost, true), 4), 5.0f,
+                    noVm, classAComp (true, 4.0, 3.0, 80.0),
+                    "Funky clavinet. Low end cut below 150 Hz (it doesn't need it), 390 Hz cleaned, 2.2 kHz bite, 5.6 kHz snap. "
+                    "Tube amp +5 dB, then fast Class-A feed-forward (about 4 dB, 3 ms, 80 ms) for a tight, percussive attack."),
+        // ---- synths ----
+        instrument ("Synth Lead - Cut Through", S,
+                    channel (band (6, 7, 0, Cut, true), band (4, 3, 6, Cut), band (6, 4, 4), band (8, 4, 0, Boost, true), 4), 6.0f,
+                    noVm, classAComp (true, 3.0, 12.0, 180.0),
+                    "Lead synth that sits on top. Low end cut below 220 Hz, 390 Hz cleared, 2.2 kHz presence, 12 kHz shine. "
+                    "Tube amp +6 dB for analog warmth, Class-A feed-forward (about 3 dB) to keep it steady in front."),
+        // ---- strings & horns ----
+        instrument ("Strings - Silky Section", SH,
+                    channel (band (3, 4, 0, Cut, true), band (4, 3, 6, Cut), band (7, 2, 6, Cut), band (8, 4, 0, Boost, true), 3), 3.0f,
+                    variMuGlue (2.0, 8, 5), noCa,
+                    "String section, silky and wide. Low end tidied at 68 Hz, 390 Hz eased, 3.3 kHz rosin edge softened, 12 kHz sheen. "
+                    "Tube amp +3 dB, Vari-Mu very slow (about 2 dB, 55 ms, 2 s) so the swells stay musical."),
+        instrument ("Horns - Punchy Brass Section", SH,
+                    channel (band (4, 5, 0, Cut, true), band (3, 3, 6, Cut), band (5, 4, 4), band (7, 3, 0, Boost, true), 4), 5.0f,
+                    noVm, classAComp (true, 4.0, 8.0, 120.0),
+                    "Trumpets, trombones and saxes as a section. Low end cut at 100 Hz, 270 Hz mud out, 1.5 kHz punch, 8.2 kHz brilliance. "
+                    "Tube amp +5 dB, Class-A feed-forward (about 4 dB, 8 ms) for tight, punchy stabs."),
+        instrument ("Horns - Sax Solo (Warm)", SH,
+                    channel (band (4, 4, 0, Cut, true), band (3, 2, 4), band (7, 3, 8, Cut), band (8, 3, 0, Boost, true), 4), 4.0f,
+                    variMuGlue (3.0, 5, 3), noCa,
+                    "Solo saxophone, warm and smooth. Low cut at 100 Hz, a touch of 270 Hz warmth, reed harshness eased at 3.3 kHz, soft 12 kHz air. "
+                    "Tube amp +4 dB, Vari-Mu (about 3 dB, 25 ms, 0.8 s)."),
+    };
+}
+
 inline MasterChain masterChain (int index)
 {
     MasterChain m;
@@ -389,6 +517,14 @@ inline MasterChain masterChain (int index)
             m.pq.in = true; for (auto& c : m.pq.ch) c.band[1] = { nearestFreqIdx (1, 3500.0), 1, 11 };
             m.secondEq = "-0.5 dB at 3.5 kHz (keeps the lifted top smooth)";
         }
+    }
+
+    // a track preset always runs the tube amp straight into a compressor (EQ > COMP order)
+    if (track)
+    {
+        m.order = 0;
+        if (! m.tubeOn) { m.tubeOn = true; m.driveDb = std::max (m.driveDb, 2.0f); }
+        if (! m.vm.compIn && ! m.ca.in) m.vm = variMuGlue (2.0, 5, 2);
     }
 
     // compressors by character
