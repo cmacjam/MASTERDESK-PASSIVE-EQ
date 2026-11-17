@@ -1,134 +1,410 @@
-cmake_minimum_required(VERSION 3.22)
+# Builds, tests, validates and packages Basemental MasterDesk Mastering Suite on macOS, Windows and Linux.
+#  - VST3, AU (Mac), AAX for Pro Tools (Mac + Windows), standalone app.
+#  - Every push / pull request: installers appear under the run's "Artifacts".
+#  - Pushing a tag like v1.0.0: also publishes a GitHub Release with the installers.
+name: Build plugin
 
-# macOS: universal binary (Apple Silicon + Intel). Must be set before project().
-set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "")
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
 
-project(PassiveMasterEQ VERSION 1.14.0 LANGUAGES C CXX)
+env:
+  BUILD_TYPE: Release
+  # Apple signing + notarization switch on automatically once these repository secrets exist
+  # (Settings -> Secrets and variables -> Actions). Without them the Mac build is unsigned.
+  HAS_APPLE_SIGNING: ${{ secrets.MACOS_CERTS_P12 != '' }}
+  HAS_APPLE_NOTARY: ${{ secrets.APPLE_APP_PASSWORD != '' }}
+  ART: build/PassiveMasterEQ_artefacts/Release
+  OLD_NAME: Masterdesk Passive EQ        # earlier versions: removed when installing
+  # NAME (the plug-in's name) is read from CMakeLists.txt in the "Version" step
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-if(MSVC)
-    # static runtime: the plugin works without installing the VC++ redistributable
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS,   os: macos-15 }       # macos-14 was retired by GitHub on 2 Nov 2026
+          - { name: Windows, os: windows-2022 }
+          - { name: Linux,   os: ubuntu-24.04 }   # ubuntu-22.04 is deprecated (removed Apr 2027)
 
-# --- JUCE ---------------------------------------------------------------------
-# Either point at a local checkout:  cmake -B build -DJUCE_DIR=/path/to/JUCE
-# or let CMake download JUCE 8 automatically.
-set(JUCE_DIR "" CACHE PATH "Path to a local JUCE checkout (optional)")
-if(JUCE_DIR)
-    add_subdirectory(${JUCE_DIR} JUCE)
-else()
-    include(FetchContent)
-    FetchContent_Declare(JUCE
-        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-        GIT_TAG        8.0.10
-        GIT_SHALLOW    ON)
-    FetchContent_MakeAvailable(JUCE)
-endif()
+    steps:
+      - uses: actions/checkout@v5
 
-option(PPM_COPY_AFTER_BUILD "Install the plugin into the system plugin folders after building" OFF)
-option(PPM_HEADLESS_LINUX   "CI only: build on Linux without Xrandr/Xinerama/Xcursor/ALSA dev headers" OFF)
+      # Works whether the project files are at the top of the repository or inside a
+      # folder (e.g. "MasterDesk-Mastering-Suite/") after a web upload. If there are
+      # several copies (an old one at the top and a new one in a folder), the newest wins.
+      - name: Locate project
+        shell: bash
+        run: |
+          best=""; bestv=""
+          while IFS= read -r f; do
+            v=$(sed -n 's/^project(PassiveMasterEQ VERSION \([0-9.]*\).*/\1/p' "$f" | head -1)
+            [ -z "$v" ] && continue
+            echo "Found version $v in $(dirname "$f")"
+            if [ -z "$bestv" ] || [ "$(printf '%s\n%s\n' "$bestv" "$v" | sort -V | tail -1)" = "$v" ] && [ "$v" != "$bestv" ]; then
+              best=$(dirname "$f"); bestv="$v"
+            fi
+          done < <(grep -rl --include=CMakeLists.txt "juce_add_plugin" . | grep -v "^./build/" | sort)
+          if [ -z "$best" ]; then
+            echo "::error::Could not find the plugin project (CMakeLists.txt with juce_add_plugin). Upload the files from the zip."
+            exit 1
+          fi
+          if [ "$best" = "." ]; then
+            echo "Using the project at the repository root (version $bestv)."
+          else
+            echo "::notice::Using the newest project, version $bestv, from the folder $best"
+            cp -R "$best"/. .
+          fi
 
-# Pro Tools (AAX) is built on macOS and Windows with the AAX SDK that ships inside JUCE 8.
-# The SDK is Avid's: free under its click-through licence (developer.avid.com/aax) or GPL v3.
-# Retail Pro Tools only loads AAX plug-ins signed with PACE's wraptool - see README "Pro Tools".
-set(PPM_FORMATS VST3 AU Standalone)
-if(APPLE OR WIN32)
-    list(APPEND PPM_FORMATS AAX)
-endif()
+      - name: Version
+        id: ver
+        shell: bash
+        run: |
+          v=$(sed -n 's/^project(PassiveMasterEQ VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          # the plug-in's name, exactly as the build will call its files
+          n=$(sed -n 's/^ *PRODUCT_NAME *"\(.*\)".*/\1/p' CMakeLists.txt | head -1)
+          echo "Building $n $v"
+          echo "NAME=$n" >> "$GITHUB_ENV"
 
-juce_add_plugin(PassiveMasterEQ
-    PRODUCT_NAME              "MasterDesk Mastering Suite"
-    COMPANY_NAME              "Basemental"
-    COMPANY_WEBSITE           ""
-    BUNDLE_ID                 com.basemental.masterdeskpassiveeq
-    PLUGIN_MANUFACTURER_CODE  Bsmt                     # 4 chars, >=1 uppercase: identifies you to hosts
-    PLUGIN_CODE               Mdeq                     # 4 chars, unique per plugin; never change after release
-    VERSION                   ${PROJECT_VERSION}
-    FORMATS                   ${PPM_FORMATS}           # AU: macOS only; AAX (Pro Tools): macOS + Windows
-    IS_SYNTH                  FALSE
-    NEEDS_MIDI_INPUT          FALSE
-    NEEDS_MIDI_OUTPUT         FALSE
-    IS_MIDI_EFFECT            FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    AU_MAIN_TYPE              kAudioUnitType_Effect
-    VST3_CATEGORIES           Fx EQ
-    AAX_CATEGORY              EQ Dynamics
-    DISABLE_AAX_MULTI_MONO    TRUE                     # a stereo mastering unit: stereo instance only
-    COPY_PLUGIN_AFTER_BUILD   ${PPM_COPY_AFTER_BUILD})
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev libx11-dev libxext-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxcomposite-dev libxrender-dev libfreetype-dev \
+            libfontconfig1-dev libgl1-mesa-dev ninja-build
 
-target_sources(PassiveMasterEQ PRIVATE
-    Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp)
+      - name: Cache JUCE download
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: juce-8.0.10-${{ runner.os }}
 
-target_include_directories(PassiveMasterEQ PRIVATE Source)
+      - name: Configure
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cmake -B build -G "Visual Studio 17 2022" -A x64 -DPPM_BUILD_TESTS=ON
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPPM_BUILD_TESTS=ON
+          else
+            cmake -B build -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DPPM_BUILD_TESTS=ON
+          fi
 
-target_compile_definitions(PassiveMasterEQ PUBLIC
-    JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
-    JUCE_VST3_CAN_REPLACE_VST2=0
-    JUCE_DISPLAY_SPLASH_SCREEN=0)
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 4
 
-if(PPM_HEADLESS_LINUX)
-    target_compile_definitions(PassiveMasterEQ PUBLIC
-        JUCE_USE_XRANDR=0 JUCE_USE_XINERAMA=0 JUCE_USE_XCURSOR=0 JUCE_USE_XRENDER=0
-        JUCE_ALSA=0 JUCE_JACK=0)
-endif()
+      - name: Run tests (DSP model + processor + presets)
+        shell: bash
+        env:
+          PPM_SNAPSHOT_DIR: ${{ github.workspace }}/screenshots
+        run: |
+          set +e
+          ctest --test-dir build -C $BUILD_TYPE --output-on-failure 2>&1 | tee ctest.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            # show the failing checks on the run page (annotations + summary), so no log download is needed
+            # each failed check prints "CHECK FAILED at ... line N"; show it with the line above it (the measured values)
+            { grep -B1 'CHECK FAILED' ctest.log | grep -v '^--$';
+              grep -E '\*\*\*Failed|\[FAIL\]|FAILURE|WRONG|NO MATCHING|SAME SETTINGS|did not land|off its model' ctest.log; } \
+              | head -10 | while IFS= read -r line; do
+                  line="${line//%/%25}"; echo "::error title=Failed test check (${{ matrix.name }})::${line}"
+                done
+            {
+              echo "### Test output (${{ matrix.name }})"
+              echo '```'
+              tail -n 200 ctest.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$rc"
 
-# the user manual, built into the plug-in (HELP ? > OPEN MANUAL) and shipped beside it by the installers
-juce_add_binary_data(PPMManual HEADER_NAME ManualData.h NAMESPACE ManualData SOURCES docs/MasterDesk-User-Manual.pdf)
-set_target_properties(PPMManual PROPERTIES POSITION_INDEPENDENT_CODE ON)
+      - name: Upload UI screenshots
+        uses: actions/upload-artifact@v6
+        with:
+          name: screenshots-${{ matrix.name }}
+          path: screenshots
+          if-no-files-found: ignore
 
-target_link_libraries(PassiveMasterEQ
-    PRIVATE
-        PPMManual
-        juce::juce_audio_utils
-        juce::juce_dsp
-    PUBLIC
-        juce::juce_recommended_config_flags
-        juce::juce_recommended_lto_flags
-        juce::juce_recommended_warning_flags)
+      # --- third-party validation (reported, never blocks the installers) ------
+      - name: pluginval (VST3)
+        continue-on-error: true
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   zip=pluginval_macOS.zip;   exe=pluginval.app/Contents/MacOS/pluginval ;;
+            Windows) zip=pluginval_Windows.zip; exe=./pluginval.exe ;;
+            Linux)   zip=pluginval_Linux.zip;   exe=./pluginval ;;
+          esac
+          curl -sSL -o pv.zip "https://github.com/Tracktion/pluginval/releases/latest/download/$zip"
+          unzip -q -o pv.zip
+          extra=""; [ "$RUNNER_OS" = "Linux" ] && extra="--skip-gui-tests"
+          "$exe" --strictness-level 5 --validate-in-process $extra --output-dir pluginval-logs \
+                 --validate "$ART/VST3/$NAME.vst3"
 
-# --- Tests --------------------------------------------------------------------
-option(PPM_BUILD_TESTS "Build the offline DSP and processor tests" OFF)
-if(PPM_BUILD_TESTS)
-    enable_testing()
-    add_executable(model_test tests/model_test.cpp)
-    target_include_directories(model_test PRIVATE Source)
-    add_test(NAME model_test COMMAND model_test)
-    add_executable(comp_test tests/comp_test.cpp)
-    target_include_directories(comp_test PRIVATE Source)
-    add_test(NAME comp_test COMMAND comp_test)
-    add_executable(loudness_test tests/loudness_test.cpp)
-    target_include_directories(loudness_test PRIVATE Source)
-    add_test(NAME loudness_test COMMAND loudness_test)
-    add_executable(key_test tests/key_test.cpp)
-    target_include_directories(key_test PRIVATE Source)
-    add_test(NAME key_test COMMAND key_test)
-    add_executable(sontec_test tests/sontec_test.cpp)
-    target_include_directories(sontec_test PRIVATE Source)
-    add_test(NAME sontec_test COMMAND sontec_test)
-    add_executable(classa_test tests/classa_test.cpp)
-    target_include_directories(classa_test PRIVATE Source)
-    add_test(NAME classa_test COMMAND classa_test)
-    add_executable(automaster_test tests/automaster_test.cpp)
-    target_include_directories(automaster_test PRIVATE Source)
-    add_test(NAME automaster_test COMMAND automaster_test)
+      - name: auval (Audio Unit)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ART/AU/$NAME.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aufx Mdeq Bsmt
 
-    juce_add_console_app(host_test PRODUCT_NAME "host_test")
-    target_sources(host_test PRIVATE tests/host_test.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp)
-    target_include_directories(host_test PRIVATE Source)
-    target_compile_definitions(host_test PRIVATE JucePlugin_Name="MasterDesk Mastering Suite"
-        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
-    if(PPM_HEADLESS_LINUX)
-        target_compile_definitions(host_test PRIVATE
-            JUCE_USE_XRANDR=0 JUCE_USE_XINERAMA=0 JUCE_USE_XCURSOR=0 JUCE_USE_XRENDER=0 JUCE_ALSA=0 JUCE_JACK=0)
-    endif()
-    target_link_libraries(host_test PRIVATE PPMManual juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
-    add_test(NAME host_test COMMAND host_test)
-    # the same, as if on a small 1024 x 761 screen (like the GitHub macOS machine)
-    add_test(NAME host_test_small_screen COMMAND host_test)
-    set_tests_properties(host_test_small_screen PROPERTIES ENVIRONMENT "PPM_TEST_SCREEN=1024x761")
-endif()
+      # --- Apple Developer ID signing (removes the "Apple could not verify..." warning) -------
+      - name: Set up Apple signing
+        if: runner.os == 'macOS' && env.HAS_APPLE_SIGNING == 'true'
+        env:
+          MACOS_CERTS_P12: ${{ secrets.MACOS_CERTS_P12 }}
+          MACOS_CERTS_PASSWORD: ${{ secrets.MACOS_CERTS_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          KCPW="$(openssl rand -hex 16)"
+          echo "$MACOS_CERTS_P12" | base64 --decode > "$RUNNER_TEMP/certs.p12"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          security import "$RUNNER_TEMP/certs.p12" -P "$MACOS_CERTS_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: -s -k "$KCPW" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/certs.p12"
+          APP_ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)
+          PKG_ID=$(security find-identity -v -p basic "$KC" | grep "Developer ID Installer" | head -1 | sed 's/.*"\(.*\)"/\1/' || true)
+          if [ -z "$APP_ID" ]; then echo "::error::MACOS_CERTS_P12 has no 'Developer ID Application' certificate (with its private key)."; exit 1; fi
+          if [ -z "$PKG_ID" ]; then echo "::error::MACOS_CERTS_P12 has no 'Developer ID Installer' certificate (with its private key)."; exit 1; fi
+          echo "Signing with: $APP_ID / $PKG_ID"
+          echo "SIGN_APP=$APP_ID" >> "$GITHUB_ENV"
+          echo "SIGN_PKG=$PKG_ID" >> "$GITHUB_ENV"
+          # the standalone app may use the microphone / audio input under the hardened runtime
+          cat > "$RUNNER_TEMP/app.entitlements" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict><key>com.apple.security.device.audio-input</key><true/></dict></plist>
+          PLIST
+          echo "APP_ENTITLEMENTS=$RUNNER_TEMP/app.entitlements" >> "$GITHUB_ENV"
+
+      # --- packaging ------------------------------------------------------------
+      # Plain zip of the Mac plug-ins first, so you always get them even if the .pkg step has a problem
+      - name: Zip macOS plug-ins
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ZIP="$GITHUB_WORKSPACE/dist/MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-macOS-plugins.zip"
+          BUNDLES=("VST3/$NAME.vst3" "AU/$NAME.component" "Standalone/$NAME.app")
+          [ -d "$ART/AAX/$NAME.aaxplugin" ] && BUNDLES+=("AAX/$NAME.aaxplugin")       # Pro Tools
+          for rel in "${BUNDLES[@]}"; do
+            b="$ART/$rel"
+            if [ -n "${SIGN_APP:-}" ]; then
+              ent=""; case "$b" in *.app) ent="--entitlements $APP_ENTITLEMENTS" ;; esac
+              codesign --force --options runtime --timestamp $ent --sign "$SIGN_APP" "$b"
+              codesign --verify --strict --verbose=2 "$b"
+            else
+              codesign --force --deep --sign - "$b"          # unsigned build (no Apple secrets set)
+            fi
+          done
+          (cd "$ART" && zip -qry "$ZIP" "${BUNDLES[@]}")
+          if [ -n "${SIGN_APP:-}" ] && [ "$HAS_APPLE_NOTARY" = "true" ]; then
+            echo "Notarizing the plug-ins with Apple (takes a few minutes)..."
+            xcrun notarytool submit "$ZIP" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait --timeout 30m
+            for rel in "${BUNDLES[@]}"; do xcrun stapler staple "$ART/$rel" || echo "(nothing to staple on $rel)"; done
+            rm -f "$ZIP"
+            (cd "$ART" && zip -qry "$ZIP" "${BUNDLES[@]}")
+          fi
+          # the user manual rides along in the zip
+          if [ -f docs/MasterDesk-User-Manual.pdf ]; then
+            MAN="$(mktemp -d)"; cp docs/MasterDesk-User-Manual.pdf "$MAN/$NAME - User Manual.pdf"
+            (cd "$MAN" && zip -q "$ZIP" "$NAME - User Manual.pdf")
+          fi
+
+      # The .pkg installer is built right here, so this workflow file is the only thing to keep up to date
+      - name: Package macOS installer
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          ID="com.basemental.masterdeskpassiveeq"
+          STAGE="$(mktemp -d)"
+          mkdir -p "$STAGE/vst3" "$STAGE/au" "$STAGE/app" "$STAGE/pkgs" "$STAGE/resources" dist
+          cp -R "$ART/VST3/$NAME.vst3"      "$STAGE/vst3/"
+          cp -R "$ART/AU/$NAME.component"   "$STAGE/au/"
+          cp -R "$ART/Standalone/$NAME.app" "$STAGE/app/"
+          HAVE_MANUAL=false
+          if [ -f docs/MasterDesk-User-Manual.pdf ]; then
+            HAVE_MANUAL=true; mkdir -p "$STAGE/manual"; cp docs/MasterDesk-User-Manual.pdf "$STAGE/manual/$NAME - User Manual.pdf"
+          fi
+          HAVE_AAX=false
+          if [ -d "$ART/AAX/$NAME.aaxplugin" ]; then
+            HAVE_AAX=true; mkdir -p "$STAGE/aax"; cp -R "$ART/AAX/$NAME.aaxplugin" "$STAGE/aax/"
+          fi
+
+          # removes copies installed under the old name, so the DAW doesn't list the plug-in twice
+          mkdir -p "$STAGE/scripts"
+          cat > "$STAGE/scripts/preinstall" <<SH
+          #!/bin/sh
+          rm -rf "/Library/Audio/Plug-Ins/VST3/$OLD_NAME.vst3" "/Library/Audio/Plug-Ins/Components/$OLD_NAME.component" "/Applications/$OLD_NAME.app"
+          exit 0
+          SH
+          chmod +x "$STAGE/scripts/preinstall"
+
+          make_pkg () {   # <root> <id-suffix> <install-location>
+            local root="$1" suffix="$2" location="$3" plist="$STAGE/$2.plist" i=0
+            pkgbuild --analyze --root "$root" "$plist"
+            # mark every bundle pkgbuild found as non-relocatable (the list may be empty: that's fine)
+            while /usr/libexec/PlistBuddy -c "Print :$i" "$plist" >/dev/null 2>&1; do
+              /usr/libexec/PlistBuddy -c "Delete :$i:BundleIsRelocatable" "$plist" >/dev/null 2>&1 || true
+              /usr/libexec/PlistBuddy -c "Add :$i:BundleIsRelocatable bool false" "$plist"
+              i=$((i + 1))
+            done
+            echo "$suffix: $i bundle(s) marked non-relocatable"
+            pkgbuild --root "$root" --component-plist "$plist" --identifier "$ID.$suffix" --scripts "$STAGE/scripts" \
+                     --version "$VERSION" --install-location "$location" "$STAGE/pkgs/$suffix.pkg"
+          }
+          make_pkg "$STAGE/vst3" vst3 "/Library/Audio/Plug-Ins/VST3"
+          make_pkg "$STAGE/au"   au   "/Library/Audio/Plug-Ins/Components"
+          make_pkg "$STAGE/app"  app  "/Applications"
+          $HAVE_AAX && make_pkg "$STAGE/aax" aax "/Library/Application Support/Avid/Audio/Plug-Ins"
+          $HAVE_MANUAL && make_pkg "$STAGE/manual" manual "/Applications"
+          MAN_LINE=""; MAN_CHOICE=""; MAN_REF=""; MAN_TEXT=""
+          if $HAVE_MANUAL; then
+            MAN_LINE='<line choice="manual"/>'
+            MAN_CHOICE="<choice id=\"manual\" title=\"User manual (PDF)\" description=\"The full user manual, next to the app in Applications.\"><pkg-ref id=\"$ID.manual\"/></choice>"
+            MAN_REF="<pkg-ref id=\"$ID.manual\" version=\"$VERSION\">manual.pkg</pkg-ref>"
+            MAN_TEXT="  - User manual    -> /Applications/$NAME - User Manual.pdf"
+          fi
+          AAX_LINE=""; AAX_CHOICE=""; AAX_REF=""; AAX_TEXT=""
+          if $HAVE_AAX; then
+            AAX_LINE='<line choice="aax"/>'
+            AAX_CHOICE="<choice id=\"aax\" title=\"Pro Tools (AAX)\" description=\"For Pro Tools. Retail Pro Tools needs the PACE-signed version: see the README.\"><pkg-ref id=\"$ID.aax\"/></choice>"
+            AAX_REF="<pkg-ref id=\"$ID.aax\" version=\"$VERSION\">aax.pkg</pkg-ref>"
+            AAX_TEXT="  - Pro Tools (AAX) -> /Library/Application Support/Avid/Audio/Plug-Ins"
+          fi
+
+          printf '%s\n' "Basemental MasterDesk Mastering Suite" "" \
+            "Passive EQ, Vari-Mu compressor, Auto Master and Maximizer, with VU, spectrum, song key, vectorscope and LUFS metering." "" \
+            "Earlier versions installed as 'Masterdesk Passive EQ' are replaced automatically (your saved sessions keep working)." "" \
+            "Choose what to install on the next screens:" \
+            "  - VST3 plug-in   -> /Library/Audio/Plug-Ins/VST3" \
+            "  - Audio Unit     -> /Library/Audio/Plug-Ins/Components   (Logic Pro, GarageBand)" \
+            "  - Standalone app -> /Applications" "$AAX_TEXT" "$MAN_TEXT" "" \
+            "Afterwards, rescan plug-ins in your DAW. Inside the plug-in, press HELP ? for a guide." \
+            > "$STAGE/resources/welcome.txt"
+
+          cat > "$STAGE/distribution.xml" <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <installer-gui-script minSpecVersion="2">
+            <title>$NAME $VERSION</title>
+            <welcome file="welcome.txt" mime-type="text/plain"/>
+            <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+            <domains enable_localSystem="true"/>
+            <choices-outline><line choice="vst3"/><line choice="au"/>$AAX_LINE<line choice="app"/>$MAN_LINE</choices-outline>
+            <choice id="vst3" title="VST3 plug-in" description="For Cubase, Ableton Live, Studio One, Reaper, FL Studio, Bitwig."><pkg-ref id="$ID.vst3"/></choice>
+            <choice id="au" title="Audio Unit (AU)" description="For Logic Pro, GarageBand and other AU hosts."><pkg-ref id="$ID.au"/></choice>
+            <choice id="app" title="Standalone app" description="Runs on its own without a DAW."><pkg-ref id="$ID.app"/></choice>
+            <pkg-ref id="$ID.vst3" version="$VERSION">vst3.pkg</pkg-ref>
+            <pkg-ref id="$ID.au" version="$VERSION">au.pkg</pkg-ref>
+            <pkg-ref id="$ID.app" version="$VERSION">app.pkg</pkg-ref>
+            $AAX_CHOICE
+            $AAX_REF
+            $MAN_CHOICE
+            $MAN_REF
+          </installer-gui-script>
+          XML
+
+          PKG="dist/MasterDesk-Mastering-Suite-$VERSION-macOS.pkg"
+          SIGNARGS=()
+          [ -n "${SIGN_PKG:-}" ] && SIGNARGS=(--sign "$SIGN_PKG" --timestamp)
+          productbuild --distribution "$STAGE/distribution.xml" --package-path "$STAGE/pkgs" \
+                       --resources "$STAGE/resources" ${SIGNARGS[@]+"${SIGNARGS[@]}"} "$PKG"
+          if [ -n "${SIGN_PKG:-}" ]; then
+            pkgutil --check-signature "$PKG"
+            if [ "$HAS_APPLE_NOTARY" = "true" ]; then
+              echo "Notarizing the installer with Apple (takes a few minutes)..."
+              xcrun notarytool submit "$PKG" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait --timeout 30m
+              xcrun stapler staple "$PKG"
+              spctl --assess --type install --verbose=2 "$PKG"     # what Gatekeeper will say on your Mac
+            fi
+          else
+            echo "::warning::The Mac installer is NOT signed, so macOS will warn when opening it. Add the Apple secrets (see README) to sign and notarize it."
+          fi
+          echo "Built $PKG"
+
+      - name: Package Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $art  = Resolve-Path "$env:ART"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $out  = Resolve-Path dist
+          # use the plug-in's real name, whatever version of installer.iss is in the repository
+          $iss = Get-Content installer\windows\installer.iss -Raw
+          $iss = [regex]::Replace($iss, '(?m)^#define AppName ".*"', ('#define AppName "' + $env:NAME + '"'))
+          Set-Content -Path installer\windows\installer.ci.iss -Value $iss -Encoding utf8BOM
+          Write-Host "Packaging '$env:NAME'"
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" "/DArtefacts=$art" "/DOutDir=$out" installer\windows\installer.ci.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path "$art\AAX\$env:NAME.aaxplugin") {
+            Compress-Archive -Path "$art\AAX\$env:NAME.aaxplugin" -DestinationPath "dist\MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Windows-AAX-unsigned.zip"
+          }
+          $man = @()
+          if (Test-Path docs\MasterDesk-User-Manual.pdf) {
+            Copy-Item docs\MasterDesk-User-Manual.pdf "dist\$env:NAME - User Manual.pdf"; $man = @("dist\$env:NAME - User Manual.pdf")
+          }
+          Compress-Archive -Path (@("$art\VST3\$env:NAME.vst3") + $man) -DestinationPath "dist\MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Windows-VST3.zip"
+
+      - name: Package Linux tarball
+        if: runner.os == 'Linux'
+        run: |
+          pkg="MasterDesk-Mastering-Suite-${{ steps.ver.outputs.version }}-Linux-x64"
+          mkdir -p "dist/$pkg"
+          cp -R "$ART/VST3/$NAME.vst3" "dist/$pkg/"
+          cp "$ART/Standalone/$NAME" "dist/$pkg/"
+          cp installer/linux/install.sh "dist/$pkg/" && chmod +x "dist/$pkg/install.sh"
+          [ -f docs/MasterDesk-User-Manual.pdf ] && cp docs/MasterDesk-User-Manual.pdf "dist/$pkg/$NAME - User Manual.pdf"
+          sed -i "s/^NAME=.*/NAME=\"$NAME\"/" "dist/$pkg/install.sh"      # the plug-in's real name
+          tar -C dist -czf "dist/$pkg.tar.gz" "$pkg"
+          rm -rf "dist/$pkg"
+
+      - name: Upload installers
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: MasterDesk-Mastering-Suite-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: ignore
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: MasterDesk-Mastering-Suite-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
